@@ -1,0 +1,54 @@
+#!/bin/bash
+# KasaManager — pre-commit secrets guard (bash/Git Bash)
+# Kurulum: cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+RED='\033[0;31m'
+NC='\033[0m'
+
+BLOCKED=0
+
+# 1) appsettings.Development.json kontrol
+if git diff --cached --name-only | grep -q "appsettings.Development.json"; then
+    echo -e "${RED}BLOCKED: appsettings.Development.json commit edilemez!${NC}"
+    echo "Bu dosya secrets içerir ve .gitignore'da olmalıdır."
+    BLOCKED=1
+fi
+
+# 2) secrets.json kontrol
+if git diff --cached --name-only | grep -q "secrets.json"; then
+    echo -e "${RED}BLOCKED: secrets.json commit edilemez!${NC}"
+    BLOCKED=1
+fi
+
+# 3) ConnectionStrings dolu mu kontrol (appsettings.json)
+if git diff --cached --name-only | grep -q "appsettings.json"; then
+    STAGED=$(git show :src/KasaManager.Web/appsettings.json 2>/dev/null || echo "")
+    if echo "$STAGED" | grep -qE '"SqlConnection"\s*:\s*"[^"]+"'; then
+        echo -e "${RED}BLOCKED: appsettings.json içinde SqlConnection dolu!${NC}"
+        echo "Connection string'leri appsettings.Development.json'a taşıyın."
+        BLOCKED=1
+    fi
+    if echo "$STAGED" | grep -qE '"LegacyKasaConnection"\s*:\s*"[^"]+"'; then
+        echo -e "${RED}BLOCKED: appsettings.json içinde LegacyKasaConnection dolu!${NC}"
+        BLOCKED=1
+    fi
+    if echo "$STAGED" | grep -qE '"Password"\s*:\s*"[^"]+"'; then
+        echo -e "${RED}BLOCKED: appsettings.json içinde Password dolu!${NC}"
+        BLOCKED=1
+    fi
+fi
+
+# 4) Excel dosyası kontrol (yanlışlıkla upload)
+if git diff --cached --name-only | grep -qE '\.xlsx$|\.xls$'; then
+    echo -e "${RED}BLOCKED: Excel dosyası (.xlsx/.xls) commit edilemez!${NC}"
+    echo "Upload dosyaları repoya girmemelidir."
+    BLOCKED=1
+fi
+
+if [ $BLOCKED -eq 1 ]; then
+    echo ""
+    echo "Commit iptal edildi. Yukarıdaki sorunları düzeltin."
+    exit 1
+fi
+
+exit 0
