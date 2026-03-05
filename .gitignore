@@ -30,7 +30,7 @@ appsettings.Development.json
 secrets.json
 
 # Upload / Cache / Temp
-wwwroot/Data/Raporlar/
+**/wwwroot/Data/Raporlar/
 cache/
 temp/
 /tmp/
