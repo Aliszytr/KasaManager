@@ -1,0 +1,423 @@
+@model KasaManager.Web.Models.KasaUstRaporIndexViewModel
+
+@{
+    ViewData["Title"] = "KasaÜstRapor";
+    var table = Model.Table;
+    var eval = Model.DateEval;
+    var metas = table?.ColumnMetas ?? new List<KasaManager.Domain.Reports.ImportedColumnMeta>();
+    var rows = table?.Rows ?? new List<Dictionary<string, string?>>();
+    // Grid kolon sırası: Veznedar hemen sonra Bakiye/Tutar gelsin (Ali'nin istediği)
+    if (metas.Count > 0)
+    {
+        var ordered = new List<KasaManager.Domain.Reports.ImportedColumnMeta>(metas.Count);
+        var vez = metas.FirstOrDefault(m => string.Equals(m.CanonicalName, Model.VeznedarColumn, StringComparison.OrdinalIgnoreCase));
+        var bak = metas.FirstOrDefault(m => string.Equals(m.CanonicalName, Model.BakiyeColumn, StringComparison.OrdinalIgnoreCase));
+        if (vez is not null) ordered.Add(vez);
+        if (bak is not null && !ReferenceEquals(bak, vez)) ordered.Add(bak);
+        foreach (var m in metas)
+        {
+            if (ReferenceEquals(m, vez) || ReferenceEquals(m, bak)) continue;
+            ordered.Add(m);
+        }
+        metas = ordered;
+    }
+
+    string fmt(DateOnly? d) => d.HasValue ? d.Value.ToString("yyyy-MM-dd") : "-";
+}
+
+<div class="container-fluid py-4">
+    <!-- ═══════ Sayfa Başlığı ═══════ -->
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h4 class="mb-1" style="font-weight: 800; letter-spacing: -0.3px;">
+                <i class="fas fa-file-invoice me-2" style="color: var(--kasa-primary);"></i>KasaÜstRapor
+            </h4>
+            <div style="color: var(--text-muted); font-size: 0.85rem;">
+                Tarih kural motoru + snapshot entegrasyonu
+            </div>
+        </div>
+        <a asp-controller="Import" asp-action="Index"
+           style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px;
+                  background: var(--surface-card); border: 1px solid var(--border-light);
+                  border-radius: var(--radius-md); color: var(--text-secondary);
+                  text-decoration: none; font-size: 0.85rem; font-weight: 500;
+                  transition: all var(--transition-fast);"
+           onmouseover="this.style.borderColor='var(--kasa-primary)'; this.style.color='var(--kasa-primary)';"
+           onmouseout="this.style.borderColor='var(--border-light)'; this.style.color='var(--text-secondary)';">
+            <i class="fas fa-arrow-left"></i> Import'a Dön
+        </a>
+    </div>
+
+    <!-- ═══════ Hata / Bilgi Mesajları ═══════ -->
+    @if (TempData["Error"] is string err && !string.IsNullOrWhiteSpace(err))
+    {
+        <div class="kasa-card mb-3" style="border-left: 4px solid var(--kasa-danger);">
+            <div class="kasa-card-body" style="padding: 12px 16px; color: var(--kasa-danger);">
+                <i class="fas fa-exclamation-circle me-1"></i> @err
+            </div>
+        </div>
+    }
+    @if (TempData["Info"] is string info && !string.IsNullOrWhiteSpace(info))
+    {
+        <div class="kasa-card mb-3" style="border-left: 4px solid var(--kasa-info);">
+            <div class="kasa-card-body" style="padding: 12px 16px; color: var(--kasa-info);">
+                <i class="fas fa-info-circle me-1"></i> @info
+            </div>
+        </div>
+    }
+
+    <!-- ═══════ ÇIKTI ARAÇ ÇUBUĞU (Faz C) ═══════ -->
+    <div class="kasa-card mb-3" style="border-left: 4px solid var(--kasa-accent, #0891b2);">
+        <div class="kasa-card-body" style="padding: 10px 16px;">
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="fas fa-download" style="color: var(--kasa-accent, #0891b2); font-size: 14px;"></i>
+                    <span style="font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Çıktı</span>
+                </div>
+                <div class="d-flex gap-2 flex-wrap">
+                    <button class="kasa-btn" onclick="exportUstRapor(1, 2)" style="font-size: 11px; padding: 5px 12px; border-radius: 8px; background: rgba(239,68,68,0.08); color: #dc2626; border: 1px solid rgba(239,68,68,0.2);" title="PDF Yatay A4">
+                        <i class="fas fa-file-pdf me-1"></i>PDF (Yatay)
+                    </button>
+                    <button class="kasa-btn" onclick="exportUstRapor(3, 2)" style="font-size: 11px; padding: 5px 12px; border-radius: 8px; background: rgba(34,197,94,0.08); color: #16a34a; border: 1px solid rgba(34,197,94,0.2);" title="Excel (.xlsx)">
+                        <i class="fas fa-file-excel me-1"></i>Excel
+                    </button>
+                    <button class="kasa-btn" onclick="exportUstRapor(4, 2)" style="font-size: 11px; padding: 5px 12px; border-radius: 8px; background: rgba(59,130,246,0.08); color: #2563eb; border: 1px solid rgba(59,130,246,0.2);" title="CSV">
+                        <i class="fas fa-file-csv me-1"></i>CSV
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <form id="exportUstForm" asp-controller="KasaUstRapor" asp-action="Export" method="post" style="display:none;">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="format" id="ustExportFormat" />
+        <input type="hidden" name="content" id="ustExportContent" />
+    </form>
+
+    <div class="row g-4">
+        <!-- ═══════ SOL PANEL: Tarih Kural Motoru & Dosyalar ═══════ -->
+        <div class="col-lg-4">
+            <!-- Tarih Kural Motoru -->
+            <div class="kasa-card kasa-card-glow mb-4">
+                <div class="kasa-card-header">
+                    <div>
+                        <h6 style="font-size: 15px; font-weight: 700; margin: 0;">
+                            <i class="fas fa-calendar-check me-2" style="color: var(--kasa-success);"></i>Tarih Kural Motoru
+                        </h6>
+                        <div style="color: var(--text-muted); font-size: 0.8rem; margin-top: 2px;">
+                            Raporlardan otomatik tespit edilir
+                        </div>
+                    </div>
+                    @if (eval?.HasConflict == true)
+                    {
+                        <span style="background: rgba(239, 68, 68, 0.15); color: var(--kasa-danger); padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600;">
+                            <i class="fas fa-exclamation-triangle me-1"></i>Çakışma
+                        </span>
+                    }
+                    else if (eval?.HasAnyDate != true)
+                    {
+                        <span style="background: var(--surface-input); color: var(--text-muted); padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600;">
+                            Bulunamadı
+                        </span>
+                    }
+                </div>
+                <div class="kasa-card-body">
+                    <!-- Tarih Bilgileri -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                        <div style="background: var(--surface-body); border-radius: var(--radius-sm); padding: 10px 14px;">
+                            <div style="font-size: 0.7rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 2px;">DB Son</div>
+                            <div style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 0.9rem; color: var(--text-primary);">@fmt(eval?.DbLastSnapshotDate)</div>
+                        </div>
+                        <div style="background: var(--surface-body); border-radius: var(--radius-sm); padding: 10px 14px;">
+                            <div style="font-size: 0.7rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 2px;">DB Beklenen</div>
+                            <div style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 0.9rem; color: var(--text-primary);">@fmt(eval?.DbExpectedNextDate)</div>
+                        </div>
+                    </div>
+                    <div style="background: rgba(8, 145, 178, 0.08); border: 1px solid rgba(8, 145, 178, 0.2); border-radius: var(--radius-sm); padding: 10px 14px; text-align: center;">
+                        <div style="font-size: 0.7rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; color: var(--kasa-primary); margin-bottom: 2px;">
+                            <i class="fas fa-star me-1"></i>Önerilen Tarih
+                        </div>
+                        <div style="font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 1.1rem; color: var(--kasa-primary);">@fmt(Model.ProposedDate)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dosya Bilgileri -->
+            <div class="kasa-card kasa-card-glow mb-4">
+                <div class="kasa-card-header">
+                    <div>
+                        <h6 style="font-size: 15px; font-weight: 700; margin: 0;">
+                            <i class="fas fa-folder-open me-2" style="color: var(--kasa-warning);"></i>Kaynak Dosyalar
+                        </h6>
+                    </div>
+                </div>
+                <div class="kasa-card-body" style="padding: 0;">
+                    @if (eval?.Sources is null || eval.Sources.Count == 0)
+                    {
+                        <div style="text-align: center; padding: 24px; color: var(--text-muted);">
+                            <i class="fas fa-file-excel" style="font-size: 1.5rem; opacity: 0.3; display: block; margin-bottom: 6px;"></i>
+                            Henüz tarama yapılmadı
+                        </div>
+                    }
+                    else
+                    {
+                        <div style="overflow: hidden;">
+                            @foreach (var s in eval.Sources)
+                            {
+                                <div style="display: flex; align-items: center; gap: 10px; padding: 10px 20px;
+                                            border-bottom: 1px solid var(--border-light);"
+                                     class="source-row">
+                                    <span style="background: linear-gradient(135deg, var(--kasa-primary), var(--kasa-secondary));
+                                                 color: #fff; padding: 3px 8px; border-radius: var(--radius-sm);
+                                                 font-size: 0.7rem; font-weight: 700; white-space: nowrap;">
+                                        @s.Kind
+                                    </span>
+                                    <div style="flex: 1; min-width: 0;">
+                                        <div style="font-size: 0.8rem; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">@s.FileName</div>
+                                        <div style="font-size: 0.72rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">
+                                            @if (s.DistinctDates.Count == 0)
+                                            {
+                                                <span>-</span>
+                                            }
+                                            else
+                                            {
+                                                var joined = string.Join(", ", s.DistinctDates.Select(d => d.ToString("yyyy-MM-dd")));
+                                                if (s.IsConflicting)
+                                                {
+                                                    <span style="color: var(--kasa-danger); font-weight: 600;">@joined</span>
+                                                }
+                                                else
+                                                {
+                                                    <span>@joined</span>
+                                                }
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Uyarılar -->
+            @if (eval?.Warnings?.Count > 0)
+            {
+                <div class="kasa-card" style="border-left: 4px solid var(--kasa-warning);">
+                    <div class="kasa-card-body" style="padding: 14px 16px;">
+                        <div style="color: var(--kasa-warning); font-weight: 700; font-size: 0.85rem; margin-bottom: 8px;">
+                            <i class="fas fa-exclamation-triangle me-1"></i> Uyarılar
+                        </div>
+                        <ul style="margin: 0; padding-left: 18px; font-size: 0.82rem; color: var(--text-secondary);">
+                            @foreach (var w in eval.Warnings)
+                            {
+                                <li style="margin-bottom: 4px;">@w</li>
+                            }
+                        </ul>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- ═══════ SAĞ PANEL: KasaÜstRapor Grid ═══════ -->
+        <div class="col-lg-8">
+            <div class="kasa-card kasa-card-glow">
+                <div class="kasa-card-header">
+                    <div>
+                        <h6 style="font-size: 15px; font-weight: 700; margin: 0;">
+                            <i class="fas fa-table me-2" style="color: var(--kasa-secondary);"></i>KasaÜstRapor Grid
+                        </h6>
+                        <div style="color: var(--text-muted); font-size: 0.8rem; margin-top: 2px;">
+                            Satır seç → onayla → snapshot kaydet
+                        </div>
+                    </div>
+                    <span style="background: rgba(99, 102, 241, 0.15); color: var(--kasa-secondary); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 700;">
+                        @rows.Count satır
+                    </span>
+                </div>
+
+                <div class="kasa-card-body">
+                    @if (string.IsNullOrWhiteSpace(Model.KasaUstRaporFileName))
+                    {
+                        <div style="text-align: center; padding: 40px 20px; color: var(--kasa-danger);">
+                            <i class="fas fa-file-excel" style="font-size: 2.5rem; opacity: 0.5; display: block; margin-bottom: 12px;"></i>
+                            <div style="font-weight: 600;">KasaÜstRapor dosyası bulunamadı</div>
+                            <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 4px;">Dosya adında "kasa" ve "ust" geçmeli</div>
+                        </div>
+                    }
+                    else if (table is null)
+                    {
+                        <div style="text-align: center; padding: 40px 20px; color: var(--kasa-danger);">
+                            <i class="fas fa-exclamation-circle" style="font-size: 2.5rem; opacity: 0.5; display: block; margin-bottom: 12px;"></i>
+                            <div style="font-weight: 600;">KasaÜstRapor import edilemedi</div>
+                        </div>
+                    }
+                    else
+                    {
+                        <form asp-action="Save" method="post">
+                            <input type="hidden" name="kasaUstRaporFileName" value="@Model.KasaUstRaporFileName" />
+
+                            <!-- Filtreler -->
+                            <div class="row g-3 mb-4">
+                                <div class="col-md-4">
+                                    <label class="form-label" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">
+                                        <i class="fas fa-calendar-day me-1"></i>Final Tarih
+                                    </label>
+                                    @if (eval?.HasAnyDate == false)
+                                    {
+                                        var suggestedFull = eval.DbExpectedNextDate ?? DateOnly.FromDateTime(DateTime.Today);
+                                        <div style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25);
+                                                    border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;">
+                                            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                                                <i class="fas fa-exclamation-triangle" style="color: var(--kasa-warning); font-size: 13px;"></i>
+                                                <span style="font-weight: 700; font-size: 12px; color: var(--kasa-warning);">
+                                                    Raporlarda tarih belirlenemedi!
+                                                </span>
+                                            </div>
+                                            <div style="font-size: 11px; color: var(--text-muted);">
+                                                Tarihi onaylayın veya değiştirin.
+                                                Öneri: <strong>@suggestedFull.ToString("dd.MM.yyyy")</strong>
+                                            </div>
+                                        </div>
+                                        <input class="form-control" type="date" name="finalDate" value="@suggestedFull.ToString("yyyy-MM-dd")" />
+                                    }
+                                    else
+                                    {
+                                        <input class="form-control" type="date" name="finalDate"
+                                               value="@(Model.FinalDate?.ToString("yyyy-MM-dd") ?? DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd"))" />
+                                        <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">
+                                            Önerilen tarih: <strong>@fmt(Model.ProposedDate)</strong>
+                                        </div>
+                                    }
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">
+                                        <i class="fas fa-user me-1"></i>Veznedar Kolonu
+                                    </label>
+                                    <select class="form-select" name="veznedarColumn">
+                                        @foreach (var m in metas)
+                                        {
+                                            var sel = string.Equals(m.CanonicalName, Model.VeznedarColumn, StringComparison.OrdinalIgnoreCase) ? "selected" : null;
+                                            <option value="@m.CanonicalName" selected="@sel">@m.OriginalHeader (@m.CanonicalName)</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">
+                                        <i class="fas fa-wallet me-1"></i>Bakiye/Tutar Kolonu
+                                    </label>
+                                    <select class="form-select" name="bakiyeColumn">
+                                        @foreach (var m in metas)
+                                        {
+                                            var sel = string.Equals(m.CanonicalName, Model.BakiyeColumn, StringComparison.OrdinalIgnoreCase) ? "selected" : null;
+                                            <option value="@m.CanonicalName" selected="@sel">@m.OriginalHeader (@m.CanonicalName)</option>
+                                        }
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Snapshot Onay -->
+                            <div style="background: rgba(8, 145, 178, 0.06); border: 1px solid rgba(8, 145, 178, 0.15);
+                                        border-radius: var(--radius-md); padding: 14px 18px; margin-bottom: 16px;
+                                        display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                                <div>
+                                    <div style="font-weight: 600; font-size: 0.9rem; color: var(--text-primary);">
+                                        Kaydedilecek Snapshot Türü:
+                                        <span style="background: linear-gradient(135deg, var(--kasa-primary), var(--kasa-secondary));
+                                                     color: #fff; padding: 2px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 700;">
+                                            Genel
+                                        </span>
+                                    </div>
+                                    <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">
+                                        Snapshot, yalnız onay ile DB'ye yazılır
+                                    </div>
+                                </div>
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 6px 12px;
+                                              background: var(--surface-card); border: 1px solid var(--border-light);
+                                              border-radius: var(--radius-sm);">
+                                    <input class="form-check-input" type="checkbox" id="approve" name="approve" value="true"
+                                           style="margin: 0; width: 18px; height: 18px;" />
+                                    <span style="font-size: 0.82rem; font-weight: 500; color: var(--text-primary);">
+                                        Tarihi ve uyarıları okudum, kaydı onaylıyorum
+                                    </span>
+                                </label>
+                            </div>
+
+                            <!-- Data Table -->
+                            <div style="max-height: 60vh; overflow: auto; border: 1px solid var(--border-light); border-radius: var(--radius-sm);">
+                                <table class="table table-sm table-hover align-middle mb-0">
+                                    <thead style="position: sticky; top: 0; z-index: 2; background: var(--surface-body);">
+                                        <tr>
+                                            <th style="width: 50px; padding: 10px; text-align: center;">
+                                                <i class="fas fa-check-square" style="color: var(--text-muted); font-size: 0.9rem;"></i>
+                                            </th>
+                                            @foreach (var m in metas)
+                                            {
+                                                <th style="white-space: nowrap; padding: 10px 12px; font-size: 0.8rem; font-weight: 700; color: var(--text-secondary);">
+                                                    <div>@m.OriginalHeader</div>
+                                                    <div style="font-size: 0.68rem; font-weight: 500; color: var(--text-muted);">@m.CanonicalName</div>
+                                                </th>
+                                            }
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @for (int i = 0; i < rows.Count; i++)
+                                        {
+                                            rows[i].TryGetValue(Model.VeznedarColumn ?? "veznedar", out var vz);
+                                            var shouldCheck = !string.IsNullOrWhiteSpace(vz)
+                                                && Model.DefaultVergiKasaVeznedarlar.Contains(vz.Trim(), StringComparer.OrdinalIgnoreCase);
+
+                                            <tr style="@(shouldCheck ? "background: rgba(8, 145, 178, 0.05);" : "")">
+                                                <td style="text-align: center; padding: 8px;">
+                                                    <input class="form-check-input" type="checkbox" name="selectedRows" value="@i"
+                                                           @(shouldCheck ? "checked" : "")
+                                                           style="width: 18px; height: 18px; margin: 0;" />
+                                                </td>
+                                                @foreach (var m in metas)
+                                                {
+                                                    rows[i].TryGetValue(m.CanonicalName, out var v);
+                                                    <td style="white-space: nowrap; padding: 8px 12px; font-size: 0.85rem; color: var(--text-primary);">@v</td>
+                                                }
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Kaydet Butonu -->
+                            <div class="d-flex justify-content-end mt-3">
+                                <button type="submit"
+                                        style="background: linear-gradient(135deg, var(--kasa-success), var(--kasa-success-light));
+                                               color: #fff; border: none; padding: 10px 24px; border-radius: var(--radius-md);
+                                               font-weight: 600; font-size: 0.9rem; cursor: pointer;
+                                               transition: all var(--transition-fast);
+                                               box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+                                    <i class="fas fa-save me-2"></i> Snapshot Kaydet
+                                </button>
+                            </div>
+                        </form>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Styles {
+    <style>
+        .source-row:last-child {
+            border-bottom: none !important;
+        }
+        .source-row:hover {
+            background: var(--surface-body);
+        }
+    </style>
+
+    <script>
+        function exportUstRapor(format, content) {
+            document.getElementById('ustExportFormat').value = format;
+            document.getElementById('ustExportContent').value = content;
+            document.getElementById('exportUstForm').submit();
+        }
+    </script>
+}

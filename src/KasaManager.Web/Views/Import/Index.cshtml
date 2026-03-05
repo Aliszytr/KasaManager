@@ -1,0 +1,259 @@
+@model ImportIndexViewModel
+@using KasaManager.Domain.Reports
+
+@{
+    ViewData["Title"] = "Dosya Yükleme";
+}
+
+<!-- Page Title -->
+<div class="kasa-page-title">
+    <h2><i class="fas fa-file-upload text-kasa-primary me-2"></i>Dosya Yükleme</h2>
+    <span class="kasa-badge kasa-badge-primary">
+        <i class="fas fa-folder-open"></i> @Model.UploadedFiles.Count dosya
+    </span>
+</div>
+
+<!-- Upload Zone -->
+<form id="uploadForm" asp-action="Upload" method="post" enctype="multipart/form-data" class="mb-4">
+    <div id="uploadDropzone" class="kasa-dropzone">
+        <div class="kasa-dropzone-icon">
+            <i class="fas fa-cloud-upload-alt"></i>
+        </div>
+        <div class="kasa-dropzone-title">Dosyaları sürükle veya tıklayarak seç</div>
+        <div class="kasa-dropzone-hint">
+            Desteklenen formatlar: <span>.xlsx</span> <span>.xls</span> • Maksimum 200 MB
+        </div>
+        <button type="button" class="kasa-btn kasa-btn-secondary" onclick="document.getElementById('fileInput').click()">
+            <i class="fas fa-folder-open"></i> Dosya Seç
+        </button>
+    </div>
+    <input type="file" id="fileInput" name="files" multiple accept=".xlsx,.xls" style="display:none" />
+
+    <div class="d-flex justify-content-end mt-3">
+        <button type="button" id="uploadBtn" class="kasa-btn kasa-btn-primary kasa-btn-upload" style="display:none"
+                onclick="doAjaxUpload(this)">
+            <i class="fas fa-upload"></i> Yükle
+        </button>
+    </div>
+</form>
+
+<!-- ═══════ KasaÜstRapor Panel (inline) ═══════ -->
+@if (Model.UstRaporPanel != null)
+{
+    await Html.RenderPartialAsync("_KasaUstRaporPanel", Model.UstRaporPanel);
+}
+
+<!-- ═══════ Collapsible: Dosya Detayları ═══════ -->
+<button class="kasa-detail-toggle" type="button"
+        aria-expanded="false"
+        onclick="toggleDetailSection(this, 'importDetailSection')">
+    <i class="fas fa-cog"></i>
+    Dosya Detayları — Import Çalıştır ve Yüklenen Dosyalar
+    <i class="fas fa-chevron-down detail-toggle-chevron"></i>
+</button>
+
+<div id="importDetailSection" style="display: none;">
+    <div class="row g-4 mb-4">
+
+        <!-- Import Çalıştır -->
+        <div class="col-lg-5">
+            <div class="kasa-card">
+                <div class="kasa-card-header">
+                    <h6><i class="fas fa-play-circle text-kasa-primary me-2"></i>Import Çalıştır</h6>
+                </div>
+                <div class="kasa-card-body">
+                    <form id="importForm" asp-action="RunImport" method="post">
+                        <div class="kasa-form-group">
+                            <label class="kasa-form-label">
+                                <i class="fas fa-file me-1"></i> Dosya Seç
+                            </label>
+                            <select class="kasa-form-input" name="selectedFileName" id="selectedFileName">
+                                <option value="">-- Dosya seçin --</option>
+                                @foreach (var f in Model.UploadedFiles)
+                                {
+                                    <option value="@f" selected="@(Model.SelectedFileName == f)">@f</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="kasa-form-group">
+                            <label class="kasa-form-label">
+                                <i class="fas fa-tag me-1"></i> Rapor Tipi
+                            </label>
+                            <select class="kasa-form-input" name="kind">
+                                @foreach (ImportFileKind k in Enum.GetValues(typeof(ImportFileKind)))
+                                {
+                                    <option value="@k" selected="@(Model.SelectedKind == k)">@k</option>
+                                }
+                            </select>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                                Boş bırakırsanız dosya adına göre otomatik tahmin eder
+                            </div>
+                        </div>
+
+                        <button type="button" id="importBtn" class="kasa-btn kasa-btn-success" style="width:100%"
+                                onclick="doRunImport(this)">
+                            <i class="fas fa-play"></i> Import Çalıştır
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Yüklenen Dosyalar -->
+        <div class="col-lg-7">
+            <div class="kasa-card">
+                <div class="kasa-card-header">
+                    <h6><i class="fas fa-folder text-kasa-primary me-2"></i>Yüklenen Dosyalar</h6>
+                    <span class="kasa-badge kasa-badge-secondary">@Model.UploadedFiles.Count</span>
+                </div>
+                <div class="kasa-card-body" style="padding:0;">
+                    @if (Model.UploadedFiles.Count == 0)
+                    {
+                        <div class="kasa-file-empty">
+                            <i class="fas fa-inbox"></i>
+                            <span>Henüz dosya yüklenmedi</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <ul class="kasa-file-list">
+                            @foreach (var f in Model.UploadedFiles)
+                            {
+                                var ext = System.IO.Path.GetExtension(f).ToLower();
+                                <li class="kasa-file-item">
+                                    <div class="kasa-file-icon">
+                                        <i class="fas fa-file-excel"></i>
+                                    </div>
+                                    <div class="kasa-file-info">
+                                        <div class="kasa-file-name">@f</div>
+                                        <div class="kasa-file-meta">
+                                            <span class="kasa-badge kasa-badge-success" style="font-size:10px; padding:1px 6px;">@ext</span>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="kasa-btn kasa-btn-sm kasa-btn-secondary"
+                                            onclick="document.getElementById('selectedFileName').value='@f'; KasaToast.info('\'@f\' import için seçildi')">
+                                        <i class="fas fa-check-circle"></i> Seç
+                                    </button>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            initDropzone('uploadDropzone', 'fileInput', 'uploadForm');
+        });
+
+        // ── Detail toggle ──
+        function toggleDetailSection(btn, sectionId) {
+            var section = document.getElementById(sectionId);
+            if (!section) return;
+            var isExpanded = btn.getAttribute('aria-expanded') === 'true';
+            if (isExpanded) {
+                section.style.display = 'none';
+                btn.setAttribute('aria-expanded', 'false');
+            } else {
+                section.style.display = 'block';
+                btn.setAttribute('aria-expanded', 'true');
+            }
+        }
+
+        function doAjaxUpload(btn) {
+            var fileInput = document.getElementById('fileInput');
+            if (!fileInput.files || fileInput.files.length === 0) {
+                KasaToast.warning('Lütfen önce dosya seçin.');
+                return;
+            }
+
+            setLoadingState(btn, true);
+
+            var form = document.getElementById('uploadForm');
+            var formData = new FormData(form);
+
+            // AntiForgery token
+            var tokenInput = form.querySelector('input[name="__RequestVerificationToken"]');
+            var headers = {};
+            if (tokenInput) {
+                headers['RequestVerificationToken'] = tokenInput.value;
+            }
+
+            fetch('@Url.Action("Upload", "Import")', {
+                method: 'POST',
+                body: formData,
+                headers: headers
+            })
+            .then(function(response) {
+                if (response.redirected) {
+                    window.location.href = response.url;
+                    return;
+                }
+                if (!response.ok) {
+                    throw new Error('Sunucu hatası: ' + response.status + ' ' + response.statusText);
+                }
+                window.location.reload();
+            })
+            .catch(function(err) {
+                setLoadingState(btn, false);
+                KasaToast.error('Yükleme hatası: ' + err.message);
+                console.error('Upload error:', err);
+            });
+        }
+
+        function doRunImport(btn) {
+            var selectedFile = document.getElementById('selectedFileName').value;
+            if (!selectedFile) {
+                KasaToast.warning('Lütfen bir dosya seçin.');
+                return;
+            }
+
+            setLoadingState(btn, true);
+
+            var form = document.getElementById('importForm');
+            var formData = new FormData(form);
+
+            var tokenInput = form.querySelector('input[name="__RequestVerificationToken"]');
+            var headers = {};
+            if (tokenInput) {
+                headers['RequestVerificationToken'] = tokenInput.value;
+            }
+
+            fetch(form.action, {
+                method: 'POST',
+                body: formData,
+                headers: headers
+            })
+            .then(function(response) {
+                if (response.redirected) {
+                    // Hata durumunda Index'e redirect eder
+                    window.location.href = response.url;
+                    return;
+                }
+                if (!response.ok) {
+                    throw new Error('Sunucu hatası: ' + response.status + ' ' + response.statusText);
+                }
+                // Başarılı — Result sayfası HTML olarak döner
+                return response.text();
+            })
+            .then(function(html) {
+                if (html) {
+                    // Tüm sayfayı Result HTML ile değiştir
+                    document.open();
+                    document.write(html);
+                    document.close();
+                }
+            })
+            .catch(function(err) {
+                setLoadingState(btn, false);
+                KasaToast.error('Import hatası: ' + err.message);
+                console.error('Import error:', err);
+            });
+        }
+    </script>
+}

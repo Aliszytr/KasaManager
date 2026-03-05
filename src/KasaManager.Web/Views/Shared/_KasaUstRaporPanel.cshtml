@@ -1,0 +1,376 @@
+@model KasaManager.Web.Models.KasaUstRaporPanelViewModel
+@{
+    var panelId = $"kasaUstRaporPanel-{Model.Context}";
+    var hasTable = Model.Table?.Rows?.Count > 0;
+    var rowCount = Model.Table?.Rows?.Count ?? 0;
+    var headers = Model.Table?.ColumnMetas ?? new List<KasaManager.Domain.Reports.ImportedColumnMeta>();
+}
+
+@* ====== KasaÜstRapor Collapsible Panel ====== *@
+<div id="@panelId"
+     class="kasa-ust-rapor-panel @(Model.StartOpen ? "" : "collapsed")"
+     data-context="@Model.Context"
+     data-start-open="@Model.StartOpen.ToString().ToLower()">
+
+    @* ── Header (clickable) ── *@
+    <div class="kasa-ust-rapor-header" onclick="toggleKasaPanel('@panelId')">
+        <div class="kasa-ust-rapor-header-left">
+            <div class="kasa-ust-rapor-icon">
+                <i class="fas fa-table"></i>
+            </div>
+            <div>
+                <div class="kasa-ust-rapor-title">KasaÜstRapor Özet</div>
+                <div class="kasa-ust-rapor-subtitle">
+                    @if (!string.IsNullOrEmpty(Model.KasaUstRaporFileName))
+                    {
+                        <span>@Model.KasaUstRaporFileName</span>
+                    }
+                    else
+                    {
+                        <span>Dosya bulunamadı</span>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="kasa-ust-rapor-header-right">
+            @if (hasTable)
+            {
+                <span class="kasa-ust-rapor-badge">
+                    <i class="fas fa-users"></i>
+                    @rowCount satır
+                </span>
+            }
+            @if (Model.HasExistingSnapshot)
+            {
+                <span class="kasa-ust-rapor-badge" style="background: rgba(16,185,129,0.1); color: var(--kasa-success);">
+                    <i class="fas fa-check-circle"></i>
+                    Snapshot mevcut
+                </span>
+            }
+            <button class="kasa-panel-pin @(isPinned() ? "pinned" : "")"
+                    onclick="event.stopPropagation(); togglePinKasaPanel('@panelId');"
+                    title="Paneli sabitle / serbest bırak">
+                <i class="fas fa-thumbtack"></i>
+            </button>
+            <i class="fas fa-chevron-down kasa-panel-collapse-icon"></i>
+        </div>
+    </div>
+
+    @* ── Body ── *@
+    <div class="kasa-ust-rapor-body">
+
+        @* -- Date Info Strip -- *@
+        @if (Model.DateEval != null)
+        {
+            <div class="kasa-ust-rapor-dateinfo">
+                @if (Model.DateEval.DbLastSnapshotDate.HasValue)
+                {
+                    <div class="kasa-ust-rapor-dateinfo-item">
+                        <span class="label">Son Snapshot</span>
+                        <span class="value">@Model.DateEval.DbLastSnapshotDate.Value.ToString("dd.MM.yyyy")</span>
+                    </div>
+                }
+                @if (Model.ProposedDate.HasValue)
+                {
+                    <div class="kasa-ust-rapor-dateinfo-item">
+                        <span class="label">Önerilen Tarih</span>
+                        <span class="value">@Model.ProposedDate.Value.ToString("dd.MM.yyyy")</span>
+                    </div>
+                }
+                @if (Model.DateEval.Warnings?.Count > 0)
+                {
+                    <div class="kasa-ust-rapor-dateinfo-item" style="color: var(--kasa-warning);">
+                        <span class="label">Uyarılar</span>
+                        <span class="value" style="font-size: 12px; font-family: inherit; color: var(--kasa-warning);">
+                            @Model.DateEval.Warnings.Count uyarı
+                        </span>
+                    </div>
+                }
+            </div>
+        }
+
+        @* -- Grid -- *@
+        @if (hasTable)
+        {
+            <div class="kasa-ust-rapor-grid">
+                <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                @if (Model.ShowSaveButton)
+                                {
+                                    <th style="width: 40px;">
+                                        <input type="checkbox" class="form-check-input"
+                                               id="@(panelId)-selectAll"
+                                               onchange="toggleAllRows('@panelId', this.checked)"
+                                               title="Tümünü seç" />
+                                    </th>
+                                }
+                                @foreach (var col in headers)
+                                {
+                                    <th>@col.CanonicalName</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (int i = 0; i < Model.Table!.Rows.Count; i++)
+                            {
+                                var row = Model.Table.Rows[i];
+                                var veznedarVal = Model.VeznedarColumn != null && row.ContainsKey(Model.VeznedarColumn)
+                                    ? row[Model.VeznedarColumn]?.ToString() ?? "" : "";
+                                var isDefault = Model.DefaultVergiKasaVeznedarlar
+                                    .Any(d => string.Equals(d, veznedarVal, StringComparison.OrdinalIgnoreCase));
+                                <tr class="@(isDefault ? "row-selected" : "")"
+                                    id="@(panelId)-row-@i">
+                                    @if (Model.ShowSaveButton)
+                                    {
+                                        <td>
+                                            <input type="checkbox"
+                                                   class="form-check-input row-check"
+                                                   name="selectedRows"
+                                                   value="@i"
+                                                   @(isDefault ? "checked" : "")
+                                                   data-panel="@panelId"
+                                                   onchange="updateRowHighlight('@panelId', @i, this.checked)" />
+                                        </td>
+                                    }
+                                    @foreach (var col in headers)
+                                    {
+                                        var cellVal = row.ContainsKey(col.CanonicalName) ? row[col.CanonicalName]?.ToString() ?? "" : "";
+                                        <td>
+                                            @if (col.CanonicalName == Model.BakiyeColumn)
+                                            {
+                                                <span class="money-value">@cellVal</span>
+                                            }
+                                            else
+                                            {
+                                                @cellVal
+                                            }
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div style="padding: 24px 20px; text-align: center; color: var(--text-muted);">
+                <i class="fas fa-info-circle" style="font-size: 24px; margin-bottom: 8px;"></i>
+                <p style="margin: 0; font-size: 13px;">KasaÜstRapor dosyası bulunamadı veya okunamadı.</p>
+            </div>
+        }
+
+        @* -- Save Footer (only on Import page context) -- *@
+        @if (Model.ShowSaveButton && hasTable)
+        {
+            <form method="post" asp-controller="KasaUstRapor" asp-action="Save" id="@(panelId)-saveForm">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="kasaUstRaporFileName" value="@Model.KasaUstRaporFileName" />
+                @if (Model.DateEval?.HasAnyDate == false)
+                {
+                    @* ── Tarih Tespit Edilemedi: Kullanıcıdan iste ── *@
+                    var suggestedDate = Model.DateEval.DbExpectedNextDate ?? DateOnly.FromDateTime(DateTime.Today);
+                    <div style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25);
+                                border-radius: 8px; padding: 12px 16px; margin-bottom: 12px;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <i class="fas fa-exclamation-triangle" style="color: var(--kasa-warning); font-size: 16px;"></i>
+                            <span style="font-weight: 700; font-size: 13px; color: var(--kasa-warning);">
+                                Raporlarda tarih belirlenemedi!
+                            </span>
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
+                            Hiçbir rapor dosyasında tarih tespit edilemedi (hafta sonu / tatil günü olabilir).
+                            Lütfen rapor tarihini onaylayın veya değiştirin.
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <label style="font-size: 12px; font-weight: 600; color: var(--text-primary); white-space: nowrap;">
+                                <i class="fas fa-calendar-day me-1"></i>Rapor Tarihi:
+                            </label>
+                            <input type="date" name="finalDate" class="form-control"
+                                   value="@suggestedDate.ToString("yyyy-MM-dd")"
+                                   style="max-width: 180px; font-size: 13px;" />
+                            <span style="font-size: 11px; color: var(--text-muted);">
+                                Öneri: <strong>@suggestedDate.ToString("dd.MM.yyyy")</strong>
+                                @if (Model.DateEval.DbLastSnapshotDate.HasValue)
+                                {
+                                    <text> (Son snapshot: @Model.DateEval.DbLastSnapshotDate.Value.ToString("dd.MM.yyyy"))</text>
+                                }
+                            </span>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <input type="hidden" name="finalDate" value="@(Model.FinalDate?.ToString("yyyy-MM-dd") ?? DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd"))" />
+                }
+                <input type="hidden" name="veznedarColumn" value="@Model.VeznedarColumn" />
+                <input type="hidden" name="bakiyeColumn" value="@Model.BakiyeColumn" />
+                <div id="@(panelId)-selectedRowsContainer"></div>
+
+                <div class="kasa-ust-rapor-save">
+                    <div class="save-approval">
+                        <input type="checkbox" class="form-check-input" name="approve"
+                               id="@(panelId)-approve" value="true" />
+                        <label for="@(panelId)-approve">
+                            Verileri kontrol ettim, snapshot kaydedilsin
+                        </label>
+                    </div>
+                    <button type="submit" class="kasa-panel-save-btn" id="@(panelId)-saveBtn" disabled
+                            onclick="return prepareSnapshotSave('@panelId');">
+                        <i class="fas fa-save"></i>
+                        Snapshot Kaydet
+                    </button>
+                </div>
+            </form>
+        }
+    </div>
+</div>
+
+@* ====== Inline Script ====== *@
+<script>
+    // --- Collapse/Expand ---
+    function toggleKasaPanel(panelId) {
+        const panel = document.getElementById(panelId);
+        if (!panel) return;
+        panel.classList.toggle('collapsed');
+    }
+
+    // --- Pin/Unpin ---
+    function isPinnedFromStorage(panelId) {
+        return localStorage.getItem('kasaUstRaporPinned_' + panelId) === 'true';
+    }
+
+    function togglePinKasaPanel(panelId) {
+        const panel = document.getElementById(panelId);
+        if (!panel) return;
+        const pinBtn = panel.querySelector('.kasa-panel-pin');
+        const isPinned = pinBtn.classList.contains('pinned');
+
+        if (isPinned) {
+            pinBtn.classList.remove('pinned');
+            localStorage.setItem('kasaUstRaporPinned_' + panelId, 'false');
+        } else {
+            pinBtn.classList.add('pinned');
+            localStorage.setItem('kasaUstRaporPinned_' + panelId, 'true');
+            // If pinned, auto-expand
+            panel.classList.remove('collapsed');
+        }
+    }
+
+    // --- Row selection ---
+    function toggleAllRows(panelId, checked) {
+        const panel = document.getElementById(panelId);
+        if (!panel) return;
+        panel.querySelectorAll('.row-check').forEach((cb, i) => {
+            cb.checked = checked;
+            updateRowHighlight(panelId, i, checked);
+        });
+    }
+
+    function updateRowHighlight(panelId, rowIndex, isSelected) {
+        const row = document.getElementById(panelId + '-row-' + rowIndex);
+        if (row) {
+            if (isSelected) row.classList.add('row-selected');
+            else row.classList.remove('row-selected');
+        }
+        // Enable/disable save button based on approval + selection
+        updateSaveButtonState(panelId);
+    }
+
+    function updateSaveButtonState(panelId) {
+        const panel = document.getElementById(panelId);
+        if (!panel) return;
+        const approveBox = document.getElementById(panelId + '-approve');
+        const saveBtn = document.getElementById(panelId + '-saveBtn');
+        if (!approveBox || !saveBtn) return;
+
+        const hasCheckedRows = panel.querySelectorAll('.row-check:checked').length > 0;
+        saveBtn.disabled = !(approveBox.checked && hasCheckedRows);
+    }
+
+    // --- Prepare form submission ---
+    function prepareSnapshotSave(panelId) {
+        const panel = document.getElementById(panelId);
+        const container = document.getElementById(panelId + '-selectedRowsContainer');
+        if (!panel || !container) return false;
+
+        // Clear old hidden inputs
+        container.innerHTML = '';
+
+        // Add selected row indices as hidden inputs
+        panel.querySelectorAll('.row-check:checked').forEach((cb) => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'selectedRows';
+            input.value = cb.value;
+            container.appendChild(input);
+        });
+
+        return true;
+    }
+
+    // --- Init on page load ---
+    document.addEventListener('DOMContentLoaded', function () {
+        const panelId = '@panelId';
+        const panel = document.getElementById(panelId);
+        if (!panel) return;
+
+        const context = panel.dataset.context;
+        const startOpen = panel.dataset.startOpen === 'true';
+        const isPinned = isPinnedFromStorage(panelId);
+
+        // Set pin state from localStorage
+        const pinBtn = panel.querySelector('.kasa-panel-pin');
+        if (pinBtn && isPinned) {
+            pinBtn.classList.add('pinned');
+        }
+
+        // Determine initial open/close state
+        if (context === 'import') {
+            // Import: always start open
+            panel.classList.remove('collapsed');
+        } else {
+            // KasaPreview: open only if pinned
+            if (isPinned) {
+                panel.classList.remove('collapsed');
+            } else if (!startOpen) {
+                panel.classList.add('collapsed');
+            }
+        }
+
+        // Wire up approve checkbox
+        const approveBox = document.getElementById(panelId + '-approve');
+        if (approveBox) {
+            approveBox.addEventListener('change', function () {
+                updateSaveButtonState(panelId);
+            });
+        }
+
+        // Auto-select all rows if none are pre-checked (e.g., weekend/holiday — no default matches)
+        const allRowChecks = panel.querySelectorAll('.row-check');
+        const anyPreChecked = panel.querySelectorAll('.row-check:checked').length > 0;
+        if (allRowChecks.length > 0 && !anyPreChecked) {
+            allRowChecks.forEach((cb, i) => {
+                cb.checked = true;
+                updateRowHighlight(panelId, i, true);
+            });
+            // Also check the "select all" header checkbox
+            const selectAll = document.getElementById(panelId + '-selectAll');
+            if (selectAll) selectAll.checked = true;
+        }
+
+        // Initial button state
+        updateSaveButtonState(panelId);
+    });
+</script>
+
+@functions {
+    bool isPinned()
+    {
+        // Server-side default: not pinned (actual state handled by JS/localStorage)
+        return false;
+    }
+}

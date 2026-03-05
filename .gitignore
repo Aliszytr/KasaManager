@@ -1,0 +1,50 @@
+# ============================================
+# KasaManager .gitignore
+# ============================================
+
+# Build outputs
+bin/
+obj/
+publish/
+out/
+
+# User / IDE
+.vs/
+*.user
+*.suo
+*.csproj.user
+.idea/
+*.swp
+*~
+
+# NuGet
+packages/
+*.nupkg
+
+# Logs
+logs/
+*.log
+
+# Secrets — gerçek değerler Development dosyasında
+appsettings.Development.json
+secrets.json
+
+# Upload / Cache / Temp
+wwwroot/Data/Raporlar/
+cache/
+temp/
+/tmp/
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Test results
+TestResults/
+coverage/
+*.trx
+
+# Rider / JetBrains
+.idea/
+*.sln.iml

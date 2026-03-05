@@ -1,0 +1,991 @@
+@model KasaManager.Web.Models.FormulaDesignerViewModel
+@{
+    ViewData["Title"] = "Formül Designer";
+}
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- HEADER                                                             -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="kasa-page-title d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+    <div class="d-flex align-items-center gap-3">
+        <h2 class="mb-0">
+            <i class="fas fa-drafting-compass text-kasa-primary me-2"></i>Formül Designer
+        </h2>
+        <span class="kasa-badge kasa-badge-info">
+            <i class="fas fa-flask me-1"></i>R16 Engine
+        </span>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+        <button type="button" class="kasa-btn kasa-btn-sm" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1);"
+                onclick="toggleHiddenRows()" id="btnToggleHidden" title="Gizli satırları göster/gizle">
+            <i class="fas fa-eye-slash me-1"></i><span id="hiddenToggleText">Gizlileri Göster</span>
+        </button>
+    </div>
+</div>
+
+<!-- Errors & Infos -->
+@if (Model.Errors.Count > 0)
+{
+    <div class="kasa-alert kasa-alert-danger mb-3">
+        <i class="fas fa-exclamation-circle me-2"></i>
+        <div>
+            @foreach (var e in Model.Errors) { <div>@e</div> }
+        </div>
+    </div>
+}
+@if (Model.Infos.Count > 0)
+{
+    <div class="kasa-alert kasa-alert-success mb-3">
+        <i class="fas fa-check-circle me-2"></i>
+        <div>
+            @foreach (var info in Model.Infos) { <div>@info</div> }
+        </div>
+    </div>
+}
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- BÖLÜM 1: ŞABLON YÖNETİMİ + CRUD TOOLBAR                         -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="kasa-card mb-4">
+    <div class="kasa-card-header d-flex align-items-center justify-content-between">
+        <h6 class="mb-0"><i class="fas fa-layer-group me-2"></i>Şablon Yönetimi</h6>
+        <span class="kasa-badge kasa-badge-secondary">@Model.Templates.Count şablon</span>
+    </div>
+    <div class="kasa-card-body">
+        <form asp-controller="FormulaDesigner" asp-action="LoadTemplate" method="post" id="templateForm">
+            @Html.AntiForgeryToken()
+            <div class="row g-3 align-items-end">
+                <div class="col-md-5">
+                    <label class="kasa-form-label">Kayıtlı Şablonlar</label>
+                    <select class="kasa-form-input" asp-for="SelectedTemplateId" id="templateSelect">
+                        <option value="">— Şablon Seçin —</option>
+                        @foreach (var t in Model.Templates)
+                        {
+                            var scopeIcon = t.ScopeType.ToLowerInvariant() switch {
+                                "aksam" => "🌙",
+                                "sabah" => "☀️",
+                                "genel" => "📊",
+                                "ortak" => "🔗",
+                                _ => "📋"
+                            };
+                            <option value="@t.Id"
+                                    selected="@(t.Id == Model.SelectedTemplateId ? "selected" : null)">
+                                @scopeIcon @t.Name @(t.IsActive ? "★ AKTİF" : "") (@t.ScopeType)
+                            </option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="kasa-form-label">Şablon Adı</label>
+                    <input type="text" class="kasa-form-input" asp-for="TemplateName"
+                           placeholder="Şablon adı..." />
+                </div>
+                <div class="col-md-2">
+                    <label class="kasa-form-label">Kapsam</label>
+                    <select class="kasa-form-input" asp-for="ScopeType">
+                        <option value="Aksam">Akşam</option>
+                        <option value="Sabah">Sabah</option>
+                        <option value="Genel">Genel</option>
+                        <option value="Ortak">Ortak</option>
+                        <option value="Custom">Custom</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="kasa-form-label">Test Tarihi</label>
+                    <input type="date" class="kasa-form-input" asp-for="TestDate"
+                           value="@(Model.TestDate?.ToString("yyyy-MM-dd") ?? DateTime.Today.ToString("yyyy-MM-dd"))" />
+                </div>
+            </div>
+
+            <!-- CRUD Toolbar -->
+            <div class="fd-toolbar mt-3">
+                <div class="fd-toolbar-group">
+                    <button type="submit" class="kasa-btn kasa-btn-primary kasa-btn-sm fd-tool-btn"
+                            formaction="@Url.Action("LoadTemplate","FormulaDesigner")"
+                            title="Seçili şablonu yükle">
+                        <i class="fas fa-download me-1"></i>Yükle
+                    </button>
+                    <button type="submit" class="kasa-btn kasa-btn-success kasa-btn-sm fd-tool-btn"
+                            formaction="@Url.Action("SaveTemplate","FormulaDesigner")"
+                            title="Yeni şablon olarak kaydet">
+                        <i class="fas fa-plus-circle me-1"></i>Yeni Kaydet
+                    </button>
+                    <button type="submit" class="kasa-btn kasa-btn-sm fd-tool-btn"
+                            formaction="@Url.Action("UpdateTemplate","FormulaDesigner")"
+                            style="background: var(--kasa-success); color: #fff;"
+                            title="Mevcut şablonu güncelle">
+                        <i class="fas fa-sync-alt me-1"></i>Güncelle
+                    </button>
+                    <button type="submit" class="kasa-btn kasa-btn-sm fd-tool-btn"
+                            formaction="@Url.Action("CopyTemplate","FormulaDesigner")"
+                            style="background: var(--kasa-info); color: #fff;"
+                            title="Seçili şablonu kopyala">
+                        <i class="fas fa-copy me-1"></i>Kopyala
+                    </button>
+                </div>
+                <div class="fd-toolbar-divider"></div>
+                <div class="fd-toolbar-group">
+                    <button type="submit" class="kasa-btn kasa-btn-sm fd-tool-btn"
+                            formaction="@Url.Action("ToggleActive","FormulaDesigner")"
+                            style="background: var(--kasa-warning); color: #111;"
+                            title="Şablonu scope içinde aktif/pasif yap">
+                        <i class="fas fa-star me-1"></i>Aktif/Pasif
+                    </button>
+                    <button type="submit" class="kasa-btn kasa-btn-danger kasa-btn-sm fd-tool-btn"
+                            formaction="@Url.Action("DeleteTemplate","FormulaDesigner")"
+                            onclick="return confirm('Bu şablonu silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.')"
+                            title="Şablonu kalıcı olarak sil">
+                        <i class="fas fa-trash me-1"></i>Sil
+                    </button>
+                </div>
+                <div class="fd-toolbar-spacer"></div>
+                <button type="button" class="kasa-btn kasa-btn-sm fd-tool-btn fd-inputs-toggle"
+                        onclick="toggleUserInputsPanel()" id="btnToggleInputs"
+                        title="Kullanıcı girişlerini aç/kapat">
+                    <i class="fas fa-pencil-alt me-1"></i>Kullanıcı Girişleri
+                    <i class="fas fa-chevron-down ms-1 fd-inputs-chevron" id="inputsChevron"></i>
+                </button>
+                <button type="submit" class="kasa-btn kasa-btn-primary fd-tool-btn fd-run-btn"
+                        formaction="@Url.Action("TestRun","FormulaDesigner")"
+                        title="FormulaEngine ile formülleri çalıştır">
+                    <i class="fas fa-play me-1"></i>Test Et
+                </button>
+            </div>
+
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <!-- KULLANICI GİRİŞLERİ (Collapsible Panel)                       -->
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <div class="fd-user-inputs-panel" id="userInputsPanel" style="display: @(Model.ShowUserInputs ? "block" : "none");">
+                <div class="kasa-card mt-3">
+                    <div class="kasa-card-header fd-inputs-header">
+                        <h6 class="mb-0"><i class="fas fa-pencil-alt me-2" style="color: var(--kasa-warning);"></i>Kullanıcı Girişleri <span class="text-muted" style="font-size:11px;">— Formüllerde kullanılan manuel değerler</span></h6>
+                    </div>
+                    <div class="kasa-card-body">
+                        <div class="row g-3">
+                            <!-- Grup 1: Temel Para Değerleri -->
+                            <div class="col-12">
+                                <div class="fd-input-group-label"><i class="fas fa-coins me-1"></i>Temel Para Girişleri</div>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="kasa-form-label">Bozuk Para</label>
+                                <input type="number" step="0.01" class="kasa-form-input kasa-form-input-sm fd-user-input"
+                                       asp-for="BozukPara" placeholder="0.00" />
+                                <div class="fd-input-hint">Pool Key: bozuk_para</div>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="kasa-form-label">Nakit Para</label>
+                                <input type="number" step="0.01" class="kasa-form-input kasa-form-input-sm fd-user-input"
+                                       asp-for="NakitPara" placeholder="0.00" />
+                                <div class="fd-input-hint">Pool Key: nakit_para</div>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="kasa-form-label">Vergiden Gelen</label>
+                                <input type="number" step="0.01" class="kasa-form-input kasa-form-input-sm fd-user-input"
+                                       asp-for="VergidenGelen" placeholder="0.00" />
+                                <div class="fd-input-hint">Pool Key: vergiden_gelen</div>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="kasa-form-label">Gelmeyen D.</label>
+                                <input type="number" step="0.01" class="kasa-form-input kasa-form-input-sm fd-user-input"
+                                       asp-for="GelmeyenD" placeholder="0.00" />
+                                <div class="fd-input-hint">Pool Key: gelmeyen_d</div>
+                            </div>
+
+                            <!-- Grup 2: Kasa / Tahsilat / Harç -->
+                            <div class="col-12 mt-2">
+                                <div class="fd-input-group-label"><i class="fas fa-university me-1"></i>Kasa & Tahsilat Girişleri</div>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="kasa-form-label">Kasada Kalacak Hedef</label>
+                                <input type="number" step="0.01" class="kasa-form-input kasa-form-input-sm fd-user-input"
+                                       asp-for="KasadaKalacakHedef" placeholder="0.00" />
+                                <div class="fd-input-hint">Pool Key: kasada_kalacak_hedef</div>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="kasa-form-label">Kayden Tahsilat</label>
+                                <input type="number" step="0.01" class="kasa-form-input kasa-form-input-sm fd-user-input"
+                                       asp-for="KaydenTahsilat" placeholder="0.00" />
+                                <div class="fd-input-hint">Pool Key: kayden_tahsilat</div>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="kasa-form-label">Kayden Harç</label>
+                                <input type="number" step="0.01" class="kasa-form-input kasa-form-input-sm fd-user-input"
+                                       asp-for="KaydenHarc" placeholder="0.00" />
+                                <div class="fd-input-hint">Pool Key: kayden_harc</div>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="kasa-form-label">Bankadan Çekilen</label>
+                                <input type="number" step="0.01" class="kasa-form-input kasa-form-input-sm fd-user-input"
+                                       asp-for="BankadanCekilen" placeholder="0.00" />
+                                <div class="fd-input-hint">Pool Key: bankadan_cekilen</div>
+                            </div>
+
+                            <!-- Grup 3: Banka Düzeltmeleri -->
+                            <div class="col-12 mt-2">
+                                <div class="fd-input-group-label"><i class="fas fa-exchange-alt me-1"></i>Banka Düzeltmeleri</div>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="kasa-form-label">Çeş. Nedenlerle Bank. Çıkamayan Tah.</label>
+                                <input type="number" step="0.01" class="kasa-form-input kasa-form-input-sm fd-user-input"
+                                       asp-for="CesitliNedenlerleBankadanCikamayanTahsilat" placeholder="0.00" />
+                                <div class="fd-input-hint">Pool Key: cesitli_nedenlerle_bankadan_cikamayan_tahsilat</div>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="kasa-form-label">Bankaya Gönderilmiş Değer</label>
+                                <input type="number" step="0.01" class="kasa-form-input kasa-form-input-sm fd-user-input"
+                                       asp-for="BankayaGonderilmisDeger" placeholder="0.00" />
+                                <div class="fd-input-hint">Pool Key: bankaya_gonderilmis_deger</div>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="kasa-form-label">Yatırılacak Harcı Değiştir</label>
+                                <input type="number" step="0.01" class="kasa-form-input kasa-form-input-sm fd-user-input"
+                                       asp-for="BankayaYatirilacakHarciDegistir" placeholder="0.00" />
+                                <div class="fd-input-hint">Pool Key: bankaya_yatirilacak_harci_degistir</div>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="kasa-form-label">Yatırılacak Tahsilatı Değiştir</label>
+                                <input type="number" step="0.01" class="kasa-form-input kasa-form-input-sm fd-user-input"
+                                       asp-for="BankayaYatirilacakTahsilatiDegistir" placeholder="0.00" />
+                                <div class="fd-input-hint">Pool Key: bankaya_yatirilacak_tahsilati_degistir</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══════════════════════════════════════════════════════════════════ -->
+            <!-- BÖLÜM 2: FORMÜL TABLOSU + POOL ÖNİZLEME                          -->
+            <!-- ═══════════════════════════════════════════════════════════════════ -->
+            <div class="row g-4 mt-3">
+                <!-- SOL: Formül Satırları -->
+                <div class="col-lg-7">
+                    <div class="kasa-card">
+                        <div class="kasa-card-header d-flex align-items-center justify-content-between">
+                            <h6 class="mb-0"><i class="fas fa-code me-2"></i>Formül Satırları</h6>
+                            <div class="d-flex gap-2 align-items-center">
+                                <span class="kasa-badge kasa-badge-info">@(Model.Rows?.Count ?? 0) satır</span>
+                                <button type="button" class="kasa-btn kasa-btn-success kasa-btn-sm" onclick="addRow()"
+                                        title="Yeni satır ekle" style="width:30px; height:30px; padding:0;">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="kasa-card-body p-0" style="max-height: 600px; overflow-y: auto;">
+                            <table class="kasa-table" id="formulaTable">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 4%">#</th>
+                                        <th style="width: 24%">Hedef Alan</th>
+                                        <th style="width: 10%">Mod</th>
+                                        <th>İfade / Formül</th>
+                                        @if (Model.HasTestResults)
+                                        {
+                                            <th style="width: 18%; text-align: right;">Sonuç</th>
+                                        }
+                                        <th style="width: 5%; text-align:center;" title="Gizli">👁</th>
+                                        <th style="width: 5%"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="formulaTableBody">
+                                    @if (Model.Rows?.Count > 0)
+                                    {
+                                        for (var i = 0; i < Model.Rows.Count; i++)
+                                        {
+                                            var row = Model.Rows[i];
+                                            var isFormula = row.Mode == "Formula";
+                                            var testResult = Model.HasTestResults && Model.TestResults.ContainsKey(row.TargetKey)
+                                                ? Model.TestResults[row.TargetKey]
+                                                : (decimal?)null;
+                                            var explainItem = Model.TestExplain?.FirstOrDefault(e => e.TargetKey == row.TargetKey);
+                                            var hasResult = testResult.HasValue;
+                                            var isZero = hasResult && testResult!.Value == 0m;
+                                            var resultStr = hasResult
+                                                ? testResult!.Value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR"))
+                                                : "";
+                                            <tr class="fd-row @(isFormula ? "fd-row-formula" : "fd-row-map") @(row.IsHidden ? "fd-row-hidden" : "") @(hasResult && isFormula && !isZero ? "fd-row-highlight" : "")"
+                                                data-index="@i">
+                                                <td class="text-muted" style="font-size: 11px;">@(i+1)</td>
+                                                <td>
+                                                    <input type="hidden" name="Rows[@i].RowId" value="@row.RowId" />
+                                                    <input type="text" class="kasa-form-input kasa-form-input-sm fd-mono"
+                                                           name="Rows[@i].TargetKey" value="@row.TargetKey"
+                                                           placeholder="alan_adi" />
+                                                </td>
+                                                <td>
+                                                    <select class="kasa-form-input kasa-form-input-sm" name="Rows[@i].Mode"
+                                                            onchange="toggleRowMode(this, @i)"
+                                                            style="font-size: 12px;">
+                                                        <option value="Map" selected="@(!isFormula ? "selected" : null)">Map</option>
+                                                        <option value="Formula" selected="@(isFormula ? "selected" : null)">Formula</option>
+                                                    </select>
+                                                </td>
+                                                <td>
+                                                    @if (isFormula)
+                                                    {
+                                                        <input type="text" class="kasa-form-input kasa-form-input-sm fd-mono fd-expr-formula"
+                                                               name="Rows[@i].Expression" value="@row.Expression"
+                                                               placeholder="formül ifadesi..." />
+                                                        <input type="hidden" name="Rows[@i].SourceKey" value="" />
+                                                    }
+                                                    else
+                                                    {
+                                                        <input type="text" class="kasa-form-input kasa-form-input-sm fd-mono fd-expr-map"
+                                                               name="Rows[@i].SourceKey" value="@row.SourceKey"
+                                                               placeholder="pool key (boş = hedef alan)" />
+                                                        <input type="hidden" name="Rows[@i].Expression" value="" />
+                                                    }
+                                                </td>
+                                                @if (Model.HasTestResults)
+                                                {
+                                                    <td class="fd-result-cell @(hasResult && !isZero ? "fd-result-active" : "") @(isFormula && hasResult && !isZero ? "fd-result-formula" : "")"
+                                                        style="text-align: right;">
+                                                        @if (hasResult)
+                                                        {
+                                                            <span class="fd-result-value @(isZero ? "fd-result-zero" : "")">
+                                                                @resultStr
+                                                            </span>
+                                                            <span class="fd-result-currency">₺</span>
+                                                        }
+                                                    </td>
+                                                }
+                                                <td class="text-center">
+                                                    <input type="checkbox" name="Rows[@i].IsHidden" value="true"
+                                                           @(row.IsHidden ? "checked" : "")
+                                                           class="fd-hidden-check"
+                                                           onchange="updateHiddenVisual(this)" />
+                                                </td>
+                                                <td class="text-center">
+                                                    <button type="button" class="kasa-btn kasa-btn-danger kasa-btn-sm fd-remove-btn"
+                                                            onclick="removeRow(this)">
+                                                        <i class="fas fa-times"></i>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <tr id="emptyRow">
+                                            <td colspan="@(Model.HasTestResults ? 7 : 6)" class="text-center text-muted" style="padding: 40px;">
+                                                <i class="fas fa-inbox" style="font-size: 32px; opacity: 0.3;"></i>
+                                                <div class="mt-2">Henüz formül satırı yok. Yukarıdan bir şablon yükleyin veya <strong>+</strong> ile ekleyin.</div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SAĞ: Pool Veri Önizleme -->
+                <div class="col-lg-5">
+                    <div class="kasa-card">
+                        <div class="kasa-card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+                            <h6 class="mb-0"><i class="fas fa-database me-2"></i>Pool Verileri (HAM)</h6>
+                            <span class="kasa-badge kasa-badge-secondary">@(Model.PoolEntries?.Count ?? 0) alan</span>
+                        </div>
+                        @if (Model.PoolEntries?.Count > 0)
+                        {
+                            <!-- Arama + Kaynak Filtresi -->
+                            <div class="fd-pool-filters">
+                                <input type="text" class="kasa-form-input kasa-form-input-sm" id="poolSearchInput"
+                                       placeholder="🔍 Ara (key veya kaynak)..." oninput="filterPool()" />
+                                <div class="fd-pool-tabs" id="poolSourceTabs">
+                                    <button type="button" class="fd-pool-tab fd-pool-tab-active" data-source="all" onclick="filterPoolBySource(this)">Tümü</button>
+                                    @{
+                                        var sources = Model.PoolEntries.Select(p => p.Source).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().OrderBy(s => s).ToList();
+                                        foreach (var src in sources)
+                                        {
+                                            <button type="button" class="fd-pool-tab" data-source="@src" onclick="filterPoolBySource(this)">@src</button>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        }
+                        <div class="kasa-card-body p-0" style="max-height: 550px; overflow-y: auto;">
+                            @if (Model.PoolEntries?.Count > 0)
+                            {
+                                <table class="kasa-table" id="poolTable">
+                                    <thead>
+                                        <tr>
+                                            <th>Key</th>
+                                            <th style="text-align:right">Değer</th>
+                                            <th style="width:80px">Kaynak</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="poolTableBody">
+                                        @foreach (var p in Model.PoolEntries.OrderBy(x => x.Key))
+                                        {
+                                            var isZeroVal = p.Value == "0" || p.Value == "0.00" || p.Value == "0,00";
+                                            var typeColor = p.Type switch {
+                                                "Raw" => "var(--kasa-info)",
+                                                "Derived" => "var(--kasa-warning)",
+                                                "Override" => "var(--kasa-primary)",
+                                                _ => "var(--text-muted)"
+                                            };
+                                            <tr class="fd-pool-row" data-source="@p.Source" data-key="@p.Key.ToLower()">
+                                                <td class="fd-pool-key" style="color: @typeColor;"
+                                                    onclick="insertPoolKey('@p.Key')" title="Tıklayarak formüle ekle">
+                                                    @p.Key
+                                                </td>
+                                                <td class="fd-pool-value @(isZeroVal ? "fd-pool-zero" : "")">
+                                                    @p.Value
+                                                </td>
+                                                <td class="fd-pool-source">@p.Source</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+                            else
+                            {
+                                <div class="text-center text-muted" style="padding: 40px;">
+                                    <i class="fas fa-database" style="font-size: 32px; opacity: 0.3;"></i>
+                                    <div class="mt-2">Şablon yüklendiğinde pool verileri burada görünecek.</div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══════════════════════════════════════════════════════════════════ -->
+            <!-- BÖLÜM 3: DETAYLI TEST SONUÇLARI (Collapsed by default)           -->
+            <!-- ═══════════════════════════════════════════════════════════════════ -->
+            @if (Model.HasTestResults && Model.TestExplain?.Count > 0)
+            {
+                <div class="row g-4 mt-2">
+                    <div class="col-12">
+                        <div class="kasa-card fd-results-card">
+                            <div class="kasa-card-header fd-results-header" onclick="toggleResultsPanel()" style="cursor:pointer;">
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <h6 class="mb-0" style="color: var(--kasa-success);">
+                                        <i class="fas fa-check-circle me-2"></i>FormulaEngine Detaylı Analiz
+                                    </h6>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="kasa-badge kasa-badge-success">
+                                            @Model.TestExplain.Count hesaplama
+                                        </span>
+                                        <i class="fas fa-chevron-down fd-results-chevron" id="resultsChevron"></i>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="kasa-card-body p-0 fd-results-body" id="resultsPanel" style="display:none; max-height: 500px; overflow-y: auto;">
+                                <table class="kasa-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 5%">#</th>
+                                            <th style="width: 25%">Hedef Alan</th>
+                                            <th style="width: 40%">Formül / İfade</th>
+                                            <th style="width: 20%; text-align: right;">Sonuç</th>
+                                            <th style="width: 10%; text-align: center;">Durum</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @{var idx = 0;}
+                                        @foreach (var exp in Model.TestExplain)
+                                        {
+                                            idx++;
+                                            var isFormulaResult = !string.IsNullOrWhiteSpace(exp.Expression) && exp.Expression != "(override)";
+                                            var resultStrDetailed = exp.Result.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR"));
+                                            var isZeroD = exp.Result == 0m;
+                                            <tr class="@(isFormulaResult && !isZeroD ? "fd-row-highlight" : "")">
+                                                <td class="text-muted" style="font-size: 11px;">@idx</td>
+                                                <td class="fd-mono" style="font-weight: 600;">
+                                                    @exp.TargetKey
+                                                </td>
+                                                <td>
+                                                    @if (exp.Expression == "(override)")
+                                                    {
+                                                        <span class="kasa-badge kasa-badge-warning" style="font-size: 10px;">
+                                                            <i class="fas fa-user-edit me-1"></i>override
+                                                        </span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <code class="fd-expr-code">@exp.Expression</code>
+                                                    }
+                                                </td>
+                                                <td class="fd-result-cell @(!isZeroD ? "fd-result-active" : "")" style="text-align: right;">
+                                                    <span class="fd-result-value @(isZeroD ? "fd-result-zero" : "")">@resultStrDetailed</span>
+                                                    <span class="fd-result-currency">₺</span>
+                                                </td>
+                                                <td class="text-center">
+                                                    @if (isZeroD) { <span style="opacity:0.3;">⚪</span> }
+                                                    else { <span style="color: var(--kasa-success);">✅</span> }
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    var rowCounter = @(Model.Rows?.Count ?? 0);
+    var hasTestResults = @(Model.HasTestResults ? "true" : "false");
+    var showHidden = false;
+    var lastFocusedExprInput = null;
+
+    // ── Track last focused expression/source input for pool key insert ──
+    document.addEventListener('focusin', function(e) {
+        if (e.target.matches('input[name*=".Expression"], input[name*=".SourceKey"]')) {
+            lastFocusedExprInput = e.target;
+        }
+    });
+
+    // ── Add Row ──
+    function addRow() {
+        var emptyRow = document.getElementById('emptyRow');
+        if (emptyRow) emptyRow.remove();
+
+        var tbody = document.getElementById('formulaTableBody');
+        var i = rowCounter++;
+        var tr = document.createElement('tr');
+        tr.className = 'fd-row fd-row-map';
+        tr.setAttribute('data-index', i);
+        var resultCol = hasTestResults ? '<td class="fd-result-cell" style="text-align:right;"></td>' : '';
+        tr.innerHTML = `
+            <td class="text-muted" style="font-size: 11px;">${i+1}</td>
+            <td>
+                <input type="hidden" name="Rows[${i}].RowId" value="new-${i}" />
+                <input type="text" class="kasa-form-input kasa-form-input-sm fd-mono"
+                       name="Rows[${i}].TargetKey" placeholder="alan_adi" />
+            </td>
+            <td>
+                <select class="kasa-form-input kasa-form-input-sm" name="Rows[${i}].Mode"
+                        onchange="toggleRowMode(this, ${i})" style="font-size: 12px;">
+                    <option value="Map" selected>Map</option>
+                    <option value="Formula">Formula</option>
+                </select>
+            </td>
+            <td>
+                <input type="text" class="kasa-form-input kasa-form-input-sm fd-mono fd-expr-map"
+                       name="Rows[${i}].SourceKey" placeholder="pool key (boş = hedef alan)" />
+                <input type="hidden" name="Rows[${i}].Expression" value="" />
+            </td>
+            ${resultCol}
+            <td class="text-center">
+                <input type="checkbox" name="Rows[${i}].IsHidden" value="true"
+                       class="fd-hidden-check" onchange="updateHiddenVisual(this)" />
+            </td>
+            <td class="text-center">
+                <button type="button" class="kasa-btn kasa-btn-danger kasa-btn-sm fd-remove-btn"
+                        onclick="removeRow(this)">
+                    <i class="fas fa-times"></i>
+                </button>
+            </td>`;
+        tbody.appendChild(tr);
+        tr.querySelector('input[name*=".TargetKey"]').focus();
+    }
+
+    // ── Remove Row ──
+    function removeRow(btn) {
+        btn.closest('tr').remove();
+        reindexRows();
+    }
+
+    // ── Reindex ──
+    function reindexRows() {
+        var tbody = document.getElementById('formulaTableBody');
+        var rows = tbody.querySelectorAll('tr[data-index]');
+        rows.forEach(function(tr, i) {
+            tr.setAttribute('data-index', i);
+            tr.querySelector('td:first-child').textContent = i + 1;
+            tr.querySelectorAll('input, select').forEach(function(el) {
+                if (el.name) el.name = el.name.replace(/Rows\[\d+\]/, 'Rows[' + i + ']');
+            });
+            var ms = tr.querySelector('select[name*=".Mode"]');
+            if (ms) ms.setAttribute('onchange', 'toggleRowMode(this, ' + i + ')');
+        });
+        rowCounter = rows.length;
+    }
+
+    // ── Toggle Row Mode ──
+    function toggleRowMode(sel, idx) {
+        var tr = sel.closest('tr');
+        var exprTd = tr.querySelectorAll('td')[3];
+        var isFormula = sel.value === 'Formula';
+
+        tr.classList.remove('fd-row-formula', 'fd-row-map');
+        tr.classList.add(isFormula ? 'fd-row-formula' : 'fd-row-map');
+
+        if (isFormula) {
+            exprTd.innerHTML = `
+                <input type="text" class="kasa-form-input kasa-form-input-sm fd-mono fd-expr-formula"
+                       name="Rows[${idx}].Expression" placeholder="formül ifadesi..." />
+                <input type="hidden" name="Rows[${idx}].SourceKey" value="" />`;
+        } else {
+            exprTd.innerHTML = `
+                <input type="text" class="kasa-form-input kasa-form-input-sm fd-mono fd-expr-map"
+                       name="Rows[${idx}].SourceKey" placeholder="pool key (boş = hedef alan)" />
+                <input type="hidden" name="Rows[${idx}].Expression" value="" />`;
+        }
+    }
+
+    // ── Toggle Hidden Rows ──
+    function toggleHiddenRows() {
+        showHidden = !showHidden;
+        document.querySelectorAll('.fd-row-hidden').forEach(function(r) {
+            r.style.display = showHidden ? '' : 'none';
+        });
+        document.getElementById('hiddenToggleText').textContent = showHidden ? 'Gizlileri Gizle' : 'Gizlileri Göster';
+        var btn = document.getElementById('btnToggleHidden');
+        btn.querySelector('i').className = showHidden ? 'fas fa-eye me-1' : 'fas fa-eye-slash me-1';
+    }
+
+    // ── Update Hidden Visual ──
+    function updateHiddenVisual(chk) {
+        var tr = chk.closest('tr');
+        if (chk.checked) {
+            tr.classList.add('fd-row-hidden');
+            if (!showHidden) tr.style.display = 'none';
+        } else {
+            tr.classList.remove('fd-row-hidden');
+            tr.style.display = '';
+        }
+    }
+
+    // ── Pool Search ──
+    function filterPool() {
+        var q = (document.getElementById('poolSearchInput').value || '').toLowerCase();
+        var activeSource = document.querySelector('.fd-pool-tab-active')?.dataset?.source || 'all';
+        document.querySelectorAll('.fd-pool-row').forEach(function(r) {
+            var key = r.dataset.key || '';
+            var source = r.dataset.source || '';
+            var matchSearch = !q || key.indexOf(q) >= 0 || source.toLowerCase().indexOf(q) >= 0;
+            var matchSource = activeSource === 'all' || source === activeSource;
+            r.style.display = (matchSearch && matchSource) ? '' : 'none';
+        });
+    }
+
+    // ── Pool Source Filter ──
+    function filterPoolBySource(btn) {
+        document.querySelectorAll('.fd-pool-tab').forEach(function(b) { b.classList.remove('fd-pool-tab-active'); });
+        btn.classList.add('fd-pool-tab-active');
+        filterPool();
+    }
+
+    // ── Pool Click-to-Insert ──
+    function insertPoolKey(key) {
+        if (lastFocusedExprInput) {
+            var start = lastFocusedExprInput.selectionStart;
+            var end = lastFocusedExprInput.selectionEnd;
+            var v = lastFocusedExprInput.value;
+            // Insert with spaces
+            var prefix = (start > 0 && v[start-1] !== ' ') ? ' ' : '';
+            var suffix = (end < v.length && v[end] !== ' ') ? ' ' : '';
+            lastFocusedExprInput.value = v.substring(0, start) + prefix + key + suffix + v.substring(end);
+            lastFocusedExprInput.focus();
+            var newPos = start + prefix.length + key.length + suffix.length;
+            lastFocusedExprInput.setSelectionRange(newPos, newPos);
+        }
+    }
+
+    // ── Toggle Results Panel ──
+    // ── Toggle User Inputs Panel ──
+    function toggleUserInputsPanel() {
+        var panel = document.getElementById('userInputsPanel');
+        var chevron = document.getElementById('inputsChevron');
+        if (panel.style.display === 'none') {
+            panel.style.display = 'block';
+            chevron.style.transform = 'rotate(180deg)';
+        } else {
+            panel.style.display = 'none';
+            chevron.style.transform = '';
+        }
+    }
+
+    // ── Toggle Results Panel ──
+    function toggleResultsPanel() {
+        var panel = document.getElementById('resultsPanel');
+        var chevron = document.getElementById('resultsChevron');
+        if (panel.style.display === 'none') {
+            panel.style.display = '';
+            chevron.style.transform = 'rotate(180deg)';
+        } else {
+            panel.style.display = 'none';
+            chevron.style.transform = '';
+        }
+    }
+
+    // ── Init: hide hidden rows ──
+    document.addEventListener('DOMContentLoaded', function() {
+        if (!showHidden) {
+            document.querySelectorAll('.fd-row-hidden').forEach(function(r) { r.style.display = 'none'; });
+        }
+    });
+</script>
+}
+
+<style>
+    /* ═══════════════════════════════════════════════════════════════════ */
+    /* Formula Designer — Professional Dark Mode Theme                   */
+    /* ═══════════════════════════════════════════════════════════════════ */
+
+    /* ── Mono Font ── */
+    .fd-mono {
+        font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace !important;
+        font-size: 12px !important;
+    }
+
+    /* ── Form Input SM ── */
+    .kasa-form-input-sm {
+        padding: 4px 8px !important;
+        font-size: 12px !important;
+        height: auto !important;
+    }
+
+    /* ── Toolbar ── */
+    .fd-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 10px 14px;
+        background: rgba(0,0,0,0.15);
+        border-radius: 8px;
+        border: 1px solid rgba(255,255,255,0.06);
+        flex-wrap: wrap;
+    }
+    .fd-toolbar-group {
+        display: flex;
+        gap: 4px;
+    }
+    .fd-toolbar-divider {
+        width: 1px;
+        height: 28px;
+        background: rgba(255,255,255,0.12);
+        margin: 0 4px;
+    }
+    .fd-toolbar-spacer { flex: 1; }
+    .fd-tool-btn {
+        padding: 6px 12px !important;
+        font-size: 12px !important;
+        border-radius: 6px !important;
+        transition: all 0.2s ease !important;
+        white-space: nowrap;
+    }
+    .fd-tool-btn:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0,0,0,0.3); }
+    .fd-run-btn {
+        min-width: 140px;
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        padding: 8px 20px !important;
+        background: linear-gradient(135deg, var(--kasa-primary), #6366f1) !important;
+        box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+    }
+    .fd-run-btn:hover {
+        box-shadow: 0 4px 16px rgba(99, 102, 241, 0.5) !important;
+    }
+
+    /* ── Formula Rows ── */
+    .fd-row { transition: all 0.2s ease; }
+    .fd-row-formula {
+        background: rgba(16, 185, 129, 0.03) !important;
+        border-left: 3px solid var(--kasa-success) !important;
+    }
+    .fd-row-map {
+        border-left: 3px solid transparent;
+    }
+    .fd-row:hover {
+        background: rgba(255,255,255,0.03) !important;
+    }
+    .fd-row-hidden {
+        opacity: 0.35;
+        background: rgba(0,0,0,0.1) !important;
+    }
+    .fd-row-hidden td {
+        padding-top: 2px !important;
+        padding-bottom: 2px !important;
+    }
+
+    /* ── Highlight (test result with value) ── */
+    .fd-row-highlight {
+        background: rgba(16, 185, 129, 0.06) !important;
+    }
+
+    /* ── Expression Styling ── */
+    .fd-expr-formula {
+        color: var(--kasa-success) !important;
+    }
+    .fd-expr-map {
+        color: var(--text-muted) !important;
+    }
+    .fd-expr-code {
+        font-family: 'Fira Code', monospace;
+        font-size: 11px;
+        color: var(--kasa-success);
+        background: rgba(16,185,129,0.08);
+        padding: 2px 6px;
+        border-radius: 4px;
+        white-space: nowrap;
+    }
+
+    /* ── Result Cell ── */
+    .fd-result-cell {
+        font-family: 'Fira Code', monospace;
+        font-size: 13px;
+        padding-right: 12px !important;
+    }
+    .fd-result-active {
+        font-weight: 700;
+    }
+    .fd-result-formula {
+        color: var(--kasa-success) !important;
+        text-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+    }
+    .fd-result-value { }
+    .fd-result-zero {
+        color: var(--text-muted) !important;
+        font-weight: 400 !important;
+        opacity: 0.5;
+    }
+    .fd-result-currency {
+        font-size: 10px;
+        color: var(--text-muted);
+        margin-left: 2px;
+    }
+
+    /* ── Remove Button ── */
+    .fd-remove-btn {
+        padding: 2px 6px !important;
+        font-size: 10px !important;
+        opacity: 0.5;
+        transition: opacity 0.15s;
+    }
+    .fd-row:hover .fd-remove-btn { opacity: 1; }
+
+    /* ── Hidden Check ── */
+    .fd-hidden-check {
+        accent-color: var(--kasa-primary);
+        width: 15px;
+        height: 15px;
+        cursor: pointer;
+    }
+
+    /* ── Pool Filters ── */
+    .fd-pool-filters {
+        padding: 8px 12px;
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .fd-pool-tabs {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+    }
+    .fd-pool-tab {
+        padding: 3px 10px;
+        font-size: 10px;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.1);
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        transition: all 0.15s;
+        white-space: nowrap;
+    }
+    .fd-pool-tab:hover { background: rgba(255,255,255,0.06); }
+    .fd-pool-tab-active {
+        background: var(--kasa-primary) !important;
+        color: #fff !important;
+        border-color: var(--kasa-primary) !important;
+    }
+
+    /* ── Pool Table ── */
+    .fd-pool-key {
+        font-family: 'Fira Code', monospace;
+        font-size: 11px;
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+    .fd-pool-key:hover {
+        background: rgba(99, 102, 241, 0.12) !important;
+        text-decoration: underline;
+    }
+    .fd-pool-value {
+        text-align: right;
+        font-family: 'Fira Code', monospace;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .fd-pool-zero {
+        color: var(--text-muted) !important;
+        font-weight: 400 !important;
+        opacity: 0.4;
+    }
+    .fd-pool-source {
+        font-size: 10px;
+        color: var(--text-muted);
+    }
+
+    /* ── Results Panel ── */
+    .fd-results-card {
+        border: 2px solid var(--kasa-success);
+    }
+    .fd-results-header {
+        background: rgba(16,185,129,0.08);
+    }
+    .fd-results-chevron {
+        font-size: 12px;
+        transition: transform 0.2s ease;
+        color: var(--kasa-success);
+    }
+
+    /* ── Table row transitions ── */
+    #formulaTable tbody tr {
+        transition: background-color 0.15s ease;
+    }
+    code { white-space: nowrap; }
+
+    /* ── User Inputs Panel ── */
+    .fd-inputs-toggle {
+        background: rgba(255,193,7,0.12) !important;
+        border: 1px solid rgba(255,193,7,0.3) !important;
+        color: var(--kasa-warning) !important;
+    }
+    .fd-inputs-toggle:hover {
+        background: rgba(255,193,7,0.2) !important;
+    }
+    .fd-inputs-chevron {
+        font-size: 10px;
+        transition: transform 0.2s ease;
+    }
+    .fd-inputs-header {
+        background: rgba(255,193,7,0.06);
+        border-bottom: 1px solid rgba(255,193,7,0.15);
+    }
+    .fd-input-group-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--kasa-warning);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding-bottom: 4px;
+        border-bottom: 1px solid rgba(255,193,7,0.15);
+    }
+    .fd-input-hint {
+        font-size: 10px;
+        color: var(--text-muted);
+        font-family: 'Fira Code', monospace;
+        margin-top: 2px;
+        opacity: 0.6;
+    }
+    .fd-user-input {
+        border-color: rgba(255,193,7,0.2) !important;
+    }
+    .fd-user-input:focus {
+        border-color: var(--kasa-warning) !important;
+        box-shadow: 0 0 0 2px rgba(255,193,7,0.15) !important;
+    }
+</style>

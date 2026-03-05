@@ -1,0 +1,188 @@
+@using KasaManager.Domain.Validation
+@model KasaManager.Web.Models.KasaPreviewViewModel
+
+@* ═══════════════════════════════════════════════════════
+   Validation Uyarı Paneli
+   Hesaplama sonrası tespit edilen uyarı ve hataları gösterir.
+   Kullanıcı uyarıları "Çözüldü" olarak işaretleyebilir.
+   ═══════════════════════════════════════════════════════ *@
+
+@if (Model.ValidationResults?.Count > 0)
+{
+    var activeResults = Model.ValidationResults
+        .Where(r => !Model.DismissedRuleCodes.Contains(r.Code))
+        .OrderByDescending(r => r.Severity)
+        .ToList();
+
+    var dismissedResults = Model.ValidationResults
+        .Where(r => Model.DismissedRuleCodes.Contains(r.Code))
+        .ToList();
+
+    <!-- Aktif Uyarılar -->
+    @if (activeResults.Count > 0)
+    {
+        <div class="kasa-card mb-3" id="validation-panel">
+            <div class="kasa-card-header"
+                 style="background: var(--kasa-gradient-accent, linear-gradient(135deg, #f59e0b, #ef4444)); color: #fff;">
+                <i class="bi bi-shield-exclamation me-2"></i>
+                <strong>Uyarı Paneli</strong>
+                <span class="badge bg-white text-dark ms-2">@activeResults.Count aktif</span>
+                @if (dismissedResults.Count > 0)
+                {
+                    <span class="badge bg-success ms-1" title="Çözüldü olarak işaretlenen uyarılar">
+                        @dismissedResults.Count çözüldü
+                    </span>
+                }
+            </div>
+            <div class="kasa-card-body p-0">
+                @foreach (var result in activeResults)
+                {
+                    var bgClass = result.Severity switch
+                    {
+                        ValidationSeverity.Error => "border-start border-danger border-4",
+                        ValidationSeverity.Warning => "border-start border-warning border-4",
+                        _ => "border-start border-info border-4"
+                    };
+                    var iconClass = result.Severity switch
+                    {
+                        ValidationSeverity.Error => "bi-x-octagon-fill text-danger",
+                        ValidationSeverity.Warning => "bi-exclamation-triangle-fill text-warning",
+                        _ => "bi-info-circle-fill text-info"
+                    };
+                    var severityLabel = result.Severity switch
+                    {
+                        ValidationSeverity.Error => "Hata",
+                        ValidationSeverity.Warning => "Uyarı",
+                        _ => "Bilgi"
+                    };
+
+                    <div class="d-flex align-items-start p-3 @bgClass validation-item"
+                         data-rule-code="@result.Code"
+                         style="border-bottom: 1px solid var(--kasa-border, #e2e8f0);">
+                        <i class="bi @iconClass fs-5 me-3 mt-1"></i>
+                        <div class="flex-grow-1">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <span class="badge bg-secondary bg-opacity-25 text-secondary me-2 mb-1"
+                                          style="font-size: 0.7rem;">
+                                        @result.Code
+                                    </span>
+                                    <span class="badge @(result.Severity == ValidationSeverity.Error ? "bg-danger" : result.Severity == ValidationSeverity.Warning ? "bg-warning text-dark" : "bg-info") mb-1"
+                                          style="font-size: 0.7rem;">
+                                        @severityLabel
+                                    </span>
+                                </div>
+                                <!-- Çözüldü Butonu -->
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-success ms-2 dismiss-validation-btn"
+                                        data-rule-code="@result.Code"
+                                        data-rapor-tarihi="@Model.SelectedDate?.ToString("yyyy-MM-dd")"
+                                        data-kasa-turu="@Model.KasaType"
+                                        title="Çözüldü olarak işaretle">
+                                    <i class="bi bi-check-circle me-1"></i>Çözüldü
+                                </button>
+                            </div>
+                            <div class="mt-1" style="font-size: 0.9rem;">
+                                @result.Message
+                            </div>
+                            @if (!string.IsNullOrEmpty(result.Field))
+                            {
+                                <small class="text-muted">Alan: <code>@result.Field</code></small>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    <!-- Çözülmüş Uyarılar (opsiyonel toggle) -->
+    @if (dismissedResults.Count > 0)
+    {
+        <div class="mb-3">
+            <button class="btn btn-sm btn-outline-secondary" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#dismissedValidations">
+                <i class="bi bi-check-circle text-success me-1"></i>
+                @dismissedResults.Count çözülmüş uyarıyı göster
+            </button>
+            <div class="collapse mt-2" id="dismissedValidations">
+                <div class="kasa-card" style="opacity: 0.7;">
+                    <div class="kasa-card-body p-0">
+                        @foreach (var result in dismissedResults)
+                        {
+                            <div class="d-flex align-items-center p-2 border-start border-success border-4"
+                                 style="border-bottom: 1px solid var(--kasa-border, #e2e8f0); text-decoration: line-through; color: #999;">
+                                <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                <span>@result.Message</span>
+                                <span class="badge bg-success ms-auto" style="font-size: 0.65rem;">Çözüldü</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+<!-- Dismiss AJAX Handler -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.dismiss-validation-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var ruleCode = this.dataset.ruleCode;
+            var raporTarihi = this.dataset.raporTarihi;
+            var kasaTuru = this.dataset.kasaTuru;
+            var item = this.closest('.validation-item');
+
+            var note = prompt('Not eklemek ister misiniz? (Boş bırakabilirsiniz)');
+
+            var token = document.querySelector('input[name="__RequestVerificationToken"]');
+            if (!token) {
+                alert('CSRF token bulunamadı');
+                return;
+            }
+
+            var formData = new FormData();
+            formData.append('raporTarihi', raporTarihi);
+            formData.append('kasaTuru', kasaTuru);
+            formData.append('ruleCode', ruleCode);
+            formData.append('note', note || '');
+            formData.append('__RequestVerificationToken', token.value);
+
+            fetch('@Url.Action("DismissValidation", "KasaPreview")', {
+                method: 'POST',
+                body: formData
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.ok) {
+                    // Satırı yeşil yap ve line-through
+                    item.style.opacity = '0.5';
+                    item.style.textDecoration = 'line-through';
+                    item.querySelector('.dismiss-validation-btn').remove();
+
+                    // Badge ekle
+                    var badge = document.createElement('span');
+                    badge.className = 'badge bg-success ms-2';
+                    badge.style.fontSize = '0.65rem';
+                    badge.textContent = '✅ Çözüldü';
+                    item.querySelector('.flex-grow-1').appendChild(badge);
+
+                    // Panel header'daki sayıyı güncelle
+                    var panel = document.getElementById('validation-panel');
+                    if (panel) {
+                        var remaining = panel.querySelectorAll('.dismiss-validation-btn').length;
+                        var countBadge = panel.querySelector('.kasa-card-header .badge.bg-white');
+                        if (countBadge) countBadge.textContent = remaining + ' aktif';
+                    }
+                } else {
+                    alert(data.message);
+                }
+            })
+            .catch(function (err) {
+                alert('İşlem sırasında hata oluştu: ' + err);
+            });
+        });
+    });
+});
+</script>

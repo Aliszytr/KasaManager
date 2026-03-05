@@ -1,0 +1,56 @@
+@model KasaManager.Web.Controllers.EditUserViewModel
+@{
+    ViewData["Title"] = "Kullanıcı Düzenle";
+}
+
+<div class="kasa-page-header">
+    <div>
+        <h1 class="kasa-page-title"><i class="fas fa-user-edit me-2"></i>Kullanıcı Düzenle — @Model.Username</h1>
+        <p class="kasa-page-subtitle">Kullanıcı bilgilerini güncelleyin</p>
+    </div>
+    <a asp-action="Index" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left me-1"></i> Geri
+    </a>
+</div>
+
+<div class="kasa-card" style="max-width: 600px;">
+    <div class="kasa-card-body">
+        <form asp-action="Edit" method="post">
+            <input type="hidden" asp-for="Id" />
+            <input type="hidden" asp-for="Username" />
+            <div asp-validation-summary="All" class="text-danger mb-3"></div>
+
+            <div class="mb-3">
+                <label class="form-label">Kullanıcı Adı</label>
+                <input value="@Model.Username" class="form-control" disabled />
+                <small class="text-muted">Kullanıcı adı değiştirilemez.</small>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="DisplayName" class="form-label">Görünen Ad</label>
+                <input asp-for="DisplayName" class="form-control" />
+                <span asp-validation-for="DisplayName" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Role" class="form-label">Rol</label>
+                <select asp-for="Role" class="form-select">
+                    <option value="User">User — Normal kullanıcı</option>
+                    <option value="Admin">Admin — Tam yetki</option>
+                </select>
+            </div>
+
+            <div class="mb-4 form-check form-switch">
+                <input asp-for="IsActive" class="form-check-input" />
+                <label asp-for="IsActive" class="form-check-label">Aktif</label>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save me-1"></i> Kaydet
+                </button>
+                <a asp-action="Index" class="btn btn-outline-secondary">İptal</a>
+            </div>
+        </form>
+    </div>
+</div>

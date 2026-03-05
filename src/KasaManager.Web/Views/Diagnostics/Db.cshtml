@@ -1,0 +1,80 @@
+@model KasaManager.Web.Models.DbDiagnosticsViewModel
+@{
+    ViewData["Title"] = "DB Diagnostics";
+}
+
+<div class="container py-4">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <h2 class="mb-0">DB Diagnostics</h2>
+        <a class="btn btn-outline-secondary" href="/KasaPreview">Kasa Preview'a Dön</a>
+    </div>
+    <p class="text-muted mt-2">
+        Bu sayfa, uygulamanın gerçekte hangi SQL Server instance / database'e bağlandığını ve temel tablo sayımlarını gösterir.
+        "UI çalışıyor ama DB boş" durumlarında SSMS'in yanlış instance/database'e bağlı olması en sık sebeptir.
+    </p>
+
+    <div class="row g-3">
+        <div class="col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">Bağlantı</h5>
+                    <dl class="row mb-0">
+                        <dt class="col-4">Provider</dt>
+                        <dd class="col-8">@Model.ProviderName</dd>
+                        <dt class="col-4">DataSource</dt>
+                        <dd class="col-8"><code>@Model.DataSource</code></dd>
+                        <dt class="col-4">Database</dt>
+                        <dd class="col-8"><code>@Model.Database</code></dd>
+                        <dt class="col-4">Conn</dt>
+                        <dd class="col-8"><small><code>@Model.ConnectionStringMasked</code></small></dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">Tablo Sayımları</h5>
+                    <ul class="list-group">
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>KasaGlobalDefaultsSettings</span>
+                            <span class="badge bg-primary rounded-pill">@Model.SettingsCount</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>FormulaSets</span>
+                            <span class="badge bg-primary rounded-pill">@Model.FormulaSetCount</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>FormulaLines</span>
+                            <span class="badge bg-primary rounded-pill">@Model.FormulaLineCount</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>KasaRaporSnapshots</span>
+                            <span class="badge bg-primary rounded-pill">@Model.SnapshotCount</span>
+                        </li>
+                    </ul>
+
+                    <div class="alert alert-info mt-3 mb-0">
+                        <strong>Not:</strong> SSMS'te tablo boş görünüyorsa, büyük ihtimalle SSMS farklı instance/database'e bakıyor.
+                        Uygulamanın gerçek hedefi üstteki <code>DataSource</code> ve <code>Database</code> alanlarıdır.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">Notlar</h5>
+                    <ul class="mb-0">
+                        @foreach (var n in Model.Notes)
+                        {
+                            <li>@n</li>
+                        }
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

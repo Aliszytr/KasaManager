@@ -1,0 +1,212 @@
+@{
+    ViewData["Title"] = "Karşılaştırma";
+    var availableDates = (ViewBag.AvailableDates as List<DateOnly>) ?? new List<DateOnly>();
+}
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="text-primary">
+                <i class="fas fa-balance-scale me-2"></i>
+                Banka - Online Karşılaştırma
+            </h2>
+            <p class="text-muted">
+                Online işlem dosyaları ile Banka extre dosyalarını karşılaştırarak eşleşmeleri kontrol edin.
+            </p>
+        </div>
+    </div>
+
+    @if (TempData["Error"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="fas fa-exclamation-circle me-2"></i>
+            @TempData["Error"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <div class="row g-4">
+        <!-- Tahsilat - Masraf Karşılaştırma -->
+        <div class="col-md-6">
+            <div class="card h-100 border-success">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-arrow-down me-2"></i>
+                        Tahsilat - Masraf Karşılaştırması
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">
+                        <strong>BankaTahsilat.xlsx</strong> dosyasındaki Alacak (+) kayıtlarını 
+                        <strong>onlineMasraf.xlsx</strong> dosyasındaki işlemlerle karşılaştırır.
+                    </p>
+                    <ul class="list-unstyled text-muted small">
+                        <li><i class="fas fa-check text-success me-1"></i> Banka hesabına giren tutarlar</li>
+                        <li><i class="fas fa-check text-success me-1"></i> Online masraf işlemleri</li>
+                        <li><i class="fas fa-check text-success me-1"></i> Dosya No ve Birim eşleştirme</li>
+                    </ul>
+                    
+                    <form method="post" asp-action="CompareTahsilatMasraf">
+                        <div class="mb-3">
+                            <label class="form-label">Veri Kaynağı</label>
+                            <select name="archiveDate" class="form-select archive-date-select">
+                                <option value="current" selected>📂 Mevcut Dosyalar (Güncel)</option>
+                                @foreach (var d in availableDates)
+                                {
+                                    <option value="@d.ToString("yyyy-MM-dd")">
+                                        📅 @d.ToString("dd.MM.yyyy") Arşivi
+                                    </option>
+                                }
+                            </select>
+                            <small class="text-muted">
+                                @if (availableDates.Count > 0)
+                                {
+                                    <span><i class="fas fa-archive me-1"></i> @availableDates.Count arşiv mevcut</span>
+                                }
+                                else
+                                {
+                                    <span><i class="fas fa-info-circle me-1"></i> Dosya yüklendiğinde otomatik arşiv oluşturulur</span>
+                                }
+                            </small>
+                        </div>
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="fas fa-play me-2"></i>
+                            Karşılaştırmayı Başlat
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Harcama - Harç Karşılaştırma -->
+        <div class="col-md-6">
+            <div class="card h-100 border-primary">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-arrow-up me-2"></i>
+                        Harcama - Harç Karşılaştırması
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">
+                        <strong>BankaHarc.xlsx</strong> dosyasındaki Alacak (+) kayıtlarını 
+                        <strong>onlineHarc.xlsx</strong> dosyasındaki işlemlerle karşılaştırır.
+                    </p>
+                    <ul class="list-unstyled text-muted small">
+                        <li><i class="fas fa-check text-primary me-1"></i> Banka harç tahsilatları</li>
+                        <li><i class="fas fa-check text-primary me-1"></i> Online harç işlemleri</li>
+                        <li><i class="fas fa-check text-primary me-1"></i> Dosya No ve Birim eşleştirme</li>
+                    </ul>
+                    
+                    <form method="post" asp-action="CompareHarcamaHarc">
+                        <div class="mb-3">
+                            <label class="form-label">Veri Kaynağı</label>
+                            <select name="archiveDate" class="form-select archive-date-select">
+                                <option value="current" selected>📂 Mevcut Dosyalar (Güncel)</option>
+                                @foreach (var d in availableDates)
+                                {
+                                    <option value="@d.ToString("yyyy-MM-dd")">
+                                        📅 @d.ToString("dd.MM.yyyy") Arşivi
+                                    </option>
+                                }
+                            </select>
+                            <small class="text-muted">
+                                @if (availableDates.Count > 0)
+                                {
+                                    <span><i class="fas fa-archive me-1"></i> @availableDates.Count arşiv mevcut</span>
+                                }
+                                else
+                                {
+                                    <span><i class="fas fa-info-circle me-1"></i> Dosya yüklendiğinde otomatik arşiv oluşturulur</span>
+                                }
+                            </small>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="fas fa-play me-2"></i>
+                            Karşılaştırmayı Başlat
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reddiyat - Çıkan Ödemeler Karşılaştırma -->
+        <div class="col-md-6">
+            <div class="card h-100 border-warning">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0">
+                        <i class="fas fa-arrow-right-from-bracket me-2"></i>
+                        Reddiyat - Çıkan Ödemeler Karşılaştırması
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">
+                        <strong>BankaTahsilat.xlsx</strong> dosyasındaki Borç (-) çıkışlarını 
+                        <strong>OnlineReddiyat.xlsx</strong> dosyasındaki ödemelerle karşılaştırır.
+                    </p>
+                    <ul class="list-unstyled text-muted small">
+                        <li><i class="fas fa-check text-warning me-1"></i> Bankadan çıkan ödemeler</li>
+                        <li><i class="fas fa-check text-warning me-1"></i> Net Ödenecek tutarlar</li>
+                        <li><i class="fas fa-check text-warning me-1"></i> Stopaj (Gelir + Damga Vergisi) hesaplama</li>
+                        <li><i class="fas fa-check text-warning me-1"></i> Virman durumu analizi</li>
+                    </ul>
+                    
+                    <form method="post" asp-action="CompareReddiyatCikis">
+                        <div class="mb-3">
+                            <label class="form-label">Veri Kaynağı</label>
+                            <select name="archiveDate" class="form-select archive-date-select">
+                                <option value="current" selected>📂 Mevcut Dosyalar (Güncel)</option>
+                                @foreach (var d in availableDates)
+                                {
+                                    <option value="@d.ToString("yyyy-MM-dd")">
+                                        📅 @d.ToString("dd.MM.yyyy") Arşivi
+                                    </option>
+                                }
+                            </select>
+                            <small class="text-muted">
+                                @if (availableDates.Count > 0)
+                                {
+                                    <span><i class="fas fa-archive me-1"></i> @availableDates.Count arşiv mevcut</span>
+                                }
+                                else
+                                {
+                                    <span><i class="fas fa-info-circle me-1"></i> Dosya yüklendiğinde otomatik arşiv oluşturulur</span>
+                                }
+                            </small>
+                        </div>
+                        <button type="submit" class="btn btn-warning w-100">
+                            <i class="fas fa-play me-2"></i>
+                            Karşılaştırmayı Başlat
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Bilgi Kutusu -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card border-0" style="background: var(--bs-tertiary-bg, rgba(255,255,255,0.05))">
+                <div class="card-body">
+                    <h6 class="card-title">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Karşılaştırma Nasıl Çalışır?
+                    </h6>
+                    <ol class="mb-0">
+                        <li>Banka dosyasındaki <strong>Alacak (+)</strong> kayıtları filtrelenir.</li>
+                        <li>Açıklama alanındaki <strong>Ankara</strong> ile ilgili anahtar kelimeler aranır.</li>
+                        <li>Bulunan kayıtlardan <strong>Dosya No</strong> ve <strong>Mahkeme</strong> bilgileri çıkarılır.</li>
+                        <li>Online dosyasındaki kayıtlarla <strong>Tutar</strong>, <strong>Dosya No</strong> ve <strong>Birim</strong> bazında eşleştirme yapılır.</li>
+                        <li>Her eşleşme için <strong>Güven Puanı</strong> hesaplanır (0-100%).</li>
+                    </ol>
+                    <hr>
+                    <p class="mb-0 small text-muted">
+                        <i class="fas fa-archive me-1"></i>
+                        <strong>Arşiv Sistemi:</strong> Dosyalar yüklendiğinde otomatik olarak tarih damgalı arşiv oluşturulur. 
+                        Geçmiş tarihlerdeki dosyalarla karşılaştırma yapabilirsiniz. Arşivler 60 gün boyunca saklanır.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,48 @@
+@* 
+    ResultCard – IBAN kutulu sonuç kartı
+    
+    Usage:
+    @await Html.PartialAsync("Components/_ResultCard", new ViewDataDictionary(ViewData) {
+        { "Label", "Bankaya Yatırılacak Masraf" },
+        { "Value", 123456.78m },
+        { "Iban", "TR12 3456 7890 1234 5678 90" },
+        { "Icon", "fas fa-building-columns" },
+        { "Variant", "primary" }  // primary, success, warning, danger
+    })
+*@
+@{
+    var label   = ViewData["Label"]?.ToString() ?? "Sonuç";
+    var rawVal  = ViewData["Value"];
+    var iban    = ViewData["Iban"]?.ToString();
+    var icon    = ViewData["Icon"]?.ToString() ?? "fas fa-coins";
+    var variant = ViewData["Variant"]?.ToString() ?? "primary";
+
+    decimal value = 0;
+    if (rawVal is decimal d) value = d;
+    else if (rawVal is double dbl) value = (decimal)dbl;
+    else if (rawVal is string s) decimal.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.GetCultureInfo("tr-TR"), out value);
+
+    var valueClass = value > 0 ? "positive" : value < 0 ? "negative" : "";
+    var formatted  = value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR"));
+}
+
+<div class="result-card result-card-@variant">
+    <div class="result-card-label">
+        <i class="@icon"></i>
+        @label
+    </div>
+    <div class="result-card-value font-mono @valueClass">
+        @formatted <span class="money-currency">₺</span>
+    </div>
+    @if (!string.IsNullOrEmpty(iban))
+    {
+        <div class="result-card-iban">
+            <span class="result-card-iban-text">
+                <i class="fas fa-university me-1"></i>@iban
+            </span>
+            <button class="result-card-iban-copy" onclick="copyIban(this, '@iban')" type="button">
+                <i class="fas fa-copy"></i> Kopyala
+            </button>
+        </div>
+    }
+</div>

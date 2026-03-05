@@ -1,0 +1,202 @@
+@model KasaManager.Web.Controllers.LegacyIndexViewModel
+@{
+    ViewData["Title"] = "Eski Kasa Verileri";
+    var tab = Model.Tab;
+    var startDate = ViewBag.StartDate as DateTime?;
+    var endDate = ViewBag.EndDate as DateTime?;
+    var page = (int)(ViewBag.Page ?? 1);
+}
+
+<style>
+    .legacy-header { background: linear-gradient(135deg, #37474f 0%, #546e7a 100%); color: white; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
+    .tab-btn { border: none; padding: 0.6rem 1.2rem; border-radius: 8px 8px 0 0; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .tab-btn.active { background: #37474f; color: white; }
+    .tab-btn:not(.active) { background: #e0e0e0; color: #616161; }
+    .tab-btn:not(.active):hover { background: #bdbdbd; }
+    .legacy-table th { background: #eceff1; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; color: #546e7a; }
+    .legacy-table td { font-size: 0.85rem; vertical-align: middle; }
+    .legacy-table tr:hover { background-color: #f5f5f5; }
+    .page-link-custom { padding: 0.4rem 0.8rem; border: 1px solid #dee2e6; border-radius: 4px; text-decoration: none; color: #37474f; margin: 0 2px; }
+    .page-link-custom.active { background: #37474f; color: white; border-color: #37474f; }
+    .page-link-custom:hover:not(.active) { background: #eceff1; }
+    .readonly-badge { background: #ff9800; color: white; font-size: 0.7rem; padding: 2px 8px; border-radius: 4px; }
+</style>
+
+<div class="container-fluid">
+    <!-- Başlık -->
+    <div class="legacy-header">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h2 class="mb-1"><i class="fas fa-archive me-2"></i>Eski Kasa Verileri</h2>
+                <p class="mb-0 opacity-75"><i class="fas fa-database me-1"></i>KasaRaporuDB — Tarihsel Veriler</p>
+            </div>
+            <span class="readonly-badge"><i class="fas fa-lock me-1"></i>Salt Okunur</span>
+        </div>
+    </div>
+
+    <!-- Filtre -->
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body py-2">
+            <form method="get" class="d-flex align-items-center gap-3 flex-wrap">
+                <input type="hidden" name="tab" value="@tab" />
+                <div class="d-flex align-items-center gap-2">
+                    <label class="text-muted small mb-0">Başlangıç:</label>
+                    <input type="date" name="startDate" value="@(startDate?.ToString("yyyy-MM-dd"))" class="form-control form-control-sm" style="width:150px" />
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <label class="text-muted small mb-0">Bitiş:</label>
+                    <input type="date" name="endDate" value="@(endDate?.ToString("yyyy-MM-dd"))" class="form-control form-control-sm" style="width:150px" />
+                </div>
+                <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="fas fa-filter me-1"></i>Filtrele</button>
+                <a asp-action="Index" asp-route-tab="@tab" class="btn btn-sm btn-outline-danger"><i class="fas fa-times me-1"></i>Temizle</a>
+            </form>
+        </div>
+    </div>
+
+    <!-- Tab'lar -->
+    <div class="d-flex mb-0">
+        <a asp-action="Index" asp-route-tab="sabah" asp-route-startDate="@startDate?.ToString("yyyy-MM-dd")" asp-route-endDate="@endDate?.ToString("yyyy-MM-dd")"
+           class="tab-btn @(tab == "sabah" ? "active" : "")">
+            <i class="fas fa-sun me-1"></i>Sabah Kasa
+        </a>
+        <a asp-action="Index" asp-route-tab="aksam" asp-route-startDate="@startDate?.ToString("yyyy-MM-dd")" asp-route-endDate="@endDate?.ToString("yyyy-MM-dd")"
+           class="tab-btn @(tab == "aksam" ? "active" : "")">
+            <i class="fas fa-moon me-1"></i>Akşam Kasa
+        </a>
+        <a asp-action="Index" asp-route-tab="genel" asp-route-startDate="@startDate?.ToString("yyyy-MM-dd")" asp-route-endDate="@endDate?.ToString("yyyy-MM-dd")"
+           class="tab-btn @(tab == "genel" ? "active" : "")">
+            <i class="fas fa-chart-bar me-1"></i>Genel Kasa Rapor
+        </a>
+    </div>
+
+    <!-- Tablo -->
+    <div class="card border-0 shadow-sm" style="border-radius: 0 12px 12px 12px;">
+        <div class="table-responsive">
+            @if (tab == "sabah" && Model.SabahResult is not null)
+            {
+                var result = Model.SabahResult;
+                <table class="table table-hover mb-0 legacy-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Tarih</th>
+                            <th>Kasayı Yapan</th>
+                            <th class="text-end">Genel Kasa</th>
+                            <th class="text-end">Banka Giren Tahsilat</th>
+                            <th class="text-end">Banka Giren Harç</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{ var idx = (result.Page - 1) * result.PageSize; }
+                        @foreach (var item in result.Items)
+                        {
+                            idx++;
+                            <tr>
+                                <td class="text-muted">@idx</td>
+                                <td><strong>@item.IslemTarihiTahsilatSabahK.ToString("dd.MM.yyyy")</strong></td>
+                                <td>@(item.KasayiYapanSabahK ?? "-")</td>
+                                <td class="text-end">@item.GenelKasaSabahK.ToString("N2")</td>
+                                <td class="text-end text-success">@item.BankaGirenTahsilatSabahK.ToString("N2")</td>
+                                <td class="text-end text-primary">@item.BankaGirenHarcSabahK.ToString("N2")</td>
+                                <td>
+                                    <a asp-action="SabahKasaDetail" asp-route-id="@item.Id" class="btn btn-sm btn-outline-secondary">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @await Html.PartialAsync("_LegacyPager", (result.TotalCount, result.Page, result.PageSize, result.TotalPages, tab, startDate, endDate))
+            }
+            else if (tab == "aksam" && Model.AksamResult is not null)
+            {
+                var result = Model.AksamResult;
+                <table class="table table-hover mb-0 legacy-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Tarih</th>
+                            <th>Kasayı Yapan</th>
+                            <th class="text-end">Genel Kasa</th>
+                            <th class="text-end">Bankaya Giren</th>
+                            <th class="text-end">Bankadan Çıkan</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{ var idxA = (result.Page - 1) * result.PageSize; }
+                        @foreach (var item in result.Items)
+                        {
+                            idxA++;
+                            <tr>
+                                <td class="text-muted">@idxA</td>
+                                <td><strong>@item.IslemTarihiTahsilat.ToString("dd.MM.yyyy")</strong></td>
+                                <td>@(item.KasayiYapan ?? "-")</td>
+                                <td class="text-end">@item.GenelKasa.ToString("N2")</td>
+                                <td class="text-end text-success">@item.BankayaGiren.ToString("N2")</td>
+                                <td class="text-end text-primary">@item.BankadanCikan.ToString("N2")</td>
+                                <td>
+                                    <a asp-action="AksamKasaDetail" asp-route-id="@item.Id" class="btn btn-sm btn-outline-secondary">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @await Html.PartialAsync("_LegacyPager", (result.TotalCount, result.Page, result.PageSize, result.TotalPages, tab, startDate, endDate))
+            }
+            else if (tab == "genel" && Model.GenelResult is not null)
+            {
+                var result = Model.GenelResult;
+                <table class="table table-hover mb-0 legacy-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Tarih</th>
+                            <th>Veznedar</th>
+                            <th class="text-end">Bakiye</th>
+                            <th class="text-end">Tahsilat</th>
+                            <th class="text-end">Online Tahsilat</th>
+                            <th class="text-end">Harç</th>
+                            <th class="text-end">Stopaj</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{ var idxG = (result.Page - 1) * result.PageSize; }
+                        @foreach (var item in result.Items)
+                        {
+                            idxG++;
+                            <tr>
+                                <td class="text-muted">@idxG</td>
+                                <td><strong>@item.raporTarihi.ToString("dd.MM.yyyy")</strong></td>
+                                <td>@(item.veznedar ?? "-")</td>
+                                <td class="text-end">@item.bakiye.ToString("N2")</td>
+                                <td class="text-end text-success">@item.tahsilat.ToString("N2")</td>
+                                <td class="text-end text-info">@item.onlineTahsilat.ToString("N2")</td>
+                                <td class="text-end text-primary">@item.harc.ToString("N2")</td>
+                                <td class="text-end text-danger">@item.Stopaj.ToString("N2")</td>
+                                <td>
+                                    <a asp-action="GenelKasaDetail" asp-route-id="@item.Id" class="btn btn-sm btn-outline-secondary">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @await Html.PartialAsync("_LegacyPager", (result.TotalCount, result.Page, result.PageSize, result.TotalPages, tab, startDate, endDate))
+            }
+            else
+            {
+                <div class="text-center py-5 text-muted">
+                    <i class="fas fa-inbox fa-3x mb-3"></i>
+                    <p>Veri bulunamadı.</p>
+                </div>
+            }
+        </div>
+    </div>
+</div>

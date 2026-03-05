@@ -1,0 +1,200 @@
+@model KasaManager.Domain.Legacy.LegacyGenelKasaRapor
+@{
+    ViewData["Title"] = $"Genel Kasa Rapor — {Model.raporTarihi:dd.MM.yyyy}";
+}
+
+<!-- ═══════ Header ═══════ -->
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-3">
+    <div class="d-flex align-items-center gap-3">
+        <h2 class="mb-0">
+            <i class="fas fa-chart-pie" style="color: #10b981;"></i> Genel Kasa Rapor
+        </h2>
+        <span class="kasa-badge kasa-badge-warning">
+            <i class="fas fa-archive me-1"></i>Eski Veri
+        </span>
+    </div>
+    <a asp-action="Index" asp-route-tab="genel" class="kasa-btn kasa-btn-secondary">
+        <i class="fas fa-arrow-left"></i> Geri Dön
+    </a>
+</div>
+
+<!-- ═══════ Tarih & Veznedar ═══════ -->
+<div class="row g-3 mb-3">
+    <div class="col-md-6">
+        <div class="kasa-card" style="border-radius: var(--radius-md); height: 100%;">
+            <div class="kasa-card-body d-flex align-items-center gap-3" style="padding: 16px 20px;">
+                <div style="width: 44px; height: 44px; border-radius: 50%; background: rgba(16,185,129,0.1); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <i class="fas fa-calendar-day" style="color: #10b981; font-size: 18px;"></i>
+                </div>
+                <div>
+                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);">Rapor Tarihi</div>
+                    <div style="font-size: 16px; font-weight: 700;">@Model.raporTarihi.ToString("dd MMMM yyyy", new System.Globalization.CultureInfo("tr-TR"))</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="kasa-card" style="border-radius: var(--radius-md); height: 100%;">
+            <div class="kasa-card-body d-flex align-items-center gap-3" style="padding: 16px 20px;">
+                <div style="width: 44px; height: 44px; border-radius: 50%; background: rgba(8,145,178,0.1); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <i class="fas fa-user" style="color: var(--kasa-primary); font-size: 18px;"></i>
+                </div>
+                <div>
+                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);">Veznedar</div>
+                    <div style="font-size: 16px; font-weight: 700;">@(Model.veznedar ?? "—")</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════ Hero Kart: Bakiye ═══════ -->
+<div class="row g-3 mb-3">
+    <div class="col-12">
+        <div class="kasa-card" style="border: 2px solid #10b981; border-radius: var(--radius-md); overflow: hidden;">
+            <div style="padding: 20px 24px; background: linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(16,185,129,0.02) 100%);">
+                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 8px;">
+                    <i class="fas fa-wallet me-2"></i>Bakiye
+                </div>
+                <div style="font-size: 34px; font-weight: 800; color: #10b981; line-height: 1.1;">
+                    @Model.bakiye.ToString("N2") <span style="font-size: 18px; font-weight: 600;">₺</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════ Tahsilat & Harç ═══════ -->
+<div class="row g-3 mb-3">
+    <div class="col-lg-6">
+        <div class="kasa-card" style="border-radius: var(--radius-md); height: 100%;">
+            <div class="kasa-card-header" style="padding: 12px 20px; background: rgba(16,185,129,0.06);">
+                <h6 class="mb-0" style="font-weight: 700; color: var(--kasa-success);">
+                    <i class="fas fa-plus-circle me-2"></i>Tahsilat
+                </h6>
+            </div>
+            <div class="kasa-card-body" style="padding: 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border-light);">
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
+                        <i class="fas fa-receipt me-2" style="color: var(--kasa-success); width: 16px;"></i>Tahsilat
+                    </span>
+                    <span style="font-size: 16px; font-weight: 700;">@Model.tahsilat.ToString("N2") ₺</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border-light);">
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
+                        <i class="fas fa-globe me-2" style="color: var(--kasa-success); width: 16px;"></i>Online Tahsilat
+                    </span>
+                    <span style="font-size: 16px; font-weight: 700;">@Model.onlineTahsilat.ToString("N2") ₺</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px;">
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
+                        <i class="fas fa-credit-card me-2" style="color: var(--kasa-success); width: 16px;"></i>POS Tahsilat
+                    </span>
+                    <span style="font-size: 16px; font-weight: 700;">@Model.PosTahsilat.ToString("N2") ₺</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="kasa-card" style="border-radius: var(--radius-md); height: 100%;">
+            <div class="kasa-card-header" style="padding: 12px 20px; background: rgba(8,145,178,0.06);">
+                <h6 class="mb-0" style="font-weight: 700; color: var(--kasa-info);">
+                    <i class="fas fa-gavel me-2"></i>Harç
+                </h6>
+            </div>
+            <div class="kasa-card-body" style="padding: 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border-light);">
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
+                        <i class="fas fa-receipt me-2" style="color: var(--kasa-info); width: 16px;"></i>Harç
+                    </span>
+                    <span style="font-size: 16px; font-weight: 700;">@Model.harc.ToString("N2") ₺</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border-light);">
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
+                        <i class="fas fa-globe me-2" style="color: var(--kasa-info); width: 16px;"></i>Online Harç
+                    </span>
+                    <span style="font-size: 16px; font-weight: 700;">@Model.onlineHarc.ToString("N2") ₺</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px;">
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
+                        <i class="fas fa-credit-card me-2" style="color: var(--kasa-info); width: 16px;"></i>POS Harç
+                    </span>
+                    <span style="font-size: 16px; font-weight: 700;">@Model.PosHarc.ToString("N2") ₺</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════ Reddiyat & Vergi/Stopaj ═══════ -->
+<div class="row g-3 mb-3">
+    <div class="col-lg-4">
+        <div class="kasa-card" style="border-radius: var(--radius-md); height: 100%;">
+            <div class="kasa-card-header" style="padding: 12px 20px; background: rgba(239,68,68,0.06);">
+                <h6 class="mb-0" style="font-weight: 700; color: var(--kasa-danger);">
+                    <i class="fas fa-undo me-2"></i>Reddiyat
+                </h6>
+            </div>
+            <div class="kasa-card-body" style="padding: 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px;">
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
+                        <i class="fas fa-minus-circle me-2" style="color: var(--kasa-danger); width: 16px;"></i>Reddiyat
+                    </span>
+                    <span style="font-size: 16px; font-weight: 700;">@Model.reddiyat.ToString("N2") ₺</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="kasa-card" style="border-radius: var(--radius-md); height: 100%;">
+            <div class="kasa-card-header" style="padding: 12px 20px; background: rgba(245,158,11,0.06);">
+                <h6 class="mb-0" style="font-weight: 700; color: var(--kasa-warning);">
+                    <i class="fas fa-percentage me-2"></i>Stopaj & Vergi
+                </h6>
+            </div>
+            <div class="kasa-card-body" style="padding: 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border-light);">
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">Stopaj</span>
+                    <span style="font-size: 16px; font-weight: 700;">@Model.Stopaj.ToString("N2") ₺</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border-light);">
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">Gelir Vergisi</span>
+                    <span style="font-size: 16px; font-weight: 700;">@Model.gelirVergisi.ToString("N2") ₺</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px;">
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">Damga Vergisi</span>
+                    <span style="font-size: 16px; font-weight: 700;">@Model.damgaVergisi.ToString("N2") ₺</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="kasa-card" style="border-radius: var(--radius-md); height: 100%;">
+            <div class="kasa-card-header" style="padding: 12px 20px; background: rgba(99,102,241,0.06);">
+                <h6 class="mb-0" style="font-weight: 700; color: #6366f1;">
+                    <i class="fas fa-hashtag me-2"></i>İşlem Adetleri
+                </h6>
+            </div>
+            <div class="kasa-card-body" style="padding: 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border-light);">
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
+                        <i class="fas fa-coins me-2" style="color: #6366f1; width: 16px;"></i>Tahsilat
+                    </span>
+                    <span class="kasa-badge kasa-badge-primary" style="font-size: 14px; font-weight: 700; padding: 4px 14px;">@Model.tahsilatIslemSayisi</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border-light);">
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
+                        <i class="fas fa-gavel me-2" style="color: #6366f1; width: 16px;"></i>Harç
+                    </span>
+                    <span class="kasa-badge kasa-badge-primary" style="font-size: 14px; font-weight: 700; padding: 4px 14px;">@Model.harcIslemSayisi</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px;">
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
+                        <i class="fas fa-undo me-2" style="color: #6366f1; width: 16px;"></i>Reddiyat
+                    </span>
+                    <span class="kasa-badge kasa-badge-primary" style="font-size: 14px; font-weight: 700; padding: 4px 14px;">@Model.reddiyatIslemSayisi</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

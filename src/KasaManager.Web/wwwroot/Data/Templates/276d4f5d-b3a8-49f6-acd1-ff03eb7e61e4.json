@@ -1,0 +1,14 @@
+{
+  "Id": "276d4f5d-b3a8-49f6-acd1-ff03eb7e61e4",
+  "Name": "Para \u00C7ekme Yaz\u0131s\u0131",
+  "Category": "ParaCekme",
+  "HeaderText": "T.C.\r\nANKARA B\u00D6LGE \u0130DARE MAHKEMES\u0130 BA\u015EKANLI\u011EI\r\nVEZNE \u00D6N B\u00DCRO",
+  "SayiKonuText": "Say\u0131  : {{Tarih}}/.....Muh\r\nKonu : Para \u00C7ekme Yaz\u0131s\u0131",
+  "MuhatapText": "T\u00DCRK\u0130YE VAKIFLAR BANKASI\r\nB\u00D6LGE \u0130DARE MAHKEMES\u0130 \u015EUBES\u0130NE\r\nANKARA",
+  "BodyTemplate": "        Ankara B\u00F6lge \u0130dare, \u0130dare ve Vergi Mahkemeleri veznesinde {{Tarih}} tarihinde toplam tahsilat miktar\u0131n\u0131n toplam \u00F6deme miktar\u0131ndan az olmas\u0131 nedeniyle, Vergi Mahkemelerinde tahsil edilen har\u00E7 miktar\u0131n\u0131n g\u00FCn sonunda maliye hesaplar\u0131na yat\u0131r\u0131lmas\u0131 gerekti\u011Finden kasada bulunan nakit miktar\u0131n\u0131n da bunu kar\u015F\u0131lamamas\u0131 nedeniyle {{IbanTahsilat}} IBAN numaral\u0131 emanet hesab\u0131ndan {{BankadanCekilen}} \u00E7ekilerek maliye har\u00E7 hesaplar\u0131na aktar\u0131lmas\u0131n\u0131 sa\u011Flamak amac\u0131yla vezne katibi {{Veznedar}}\u0027ya \u00F6denmesi hususunda gere\u011Fini rica ederim.",
+  "ImzaBlokuText": "Ali S\u00D6ZEYATARO\u011ELU\r\n      Vezne \u00D6n B\u00FCro\r\nVezne Yaz\u0131 \u0130\u015Fleri M\u00FCd\u00FCr\u00FC",
+  "FooterText": "Bu belge elektronik ortamda \u00FCretilmi\u015Ftir.",
+  "IsActive": true,
+  "CreatedAtUtc": "2026-02-18T13:03:34.9791552Z",
+  "UpdatedAtUtc": "2026-02-18T13:10:35.8962478Z"
+}

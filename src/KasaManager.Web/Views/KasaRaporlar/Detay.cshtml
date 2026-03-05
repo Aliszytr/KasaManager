@@ -1,0 +1,416 @@
+@model KasaManager.Web.Models.KasaRaporDetayViewModel
+@{
+    ViewData["Title"] = $"Rapor Detay — {Model.Snapshot.RaporTarihi:dd.MM.yyyy}";
+    var s = Model.Snapshot;
+    string BadgeClass(KasaManager.Domain.Reports.KasaRaporTuru t) => t switch
+    {
+        KasaManager.Domain.Reports.KasaRaporTuru.Sabah => "kasa-badge-sabah",
+        KasaManager.Domain.Reports.KasaRaporTuru.Aksam => "kasa-badge-aksam",
+        KasaManager.Domain.Reports.KasaRaporTuru.Genel => "kasa-badge-genel",
+        _ => "kasa-badge-ortak"
+    };
+}
+
+@section Styles {
+<style>
+    .detay-hero {
+        background: linear-gradient(135deg, var(--kasa-primary, #6366f1) 0%, #7c3aed 100%);
+        color: #fff;
+        border-radius: var(--kasa-radius-xl, 1rem);
+        padding: 1.5rem 2rem;
+        margin-bottom: 1.5rem;
+    }
+    .detay-hero h3 { font-weight: 700; margin-bottom: 0.25rem; }
+
+    .detay-meta-card {
+        background: rgba(255,255,255,0.12);
+        backdrop-filter: blur(8px);
+        border-radius: var(--kasa-radius-md, 0.5rem);
+        padding: 0.75rem 1rem;
+        text-align: center;
+        min-width: 120px;
+    }
+    .detay-meta-card .meta-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.8; }
+    .detay-meta-card .meta-value { font-size: 1rem; font-weight: 700; }
+
+    .kasa-badge-sabah { background: #fef3c7; color: #92400e; }
+    .kasa-badge-aksam { background: #dbeafe; color: #1e40af; }
+    .kasa-badge-genel { background: #d1fae5; color: #065f46; }
+    .kasa-badge-ortak { background: #ede9fe; color: #5b21b6; }
+
+    .detay-section {
+        background: var(--kasa-surface, #fff);
+        border-radius: var(--kasa-radius-lg, 0.75rem);
+        box-shadow: var(--kasa-shadow-sm);
+        border: 1px solid var(--kasa-border, #e5e7eb);
+        margin-bottom: 1rem;
+        overflow: hidden;
+    }
+    .detay-section-header {
+        padding: 0.875rem 1.25rem;
+        border-bottom: 1px solid var(--kasa-border, #e5e7eb);
+        background: var(--kasa-bg, #f9fafb);
+        font-weight: 600;
+        font-size: 0.9rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .detay-section-body { padding: 1.25rem; }
+
+    .detay-kv-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 0.5rem;
+    }
+    .detay-kv-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem 0.75rem;
+        border-radius: var(--kasa-radius-sm, 0.375rem);
+        background: var(--kasa-bg, #f9fafb);
+        font-size: 0.85rem;
+    }
+    .detay-kv-key {
+        font-weight: 500;
+        color: var(--kasa-text-secondary, #6b7280);
+        max-width: 55%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .detay-kv-value {
+        font-weight: 700;
+        font-family: 'JetBrains Mono', monospace;
+        color: var(--kasa-text, #111827);
+    }
+    .detay-kv-value.positive { color: #059669; }
+    .detay-kv-value.negative { color: #dc2626; }
+
+    .detay-notes-area {
+        background: #fffbeb;
+        border: 1px solid #fbbf24;
+        border-radius: var(--kasa-radius-md, 0.5rem);
+        padding: 1rem;
+    }
+
+    .detay-edit-field {
+        border: 1.5px dashed var(--kasa-border, #e5e7eb);
+        border-radius: var(--kasa-radius-sm, 0.375rem);
+        padding: 0.5rem 0.75rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        min-height: 2rem;
+    }
+    .detay-edit-field:hover {
+        border-color: var(--kasa-primary, #6366f1);
+        background: rgba(99,102,241,0.03);
+    }
+    .detay-edit-field.editing {
+        border-style: solid;
+        border-color: var(--kasa-primary, #6366f1);
+    }
+</style>
+}
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- HERO                                                   -->
+<!-- ════════════════════════════════════════════════════════ -->
+<div class="detay-hero">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+        <div>
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <a asp-action="Index" class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:#fff;">
+                    <i class="fas fa-arrow-left me-1"></i>Listeye Dön
+                </a>
+                <span class="badge rounded-pill @BadgeClass(s.KasaTuru)" style="font-size:0.8rem;">
+                    @s.KasaTuru
+                </span>
+                @if (s.IsDeleted)
+                {
+                    <span class="badge bg-danger">Silinmiş</span>
+                }
+                @if (s.IsActive)
+                {
+                    <span class="badge" style="background:rgba(255,255,255,0.2);">Aktif</span>
+                }
+            </div>
+            <h3 id="displayName">@(string.IsNullOrWhiteSpace(s.Name) ? $"{s.KasaTuru} Kasa — {s.RaporTarihi:dd.MM.yyyy}" : s.Name)</h3>
+            <p class="mb-0 small opacity-75">
+                @(string.IsNullOrWhiteSpace(s.Description) ? "Açıklama eklenmemiş" : s.Description)
+            </p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <div class="detay-meta-card">
+                <div class="meta-label">Tarih</div>
+                <div class="meta-value">@s.RaporTarihi.ToString("dd.MM.yyyy")</div>
+            </div>
+            <div class="detay-meta-card">
+                <div class="meta-label">Formül Seti</div>
+                <div class="meta-value" style="font-size:0.8rem;">@(s.FormulaSetName ?? "—")</div>
+            </div>
+            <div class="detay-meta-card">
+                <div class="meta-label">Versiyon</div>
+                <div class="meta-value">v@(s.Version)</div>
+            </div>
+            <div class="detay-meta-card">
+                <div class="meta-label">Kayıt Zamanı</div>
+                <div class="meta-value" style="font-size:0.75rem;">@s.CalculatedAtUtc.ToLocalTime().ToString("dd.MM HH:mm")</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- NOT / AÇIKLAMA (inline edit)                           -->
+<!-- ════════════════════════════════════════════════════════ -->
+<div class="detay-section">
+    <div class="detay-section-header">
+        <i class="fas fa-sticky-note text-warning"></i> Not & Açıklama
+        <button class="btn btn-sm btn-outline-primary ms-auto" id="btnEditNotes">
+            <i class="fas fa-edit me-1"></i>Düzenle
+        </button>
+    </div>
+    <div class="detay-section-body">
+        <!-- Görüntüleme modu -->
+        <div id="notesView">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label small text-muted fw-semibold">Rapor Adı</label>
+                    <div class="detay-edit-field" id="viewName">
+                        @(string.IsNullOrWhiteSpace(s.Name) ? "—" : s.Name)
+                    </div>
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label small text-muted fw-semibold">Açıklama</label>
+                    <div class="detay-edit-field" id="viewDescription">
+                        @(string.IsNullOrWhiteSpace(s.Description) ? "—" : s.Description)
+                    </div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label small text-muted fw-semibold">Notlar (Günlük özel bilgiler)</label>
+                    @if (!string.IsNullOrWhiteSpace(s.Notes))
+                    {
+                        <div class="detay-notes-area">
+                            <i class="fas fa-sticky-note text-warning me-1"></i>@s.Notes
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="detay-edit-field text-muted" id="viewNotes">Not eklenmemiş — düzenle butonuna tıklayarak ekleyebilirsiniz</div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Düzenleme modu -->
+        <div id="notesEdit" style="display:none;">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label small text-muted fw-semibold">Rapor Adı</label>
+                    <input type="text" class="form-control" id="editName" value="@s.Name" 
+                           placeholder="Rapor adı girin..." maxlength="200" />
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label small text-muted fw-semibold">Açıklama</label>
+                    <input type="text" class="form-control" id="editDescription" value="@s.Description" 
+                           placeholder="Kısa açıklama..." maxlength="500" />
+                </div>
+                <div class="col-12">
+                    <label class="form-label small text-muted fw-semibold">Notlar</label>
+                    <textarea class="form-control" id="editNotes" rows="3" 
+                              placeholder="Günlük özel bilgiler, uyarılar, EFT iade notları..." maxlength="1000">@s.Notes</textarea>
+                </div>
+                <div class="col-12 d-flex gap-2">
+                    <button class="btn btn-sm btn-primary" id="btnSaveNotes">
+                        <i class="fas fa-save me-1"></i>Kaydet
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" id="btnCancelNotes">İptal</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- HESAPLAMA SONUÇLARI (Output)                          -->
+<!-- ════════════════════════════════════════════════════════ -->
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="detay-section">
+            <div class="detay-section-header">
+                <i class="fas fa-calculator text-primary"></i> Hesaplama Sonuçları
+                <span class="badge bg-primary ms-auto">@Model.Outputs.Count alan</span>
+            </div>
+            <div class="detay-section-body">
+                <div class="detay-kv-grid">
+                    @foreach (var kv in Model.Outputs.Where(x => x.Value != 0).OrderByDescending(x => Math.Abs(x.Value)).Take(30))
+                    {
+                        var cssClass = kv.Value > 0 ? "positive" : kv.Value < 0 ? "negative" : "";
+                        <div class="detay-kv-item">
+                            <span class="detay-kv-key" title="@kv.Key">@kv.Key</span>
+                            <span class="detay-kv-value @cssClass">@kv.Value.ToString("N2")</span>
+                        </div>
+                    }
+                </div>
+                @if (!Model.Outputs.Any(x => x.Value != 0))
+                {
+                    <div class="text-muted text-center py-3">Hesaplama sonucu bulunamadı</div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- HAM VERİLER (Input) -->
+    <div class="col-lg-6">
+        <div class="detay-section">
+            <div class="detay-section-header">
+                <i class="fas fa-database text-success"></i> Ham Veriler (Input)
+                <span class="badge bg-success ms-auto">@Model.Inputs.Count alan</span>
+            </div>
+            <div class="detay-section-body" style="max-height: 500px; overflow-y: auto;">
+                <div class="detay-kv-grid">
+                    @foreach (var kv in Model.Inputs.Where(x => x.Value != 0).OrderByDescending(x => Math.Abs(x.Value)).Take(50))
+                    {
+                        <div class="detay-kv-item">
+                            <span class="detay-kv-key" title="@kv.Key">@kv.Key</span>
+                            <span class="detay-kv-value">@kv.Value.ToString("N2")</span>
+                        </div>
+                    }
+                </div>
+                @if (!Model.Inputs.Any(x => x.Value != 0))
+                {
+                    <div class="text-muted text-center py-3">Ham veri bulunamadı</div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- KASA RAPOR DATA (varsa — tam re-hydration)            -->
+<!-- ════════════════════════════════════════════════════════ -->
+@if (Model.RaporData != null)
+{
+    var rd = Model.RaporData;
+    <div class="detay-section mt-3">
+        <div class="detay-section-header">
+            <i class="fas fa-file-invoice-dollar text-info"></i> Kasa Rapor Verileri (Tam Kayıt)
+        </div>
+        <div class="detay-section-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <div class="detay-kv-item">
+                        <span class="detay-kv-key">Genel Kasa</span>
+                        <span class="detay-kv-value">@rd.GenelKasa.ToString("N2")</span>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="detay-kv-item">
+                        <span class="detay-kv-key">Dünden Devreden</span>
+                        <span class="detay-kv-value">@rd.DundenDevredenKasa.ToString("N2")</span>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="detay-kv-item">
+                        <span class="detay-kv-key">Bankaya Toplam</span>
+                        <span class="detay-kv-value">@rd.BankayaToplam.ToString("N2")</span>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="detay-kv-item">
+                        <span class="detay-kv-key">Kasadaki Nakit</span>
+                        <span class="detay-kv-value">@rd.KasadakiNakit.ToString("N2")</span>
+                    </div>
+                </div>
+            </div>
+            <hr class="my-2" />
+            <div class="row g-2">
+                <div class="col-md-4">
+                    <div class="detay-kv-item">
+                        <span class="detay-kv-key">Bankaya Tahsilat</span>
+                        <span class="detay-kv-value">@rd.BankayaTahsilat.ToString("N2")</span>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="detay-kv-item">
+                        <span class="detay-kv-key">Bankaya Harç</span>
+                        <span class="detay-kv-value">@rd.BankayaHarc.ToString("N2")</span>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="detay-kv-item">
+                        <span class="detay-kv-key">Bankaya Stopaj</span>
+                        <span class="detay-kv-value">@rd.BankayaStopaj.ToString("N2")</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- EXPORT Toolbar                                         -->
+<!-- ════════════════════════════════════════════════════════ -->
+<div class="d-flex justify-content-end gap-2 mt-3 mb-4">
+    <a asp-action="ExportJson" asp-route-id="@s.Id" class="btn btn-outline-info btn-sm">
+        <i class="fas fa-download me-1"></i>JSON İndir
+    </a>
+    <a asp-action="Index" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-list me-1"></i>Tüm Raporlar
+    </a>
+</div>
+
+@section Scripts {
+<script>
+(function() {
+    const antiForgeryToken = document.querySelector('input[name="__RequestVerificationToken"]')?.value || '';
+    const snapshotId = '@s.Id';
+
+    // ═══ NOT DÜZENLEME ═══
+    const btnEdit = document.getElementById('btnEditNotes');
+    const btnSave = document.getElementById('btnSaveNotes');
+    const btnCancel = document.getElementById('btnCancelNotes');
+    const viewDiv = document.getElementById('notesView');
+    const editDiv = document.getElementById('notesEdit');
+
+    btnEdit?.addEventListener('click', () => {
+        viewDiv.style.display = 'none';
+        editDiv.style.display = 'block';
+        btnEdit.style.display = 'none';
+    });
+
+    btnCancel?.addEventListener('click', () => {
+        viewDiv.style.display = 'block';
+        editDiv.style.display = 'none';
+        btnEdit.style.display = 'inline-flex';
+    });
+
+    btnSave?.addEventListener('click', async () => {
+        const name = document.getElementById('editName').value.trim();
+        const description = document.getElementById('editDescription').value.trim();
+        const notes = document.getElementById('editNotes').value.trim();
+
+        try {
+            const resp = await fetch('@Url.Action("Update")', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'RequestVerificationToken': antiForgeryToken
+                },
+                body: `id=${snapshotId}&name=${encodeURIComponent(name)}&description=${encodeURIComponent(description)}&notes=${encodeURIComponent(notes)}`
+            });
+            const data = await resp.json();
+            if (data.success) {
+                if (typeof kasaToast === 'function') kasaToast(data.message, 'success');
+                setTimeout(() => location.reload(), 500);
+            }
+        } catch(err) {
+            console.error('Güncelleme hatası:', err);
+            if (typeof kasaToast === 'function') kasaToast('Güncelleme başarısız!', 'error');
+        }
+    });
+})();
+</script>
+}

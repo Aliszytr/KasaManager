@@ -1,0 +1,861 @@
+@model KasaManager.Web.Models.KasaSettingsViewModel
+
+@{
+    ViewData["Title"] = "Kasa Ayarları";
+}
+
+<div class="container-fluid py-4">
+    <!-- ═══════ Sayfa Başlığı ═══════ -->
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h4 class="mb-1" style="font-weight: 800; letter-spacing: -0.3px;">
+                <i class="fas fa-cog me-2" style="color: var(--kasa-primary);"></i>Kasa Ayarları
+            </h4>
+            <div style="color: var(--text-muted); font-size: 0.85rem;">
+                Çok sık değişmeyen varsayılanlar bu ekranda tanımlanır
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════ Hata / Uyarı Mesajları ═══════ -->
+    @if (Model.Errors.Count > 0)
+    {
+        <div class="kasa-card mb-3" style="border-left: 4px solid var(--kasa-danger);">
+            <div class="kasa-card-body" style="padding: 12px 16px;">
+                <div style="color: var(--kasa-danger); font-weight: 600; margin-bottom: 4px;">
+                    <i class="fas fa-exclamation-circle me-1"></i> Hatalar
+                </div>
+                <ul class="mb-0" style="padding-left: 20px; color: var(--text-secondary); font-size: 0.9rem;">
+                    @foreach (var e in Model.Errors)
+                    {
+                        <li>@e</li>
+                    }
+                </ul>
+            </div>
+        </div>
+    }
+    @if (Model.Warnings.Count > 0)
+    {
+        <div class="kasa-card mb-3" style="border-left: 4px solid var(--kasa-warning);">
+            <div class="kasa-card-body" style="padding: 12px 16px;">
+                <div style="color: var(--kasa-warning); font-weight: 600; margin-bottom: 4px;">
+                    <i class="fas fa-exclamation-triangle me-1"></i> Uyarılar
+                </div>
+                <ul class="mb-0" style="padding-left: 20px; color: var(--text-secondary); font-size: 0.9rem;">
+                    @foreach (var w in Model.Warnings)
+                    {
+                        <li>@w</li>
+                    }
+                </ul>
+            </div>
+        </div>
+    }
+
+    <form asp-action="Save" method="post">
+        @Html.AntiForgeryToken()
+
+        <div class="row g-4">
+            <!-- ═══════ SOL PANEL: Varsayılan Değerler ═══════ -->
+            <div class="col-lg-5">
+                <div class="kasa-card kasa-card-glow">
+                    <div class="kasa-card-header">
+                        <div>
+                            <h6 style="font-size: 15px; font-weight: 700; margin: 0;">
+                                <i class="fas fa-coins me-2" style="color: var(--kasa-warning);"></i>Varsayılan Kasa Değerleri
+                            </h6>
+                            <div style="color: var(--text-muted); font-size: 0.8rem; margin-top: 2px;">
+                                Kasa hazırlama ekranlarında otomatik dolacak değerler
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kasa-card-body">
+                        <!-- Nakit & Bozuk Para -->
+                        <div style="margin-bottom: 20px;">
+                            <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 10px;">
+                                <i class="fas fa-money-bill-wave me-1"></i> Nakit & Bozuk Para
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-4">
+                                    <label class="form-label" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Varsayılan Nakit</label>
+                                    <input asp-for="DefaultNakitPara" class="form-control" inputmode="decimal"
+                                           style="font-family: 'JetBrains Mono', monospace; font-weight: 600;" />
+                                </div>
+                                <div class="col-4">
+                                    <label class="form-label" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Varsayılan Bozuk</label>
+                                    <input asp-for="DefaultBozukPara" class="form-control" inputmode="decimal"
+                                           style="font-family: 'JetBrains Mono', monospace; font-weight: 600;" />
+                                </div>
+                                <div class="col-4">
+                                    <label class="form-label" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Kasada Eksik/Fazla</label>
+                                    <input asp-for="DefaultKasaEksikFazla" class="form-control" inputmode="decimal"
+                                           style="font-family: 'JetBrains Mono', monospace; font-weight: 600;" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr style="border-color: var(--border-light); margin: 16px 0;" />
+
+                        <!-- Genel Kasa Seed -->
+                        <div style="margin-bottom: 20px;">
+                            <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 10px;">
+                                <i class="fas fa-seedling me-1"></i> Genel Kasa Başlangıç (Seed)
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-6">
+                                    <label class="form-label" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Devreden Tutar</label>
+                                    <input asp-for="DefaultGenelKasaDevredenSeed" class="form-control" inputmode="decimal"
+                                           style="font-family: 'JetBrains Mono', monospace; font-weight: 600;" />
+                                    <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">
+                                        Sadece ilk kurulumda / önceki snapshot yokken devreye girer
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Başlangıç Tarihi</label>
+                                    <input asp-for="DefaultGenelKasaBaslangicTarihiSeed" class="form-control" type="date" />
+                                    <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">
+                                        Boş ise rapordan en erken tarih alınır
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr style="border-color: var(--border-light); margin: 16px 0;" />
+
+                        <!-- Override Değerleri -->
+                        <div>
+                            <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 10px;">
+                                <i class="fas fa-pen me-1"></i> Günlük Override Değerleri
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-6">
+                                    <label class="form-label" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Dünden Devreden Kasa</label>
+                                    <input asp-for="DefaultDundenDevredenKasaNakit" class="form-control" inputmode="decimal"
+                                           style="font-family: 'JetBrains Mono', monospace; font-weight: 600;" />
+                                    <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">
+                                        <strong>0/boş</strong> ise önceki kaydından otomatik alınır
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Kayden Tahsilat</label>
+                                    <input asp-for="DefaultKaydenTahsilat" class="form-control" inputmode="decimal"
+                                           style="font-family: 'JetBrains Mono', monospace; font-weight: 600;" />
+                                    <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">
+                                        Boş ise MasrafveReddiyat.xlsx → "KAYDEN" türünden hesaplanır
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kasa-card-footer" style="padding: 10px 20px;">
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">
+                            <i class="fas fa-info-circle me-1"></i> Bu değerler her gün girilmek zorunda değildir. Değiştiğinde yeni kasalara uygulanır.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══════ SAĞ PANEL: Vergi Kasa Veznedarları ═══════ -->
+            <div class="col-lg-7">
+                <div class="kasa-card kasa-card-glow">
+                    <div class="kasa-card-header">
+                        <div>
+                            <h6 style="font-size: 15px; font-weight: 700; margin: 0;">
+                                <i class="fas fa-users me-2" style="color: var(--kasa-secondary);"></i>Vergi Kasa Veznedarları
+                            </h6>
+                            <div style="color: var(--text-muted); font-size: 0.8rem; margin-top: 2px;">
+                                KasaÜstRapor'da checkbox'ları otomatik işaretler
+                            </div>
+                        </div>
+                        @if (Model.OptionsSourceDate.HasValue)
+                        {
+                            <span style="background: rgba(8, 145, 178, 0.15); color: var(--kasa-primary); padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600;">
+                                <i class="fas fa-calendar-check me-1"></i>@Model.OptionsSourceDate.Value.ToString("dd.MM.yyyy")
+                            </span>
+                        }
+                    </div>
+                    <div class="kasa-card-body">
+                        @if (Model.VeznedarOptions.Count == 0)
+                        {
+                            <div style="text-align: center; padding: 30px 0; color: var(--text-muted);">
+                                <i class="fas fa-user-slash" style="font-size: 2rem; margin-bottom: 8px; display: block; opacity: 0.4;"></i>
+                                Veznedar listesi yok — önce KasaÜstRapor snapshot oluşturun
+                            </div>
+                        }
+                        else
+                        {
+                            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; max-height: 360px; overflow-y: auto; padding: 4px;">
+                                @foreach (var v in Model.VeznedarOptions)
+                                {
+                                    var isChecked = Model.SelectedVergiKasaVeznedarlar.Contains(v, StringComparer.OrdinalIgnoreCase);
+                                    <label style="display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+                                                  background: var(--surface-input); border: 1px solid var(--border-light);
+                                                  border-radius: var(--radius-sm); cursor: pointer;
+                                                  transition: all var(--transition-fast);
+                                                  @(isChecked ? "border-color: var(--kasa-primary); box-shadow: 0 0 0 1px var(--kasa-primary);" : "")"
+                                           class="veznedar-option">
+                                        <input class="form-check-input" type="checkbox" name="SelectedVergiKasaVeznedarlar"
+                                               value="@v" id="vk_@v.GetHashCode()" @(isChecked ? "checked" : "")
+                                               style="margin: 0; width: 18px; height: 18px;" />
+                                        <span style="font-size: 0.85rem; font-weight: 500; color: var(--text-primary);">@v</span>
+                                    </label>
+                                }
+                            </div>
+                            <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 12px; padding: 8px 12px; background: var(--surface-body); border-radius: var(--radius-sm);">
+                                <i class="fas fa-info-circle me-1"></i> Günlük vergi kasa toplamı, yine de o gün KasaÜstRapor'da kaydedilen snapshot seçimine göre hesaplanır.
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════ IBAN BANKA HESAP BİLGİLERİ ═══════ -->
+        <div class="row g-4 mt-1">
+            <div class="col-12">
+                <div class="kasa-card kasa-card-glow">
+                    <div class="kasa-card-header">
+                        <div>
+                            <h6 style="font-size: 15px; font-weight: 700; margin: 0;">
+                                <i class="fas fa-university me-2" style="color: var(--kasa-info);"></i>Banka Hesap Bilgileri (IBAN)
+                            </h6>
+                            <div style="color: var(--text-muted); font-size: 0.8rem; margin-top: 2px;">
+                                Bankaya yatırılacak kartlarda gösterilecek IBAN numaraları
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kasa-card-body">
+                        <!-- Stopaj Hesabı -->
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 10px;">
+                                <i class="fas fa-receipt me-1" style="color: var(--kasa-secondary);"></i> Stopaj Hesabı
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-5">
+                                    <label class="form-label" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Hesap Adı</label>
+                                    <input asp-for="HesapAdiStopaj" class="form-control" placeholder="Banka ve Hesap Adı (örn: Ziraat - Stopaj)" />
+                                </div>
+                                <div class="col-md-7">
+                                    <label class="form-label" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">IBAN Numarası</label>
+                                    <input asp-for="IbanStopaj" class="form-control iban-input" placeholder="TR..." 
+                                           style="font-family: 'JetBrains Mono', monospace; font-weight: 600; letter-spacing: 1.2px;" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr style="border-color: var(--border-light); margin: 12px 0;" />
+
+                        <!-- Tahsilat (Masraf) Hesabı -->
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 10px;">
+                                <i class="fas fa-hand-holding-usd me-1" style="color: var(--kasa-success);"></i> Tahsilat Hesabı
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-5">
+                                    <label class="form-label" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Hesap Adı</label>
+                                    <input asp-for="HesapAdiMasraf" class="form-control" placeholder="Banka ve Hesap Adı (örn: Vakıfbank - Tahsilat)" />
+                                </div>
+                                <div class="col-md-7">
+                                    <label class="form-label" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">IBAN Numarası</label>
+                                    <input asp-for="IbanMasraf" class="form-control iban-input" placeholder="TR..."
+                                           style="font-family: 'JetBrains Mono', monospace; font-weight: 600; letter-spacing: 1.2px;" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr style="border-color: var(--border-light); margin: 12px 0;" />
+
+                        <!-- Harç Hesabı -->
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 10px;">
+                                <i class="fas fa-gavel me-1" style="color: var(--kasa-warning);"></i> Harç Hesabı
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-5">
+                                    <label class="form-label" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Hesap Adı</label>
+                                    <input asp-for="HesapAdiHarc" class="form-control" placeholder="Banka ve Hesap Adı (örn: Halkbank - Harçlar)" />
+                                </div>
+                                <div class="col-md-7">
+                                    <label class="form-label" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">IBAN Numarası</label>
+                                    <input asp-for="IbanHarc" class="form-control iban-input" placeholder="TR..."
+                                           style="font-family: 'JetBrains Mono', monospace; font-weight: 600; letter-spacing: 1.2px;" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr style="border-color: var(--border-light); margin: 12px 0;" />
+
+                        <!-- Posta Pulu Hesabı -->
+                        <div>
+                            <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 10px;">
+                                <i class="fas fa-stamp me-1" style="color: var(--kasa-primary);"></i> Posta Pulu Hesabı
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-5">
+                                    <div style="font-size: 0.72rem; color: var(--text-muted); padding-top: 28px;">
+                                        <i class="fas fa-info-circle me-1"></i> Sabit hesap — sadece IBAN girilir
+                                    </div>
+                                </div>
+                                <div class="col-md-7">
+                                    <label class="form-label" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">IBAN Numarası</label>
+                                    <input asp-for="IbanPostaPulu" class="form-control iban-input" placeholder="TR..."
+                                           style="font-family: 'JetBrains Mono', monospace; font-weight: 600; letter-spacing: 1.2px;" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kasa-card-footer" style="padding: 10px 20px;">
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">
+                            <i class="fas fa-info-circle me-1"></i> IBAN otomatik normalize edilir (boşluk/tire temizlenir). Kopyalanabilir formatta tüm raporlarda gösterilir.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════ Kaydet Butonu (Global Ayarlar) ═══════ -->
+        <div class="d-flex justify-content-end mt-4">
+            <button type="submit" style="background: linear-gradient(135deg, var(--kasa-primary), var(--kasa-primary-dark));
+                                          color: #fff; border: none; padding: 10px 28px; border-radius: var(--radius-md);
+                                          font-weight: 600; font-size: 0.9rem; cursor: pointer;
+                                          transition: all var(--transition-fast);
+                                          box-shadow: 0 4px 12px rgba(8, 145, 178, 0.3);">
+                <i class="fas fa-save me-2"></i> Ayarları Kaydet
+            </button>
+        </div>
+    </form>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- BANKA YAZILARI ŞABLON YÖNETİMİ (Form dışında, AJAX tabanlı)     -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div class="mt-4" x-data="bankaYazilariApp()">
+        <div class="kasa-card kasa-card-glow">
+            <div class="kasa-card-header">
+                <div>
+                    <h6 style="font-size: 15px; font-weight: 700; margin: 0;">
+                        <i class="fas fa-file-alt me-2" style="color: var(--kasa-warning);"></i>Banka Yazıları Şablonları
+                    </h6>
+                    <div style="color: var(--text-muted); font-size: 0.8rem; margin-top: 2px;">
+                        Para Çekme, Virman ve Özel Talimat yazılarının şablonlarını yönetin
+                    </div>
+                </div>
+                <button type="button" @@click="showNewForm = !showNewForm"
+                        style="padding: 6px 14px; border-radius: 8px; border: none; background: linear-gradient(135deg, var(--kasa-warning), #d97706); color: white; font-size: 12px; font-weight: 600; cursor: pointer;">
+                    <i class="fas fa-plus me-1"></i>Yeni Şablon
+                </button>
+            </div>
+            <div class="kasa-card-body">
+                <!-- TOAST Mesajı -->
+                <div x-show="toastMessage" x-transition
+                     style="margin-bottom: 12px; padding: 10px 14px; border-radius: 8px; font-size: 13px; font-weight: 600;"
+                     :style="toastType === 'success' ? 'background: rgba(16,185,129,0.12); color: var(--kasa-success); border-left: 3px solid var(--kasa-success);' : 'background: rgba(239,68,68,0.12); color: var(--kasa-danger); border-left: 3px solid var(--kasa-danger);'">
+                    <i class="fas" :class="toastType === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'" class="me-1"></i>
+                    <span x-text="toastMessage"></span>
+                </div>
+
+                <!-- Yeni Şablon Formu -->
+                <div x-show="showNewForm" x-transition style="margin-bottom: 20px; padding: 16px; background: rgba(245,158,11,0.04); border-radius: 10px; border: 1px solid rgba(245,158,11,0.15);">
+                    <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--kasa-warning); margin-bottom: 12px;">
+                        <i class="fas fa-plus-circle me-1"></i>Yeni Şablon Oluştur
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-5">
+                            <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Şablon Adı</label>
+                            <input type="text" x-model="newTemplate.name" placeholder="Ör: Para Çekme Standart"
+                                   class="form-control" style="font-size: 13px;" />
+                        </div>
+                        <div class="col-md-4">
+                            <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Kategori</label>
+                            <select x-model="newTemplate.category" class="form-select" style="font-size: 13px;">
+                                <option value="ParaCekme">Para Çekme Yazısı</option>
+                                <option value="Virman">Virman Yazısı</option>
+                                <option value="OzelTalimat">Özel Talimat Yazısı</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Durum</label>
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding-top: 6px;">
+                                <input type="checkbox" x-model="newTemplate.isActive" style="width: 16px; height: 16px;" />
+                                <span style="font-size: 12px;">Aktif</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">
+                            <i class="fas fa-heading me-1" style="font-size: 9px;"></i>Üst Başlık
+                            <span style="font-weight: 400; opacity: 0.7;">(çok satırlı, Ör: T.C. / Kurum Adı / Birim)</span>
+                        </label>
+                        <textarea x-model="newTemplate.headerText" rows="3" placeholder="T.C.&#10;ANKARA BÖLGE İDARE MAHKEMESİ BAŞKANLIĞI&#10;VEZNE ÖN BÜRO"
+                                  class="form-control" style="font-size: 13px;"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">
+                            <i class="fas fa-hashtag me-1" style="font-size: 9px;"></i>Sayı / Konu
+                            <span style="font-weight: 400; opacity: 0.7;">(opsiyonel)</span>
+                        </label>
+                        <textarea x-model="newTemplate.sayiKonuText" rows="2" placeholder="Sayı  : {{Tarih}}/.....Muh&#10;Konu : Para Çekme Yazısı"
+                                  class="form-control" style="font-size: 13px;"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">
+                            <i class="fas fa-building me-1" style="font-size: 9px;"></i>Muhatap (Banka / Kurum)
+                            <span style="font-weight: 400; opacity: 0.7;">(opsiyonel, ortalanır)</span>
+                        </label>
+                        <textarea x-model="newTemplate.muhatapText" rows="3" placeholder="TÜRKİYE VAKIFLAR BANKASI&#10;BÖLGE İDARE MAHKEMESİ ŞUBESİNE&#10;ANKARA"
+                                  class="form-control" style="font-size: 13px;"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">
+                            <i class="fas fa-align-left me-1" style="font-size: 9px;"></i>Gövde Metni
+                            <span style="font-weight: 400; opacity: 0.7;">(Placeholder'lar kullanılabilir)</span>
+                        </label>
+                        <textarea x-model="newTemplate.bodyTemplate" rows="5" placeholder="Şablon metnini buraya yazın..."
+                                  class="form-control" style="font-size: 13px; font-family: 'JetBrains Mono', monospace;"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">
+                            <i class="fas fa-signature me-1" style="font-size: 9px;"></i>İmza Bloğu
+                            <span style="font-weight: 400; opacity: 0.7;">(sağa yaslı)</span>
+                        </label>
+                        <textarea x-model="newTemplate.imzaBlokuText" rows="2" placeholder="{{Hazirlayan}}&#10;Vezne Memuru"
+                                  class="form-control" style="font-size: 13px;"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">
+                            <i class="fas fa-minus me-1" style="font-size: 9px;"></i>Alt Metin (Footer)
+                        </label>
+                        <textarea x-model="newTemplate.footerText" rows="2" placeholder="Bu belge elektronik ortamda üretilmiştir."
+                                  class="form-control" style="font-size: 13px;"></textarea>
+                    </div>
+                    <!-- Placeholder Rehberi — Tıkla & Kopyala -->
+                    <div style="padding: 12px 14px; background: rgba(8,145,178,0.06); border-radius: 8px; margin-bottom: 14px;">
+                        <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--kasa-info); margin-bottom: 8px;">
+                            <i class="fas fa-code me-1"></i>Dinamik Değerler — tıklayarak kopyala
+                        </div>
+                        <!-- Genel -->
+                        <div style="margin-bottom: 6px;">
+                            <span style="font-size: 9px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px;">Genel</span>
+                            <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px;">
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{Tarih}}</span>
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{TarihSlash}}</span>
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{GunYazi}}</span>
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{KasaTuru}}</span>
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{Hazirlayan}}</span>
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{Veznedar}}</span>
+                            </div>
+                        </div>
+                        <!-- Tutarlar -->
+                        <div style="margin-bottom: 6px;">
+                            <span style="font-size: 9px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px;">Tutarlar</span>
+                            <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px;">
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{BankayaToplam}}</span>
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{BankadanCekilen}}</span>
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{ToplamStopajVirman}}</span>
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{BankayaStopaj}}</span>
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{BankayaTahsilat}}</span>
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{BankayaHarc}}</span>
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{NakitToplam}}</span>
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{KasadakiNakit}}</span>
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{DundenDevredenBanka}}</span>
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{YarinaDevredecekBanka}}</span>
+                            </div>
+                        </div>
+                        <!-- IBAN / Hesap -->
+                        <div style="margin-bottom: 6px;">
+                            <span style="font-size: 9px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px;">IBAN & Hesap</span>
+                            <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px;">
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{IbanStopaj}}</span>
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{IbanTahsilat}}</span>
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{IbanHarc}}</span>
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{HesapAdiStopaj}}</span>
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{HesapAdiTahsilat}}</span>
+                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{HesapAdiHarc}}</span>
+                            </div>
+                        </div>
+                        <!-- Özel -->
+                        <div>
+                            <span style="font-size: 9px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px;">Özel Bloklar</span>
+                            <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px;">
+                                <span class="ph-tag ph-tag-special" onclick="copyPlaceholder(this)">{{TABLO}}</span>
+                            </div>
+                            <div style="font-size: 9px; color: var(--text-muted); margin-top: 3px; font-style: italic;">
+                                <i class="fas fa-info-circle me-1"></i>{{TABLO}} gövde metnine eklenirse o noktaya yatırım tablosu yerleşir. Eklenmezse tablo oluşturulmaz.
+                            </div>
+                        </div>
+                    </div>
+                    </div>
+                    <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                        <button type="button" @@click="showNewForm = false"
+                                style="padding: 6px 16px; border-radius: 6px; border: 1px solid var(--border-light); background: transparent; color: var(--text-secondary); font-size: 12px; cursor: pointer;">
+                            İptal
+                        </button>
+                        <button type="button" @@click="saveTemplate(null)"
+                                style="padding: 6px 18px; border-radius: 6px; border: none; background: var(--kasa-warning); color: white; font-size: 12px; font-weight: 600; cursor: pointer;">
+                            <i class="fas fa-save me-1"></i>Kaydet
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Mevcut Şablonlar -->
+                @if (Model.DocumentTemplates.Count == 0)
+                {
+                    <div style="text-align: center; padding: 30px 0; color: var(--text-muted);">
+                        <i class="fas fa-file-alt" style="font-size: 2rem; margin-bottom: 8px; display: block; opacity: 0.3;"></i>
+                        Henüz şablon tanımlanmamış. Yukarıdan "Yeni Şablon" ile başlayın.
+                    </div>
+                }
+                else
+                {
+                    <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                        <i class="fas fa-list"></i>
+                        <span>@Model.DocumentTemplates.Count şablon tanımlı</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 10px; max-height: 480px; overflow-y: auto; padding-right: 4px;">
+                        @foreach (var t in Model.DocumentTemplates)
+                        {
+                            var catColor = t.Category switch {
+                                "ParaCekme" => "var(--kasa-warning)",
+                                "Virman" => "var(--kasa-primary)",
+                                _ => "var(--kasa-success)"
+                            };
+                            var catLabel = t.Category switch {
+                                "ParaCekme" => "Para Çekme",
+                                "Virman" => "Virman",
+                                _ => "Özel Talimat"
+                            };
+                            var catIcon = t.Category switch {
+                                "ParaCekme" => "fa-money-bill-wave",
+                                "Virman" => "fa-exchange-alt",
+                                _ => "fa-clipboard-list"
+                            };
+                            var bodyPreview = string.IsNullOrWhiteSpace(t.BodyTemplate) ? "—" : (t.BodyTemplate.Length > 120 ? t.BodyTemplate.Substring(0, 120) + "…" : t.BodyTemplate);
+                            <div style="padding: 12px 16px; background: var(--surface-card); border-radius: 10px; border: 1px solid var(--border-light); border-left: 3px solid @catColor;"
+                                 x-data="{ editing: false }">
+                                <div style="display: flex; align-items: center; justify-content: space-between;">
+                                    <div style="display: flex; align-items: center; gap: 10px;">
+                                        <i class="fas @catIcon" style="color: @catColor; font-size: 16px;"></i>
+                                        <div>
+                                            <div style="font-size: 14px; font-weight: 700; color: var(--text-primary);">@t.Name</div>
+                                            <div style="display: flex; gap: 8px; align-items: center; margin-top: 2px;">
+                                                <span style="font-size: 10px; padding: 2px 8px; border-radius: 10px; background: @(catColor.Replace(")", ",0.12)")); color: @catColor; font-weight: 600;">
+                                                    @catLabel
+                                                </span>
+                                                @if (t.IsActive)
+                                                {
+                                                    <span style="font-size: 10px; padding: 2px 8px; border-radius: 10px; background: rgba(16,185,129,0.12); color: var(--kasa-success); font-weight: 600;">
+                                                        <i class="fas fa-check-circle me-1"></i>Aktif
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span style="font-size: 10px; padding: 2px 8px; border-radius: 10px; background: rgba(239,68,68,0.12); color: var(--kasa-danger); font-weight: 600;">
+                                                        Pasif
+                                                    </span>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="display: flex; gap: 6px;">
+                                        <button type="button" @@click="editing = !editing"
+                                                style="padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border-light); background: transparent; color: var(--text-muted); font-size: 11px; cursor: pointer;"
+                                                title="Düzenle">
+                                            <i class="fas fa-pen"></i>
+                                        </button>
+                                        <button type="button" @@click="if(confirm('Bu şablonu silmek istediğinize emin misiniz?')) deleteTemplate('@t.Id')"
+                                                style="padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(239,68,68,0.2); background: transparent; color: var(--kasa-danger); font-size: 11px; cursor: pointer;"
+                                                title="Sil">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <!-- Ön İzleme — Başlık / Gövde / İmza -->
+                                <div x-show="!editing" style="margin-top: 10px; padding: 8px 12px; background: rgba(0,0,0,0.03); border-radius: 6px; font-size: 11px; line-height: 1.6;">
+                                    @if (!string.IsNullOrWhiteSpace(t.HeaderText))
+                                    {
+                                        <div style="color: var(--text-muted); font-weight: 600; margin-bottom: 2px;">
+                                            <i class="fas fa-heading me-1" style="font-size: 9px; opacity: 0.5;"></i>@t.HeaderText
+                                        </div>
+                                    }
+                                    <div style="color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; font-size: 10px; white-space: pre-line; word-break: break-word;">@bodyPreview</div>
+                                    @if (!string.IsNullOrWhiteSpace(t.FooterText))
+                                    {
+                                        <div style="color: var(--text-muted); font-style: italic; margin-top: 4px; padding-top: 4px; border-top: 1px dashed rgba(0,0,0,0.1);">
+                                            <i class="fas fa-signature me-1" style="font-size: 9px; opacity: 0.5;"></i>@t.FooterText
+                                        </div>
+                                    }
+                                </div>
+                                <!-- Düzenleme formu -->
+                                <div x-show="editing" x-transition style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-light);">
+                                    <div class="row g-2 mb-2">
+                                        <div class="col-md-5">
+                                            <label style="font-size: 10px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 2px;">Şablon Adı</label>
+                                            <input type="text" id="tplName_@t.Id" value="@t.Name" class="form-control" style="font-size: 12px;" placeholder="Şablon Adı" />
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label style="font-size: 10px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 2px;">Kategori</label>
+                                            <select id="tplCat_@t.Id" class="form-select" style="font-size: 12px;">
+                                                @{ var selPC = t.Category == "ParaCekme" ? "selected" : ""; }
+                                                @{ var selVR = t.Category == "Virman" ? "selected" : ""; }
+                                                @{ var selOT = t.Category == "OzelTalimat" ? "selected" : ""; }
+                                                @Html.Raw($"<option value=\"ParaCekme\" {selPC}>Para Çekme</option>")
+                                                @Html.Raw($"<option value=\"Virman\" {selVR}>Virman</option>")
+                                                @Html.Raw($"<option value=\"OzelTalimat\" {selOT}>Özel Talimat</option>")
+                                            </select>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label style="font-size: 10px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 2px;">Durum</label>
+                                            <label style="display: flex; align-items: center; gap: 4px; padding-top: 6px;">
+                                                <input type="checkbox" id="tplActive_@t.Id" @(t.IsActive ? "checked" : "") style="width: 14px; height: 14px;" />
+                                                <span style="font-size: 11px;">Aktif</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="mb-2">
+                                        <label style="font-size: 10px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 2px;">
+                                            <i class="fas fa-heading me-1" style="font-size: 9px;"></i>Üst Başlık
+                                        </label>
+                                        <textarea id="tplHeader_@t.Id" rows="3" class="form-control" style="font-size: 12px;">@(t.HeaderText ?? "")</textarea>
+                                    </div>
+                                    <div class="mb-2">
+                                        <label style="font-size: 10px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 2px;">
+                                            <i class="fas fa-hashtag me-1" style="font-size: 9px;"></i>Sayı / Konu
+                                        </label>
+                                        <textarea id="tplSayiKonu_@t.Id" rows="2" class="form-control" style="font-size: 12px;">@(t.SayiKonuText ?? "")</textarea>
+                                    </div>
+                                    <div class="mb-2">
+                                        <label style="font-size: 10px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 2px;">
+                                            <i class="fas fa-building me-1" style="font-size: 9px;"></i>Muhatap
+                                        </label>
+                                        <textarea id="tplMuhatap_@t.Id" rows="3" class="form-control" style="font-size: 12px;">@(t.MuhatapText ?? "")</textarea>
+                                    </div>
+                                    <div class="mb-2">
+                                        <label style="font-size: 10px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 2px;">
+                                            <i class="fas fa-align-left me-1" style="font-size: 9px;"></i>Gövde Metni
+                                        </label>
+                                        <textarea id="tplBody_@t.Id" rows="4" class="form-control" style="font-size: 12px; font-family: 'JetBrains Mono', monospace;">@t.BodyTemplate</textarea>
+                                    </div>
+                                    <div class="mb-2">
+                                        <label style="font-size: 10px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 2px;">
+                                            <i class="fas fa-signature me-1" style="font-size: 9px;"></i>İmza Bloğu
+                                        </label>
+                                        <textarea id="tplImza_@t.Id" rows="2" class="form-control" style="font-size: 12px;">@(t.ImzaBlokuText ?? "")</textarea>
+                                    </div>
+                                    <div class="mb-2">
+                                        <label style="font-size: 10px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 2px;">
+                                            <i class="fas fa-minus me-1" style="font-size: 9px;"></i>Footer
+                                        </label>
+                                        <textarea id="tplFooter_@t.Id" rows="2" class="form-control" style="font-size: 12px;">@(t.FooterText ?? "")</textarea>
+                                    </div>
+                                    <!-- Placeholder Rehberi (edit form) -->
+                                    <div style="padding: 10px 12px; background: rgba(8,145,178,0.06); border-radius: 8px; margin-bottom: 10px;">
+                                        <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--kasa-info); margin-bottom: 6px;">
+                                            <i class="fas fa-code me-1"></i>Dinamik Değerler — tıklayarak kopyala
+                                        </div>
+                                        <div style="margin-bottom: 4px;">
+                                            <span style="font-size: 8px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Genel</span>
+                                            <div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 1px;">
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{Tarih}}</span>
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{TarihSlash}}</span>
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{GunYazi}}</span>
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{KasaTuru}}</span>
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{Hazirlayan}}</span>
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{Veznedar}}</span>
+                                            </div>
+                                        </div>
+                                        <div style="margin-bottom: 4px;">
+                                            <span style="font-size: 8px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Tutarlar</span>
+                                            <div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 1px;">
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{BankayaToplam}}</span>
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{BankadanCekilen}}</span>
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{ToplamStopajVirman}}</span>
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{BankayaStopaj}}</span>
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{BankayaTahsilat}}</span>
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{BankayaHarc}}</span>
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{NakitToplam}}</span>
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{KasadakiNakit}}</span>
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{DundenDevredenBanka}}</span>
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{YarinaDevredecekBanka}}</span>
+                                            </div>
+                                        </div>
+                                        <div style="margin-bottom: 4px;">
+                                            <span style="font-size: 8px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">IBAN & Hesap</span>
+                                            <div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 1px;">
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{IbanStopaj}}</span>
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{IbanTahsilat}}</span>
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{IbanHarc}}</span>
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{HesapAdiStopaj}}</span>
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{HesapAdiTahsilat}}</span>
+                                                <span class="ph-tag" onclick="copyPlaceholder(this)">{{HesapAdiHarc}}</span>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <span style="font-size: 8px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Özel</span>
+                                            <div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 1px;">
+                                                <span class="ph-tag ph-tag-special" onclick="copyPlaceholder(this)">{{TABLO}}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                                        <button type="button" @@click="editing = false"
+                                                style="padding: 4px 12px; border-radius: 6px; border: 1px solid var(--border-light); background: transparent; font-size: 11px; cursor: pointer;">
+                                            İptal
+                                        </button>
+                                        <button type="button" @@click="updateTemplate('@t.Id'); editing = false"
+                                                style="padding: 4px 14px; border-radius: 6px; border: none; background: var(--kasa-info); color: white; font-size: 11px; font-weight: 600; cursor: pointer;">
+                                            <i class="fas fa-save me-1"></i>Güncelle
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function bankaYazilariApp() {
+    return {
+        showNewForm: false,
+        toastMessage: '',
+        toastType: 'success',
+        newTemplate: {
+            name: '',
+            category: 'ParaCekme',
+            headerText: '',
+            sayiKonuText: '',
+            muhatapText: '',
+            bodyTemplate: '',
+            imzaBlokuText: '',
+            footerText: '',
+            isActive: true
+        },
+        showToast(msg, type) {
+            this.toastMessage = msg;
+            this.toastType = type;
+            setTimeout(() => { this.toastMessage = ''; }, 3000);
+        },
+        async saveTemplate(id) {
+            var body = new FormData();
+            body.append('__RequestVerificationToken', document.querySelector('input[name="__RequestVerificationToken"]').value);
+            if (id) {
+                body.append('templateId', id);
+                body.append('templateName', (document.getElementById('tplName_' + id)?.value) || '');
+                body.append('templateCategory', (document.getElementById('tplCat_' + id)?.value) || 'ParaCekme');
+                body.append('headerText', (document.getElementById('tplHeader_' + id)?.value) || '');
+                body.append('sayiKonuText', (document.getElementById('tplSayiKonu_' + id)?.value) || '');
+                body.append('muhatapText', (document.getElementById('tplMuhatap_' + id)?.value) || '');
+                body.append('bodyTemplate', (document.getElementById('tplBody_' + id)?.value) || '');
+                body.append('imzaBlokuText', (document.getElementById('tplImza_' + id)?.value) || '');
+                body.append('footerText', (document.getElementById('tplFooter_' + id)?.value) || '');
+                body.append('isActive', (document.getElementById('tplActive_' + id)?.checked) ?? true);
+            } else {
+                body.append('templateName', this.newTemplate.name || '');
+                body.append('templateCategory', this.newTemplate.category || 'ParaCekme');
+                body.append('headerText', this.newTemplate.headerText || '');
+                body.append('sayiKonuText', this.newTemplate.sayiKonuText || '');
+                body.append('muhatapText', this.newTemplate.muhatapText || '');
+                body.append('bodyTemplate', this.newTemplate.bodyTemplate || '');
+                body.append('imzaBlokuText', this.newTemplate.imzaBlokuText || '');
+                body.append('footerText', this.newTemplate.footerText || '');
+                body.append('isActive', this.newTemplate.isActive ?? true);
+            }
+            try {
+                var resp = await fetch('@Url.Action("SaveTemplate", "KasaSettings")', { method: 'POST', body: body });
+                var data = await resp.json();
+                if (data.success) {
+                    this.showToast(data.message, 'success');
+                    setTimeout(() => location.reload(), 800);
+                } else {
+                    this.showToast('Kayıt başarısız', 'error');
+                }
+            } catch(e) {
+                this.showToast('Bir hata oluştu: ' + e.message, 'error');
+            }
+        },
+        async updateTemplate(id) {
+            await this.saveTemplate(id);
+        },
+        async deleteTemplate(id) {
+            var body = new FormData();
+            body.append('__RequestVerificationToken', document.querySelector('input[name="__RequestVerificationToken"]').value);
+            body.append('templateId', id);
+            try {
+                var resp = await fetch('@Url.Action("DeleteTemplate", "KasaSettings")', { method: 'POST', body: body });
+                var data = await resp.json();
+                if (data.success) {
+                    this.showToast(data.message, 'success');
+                    setTimeout(() => location.reload(), 800);
+                } else {
+                    this.showToast('Silme başarısız', 'error');
+                }
+            } catch(e) {
+                this.showToast('Bir hata oluştu: ' + e.message, 'error');
+            }
+        }
+    };
+}
+
+// Placeholder tıkla-kopyala
+function copyPlaceholder(el) {
+    var text = el.textContent.trim();
+    navigator.clipboard.writeText(text).then(function() {
+        el.classList.add('ph-copied');
+        var orig = el.textContent;
+        el.textContent = '✓ Kopyalandı';
+        setTimeout(function() {
+            el.textContent = orig;
+            el.classList.remove('ph-copied');
+        }, 800);
+    });
+}
+</script>
+
+@section Styles {
+    <style>
+        .veznedar-option:hover {
+            border-color: var(--kasa-primary) !important;
+            background: var(--surface-card) !important;
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-sm);
+        }
+        /* Placeholder tag stilleri */
+        .ph-tag {
+            display: inline-block;
+            background: rgba(8,145,178,0.1);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--kasa-info, #0891b2);
+            cursor: pointer;
+            transition: all 0.15s ease;
+            user-select: none;
+            border: 1px solid transparent;
+        }
+        .ph-tag:hover {
+            background: rgba(8,145,178,0.2);
+            border-color: rgba(8,145,178,0.3);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        }
+        .ph-tag:active {
+            transform: translateY(0);
+        }
+        .ph-tag.ph-copied {
+            background: rgba(16,185,129,0.15) !important;
+            color: var(--kasa-success, #10b981) !important;
+            border-color: rgba(16,185,129,0.3) !important;
+        }
+        .ph-tag-special {
+            background: rgba(245,158,11,0.12) !important;
+            color: var(--kasa-warning, #f59e0b) !important;
+            font-weight: 600;
+        }
+        .ph-tag-special:hover {
+            background: rgba(245,158,11,0.22) !important;
+            border-color: rgba(245,158,11,0.3) !important;
+        }
+    </style>
+}

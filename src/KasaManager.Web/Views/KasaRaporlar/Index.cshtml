@@ -1,0 +1,568 @@
+@model KasaManager.Web.Models.KasaRaporlarViewModel
+@{
+    ViewData["Title"] = "Kasa Raporları";
+    string GetBadgeClass(KasaManager.Domain.Reports.KasaRaporTuru turu) => turu switch
+    {
+        KasaManager.Domain.Reports.KasaRaporTuru.Sabah => "kasa-badge-sabah",
+        KasaManager.Domain.Reports.KasaRaporTuru.Aksam => "kasa-badge-aksam",
+        KasaManager.Domain.Reports.KasaRaporTuru.Genel => "kasa-badge-genel",
+        _ => "kasa-badge-ortak"
+    };
+}
+
+@section Styles {
+<style>
+    .kasa-raporlar-hero {
+        background: linear-gradient(135deg, var(--kasa-primary, #6366f1) 0%, var(--kasa-primary-dark, #4f46e5) 50%, #7c3aed 100%);
+        color: #fff;
+        border-radius: var(--kasa-radius-xl, 1rem);
+        padding: 2rem 2.5rem;
+        margin-bottom: 1.5rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .kasa-raporlar-hero::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -20%;
+        width: 60%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);
+        pointer-events: none;
+    }
+    .kasa-raporlar-hero h2 { font-weight: 800; margin-bottom: 0.25rem; }
+    .kasa-raporlar-hero p { opacity: 0.85; margin-bottom: 0; font-size: 0.95rem; }
+
+    .kasa-stat-mini {
+        background: rgba(255,255,255,0.15);
+        backdrop-filter: blur(8px);
+        border-radius: var(--kasa-radius-lg, 0.75rem);
+        padding: 0.75rem 1.25rem;
+        text-align: center;
+        min-width: 100px;
+    }
+    .kasa-stat-mini .stat-value { font-size: 1.75rem; font-weight: 800; line-height: 1.2; }
+    .kasa-stat-mini .stat-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.8; }
+
+    .kasa-search-bar {
+        background: var(--kasa-surface, #fff);
+        border-radius: var(--kasa-radius-lg, 0.75rem);
+        padding: 1rem 1.5rem;
+        box-shadow: var(--kasa-shadow-sm);
+        margin-bottom: 1rem;
+        border: 1px solid var(--kasa-border, #e5e7eb);
+    }
+    .kasa-search-input {
+        border: 2px solid var(--kasa-border, #e5e7eb);
+        border-radius: var(--kasa-radius-md, 0.5rem);
+        padding: 0.5rem 1rem 0.5rem 2.5rem;
+        font-size: 0.9rem;
+        transition: border-color 0.2s;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%239ca3af' viewBox='0 0 16 16'%3E%3Cpath d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85zm-5.44.306a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: 0.75rem center;
+    }
+    .kasa-search-input:focus {
+        border-color: var(--kasa-primary, #6366f1);
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+    }
+
+    .kasa-badge-sabah { background: #fef3c7; color: #92400e; }
+    .kasa-badge-aksam { background: #dbeafe; color: #1e40af; }
+    .kasa-badge-genel { background: #d1fae5; color: #065f46; }
+    .kasa-badge-ortak { background: #ede9fe; color: #5b21b6; }
+
+    .kasa-table-container {
+        background: var(--kasa-surface, #fff);
+        border-radius: var(--kasa-radius-lg, 0.75rem);
+        box-shadow: var(--kasa-shadow-sm);
+        border: 1px solid var(--kasa-border, #e5e7eb);
+        overflow: hidden;
+    }
+    .kasa-table {
+        margin-bottom: 0;
+        font-size: 0.875rem;
+    }
+    .kasa-table thead th {
+        background: var(--kasa-bg, #f9fafb);
+        border-bottom: 2px solid var(--kasa-border, #e5e7eb);
+        font-weight: 600;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--kasa-text-secondary, #6b7280);
+        padding: 0.75rem 1rem;
+        white-space: nowrap;
+        cursor: pointer;
+        user-select: none;
+        transition: color 0.2s;
+    }
+    .kasa-table thead th:hover { color: var(--kasa-primary, #6366f1); }
+    .kasa-table tbody td {
+        padding: 0.75rem 1rem;
+        vertical-align: middle;
+        border-bottom: 1px solid var(--kasa-border-light, #f3f4f6);
+    }
+    .kasa-table tbody tr { transition: background 0.15s; cursor: pointer; }
+    .kasa-table tbody tr:hover { background: rgba(99,102,241,0.04); }
+    .kasa-table tbody tr.deleted-row { opacity: 0.5; }
+
+    .kasa-report-name {
+        font-weight: 600;
+        color: var(--kasa-text, #111827);
+    }
+    .kasa-report-note {
+        font-size: 0.8rem;
+        color: var(--kasa-text-secondary, #6b7280);
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .kasa-badge-pill {
+        display: inline-block;
+        padding: 0.2rem 0.6rem;
+        border-radius: 9999px;
+        font-size: 0.7rem;
+        font-weight: 600;
+    }
+    .kasa-badge-version {
+        background: var(--kasa-bg, #f3f4f6);
+        color: var(--kasa-text-secondary, #6b7280);
+        font-size: 0.7rem;
+    }
+    .kasa-badge-deleted {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+    .kasa-badge-active {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .kasa-action-btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+        border-radius: var(--kasa-radius-sm, 0.375rem);
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+
+    .kasa-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem 1.5rem;
+        border-top: 1px solid var(--kasa-border, #e5e7eb);
+    }
+
+    .kasa-empty-state {
+        text-align: center;
+        padding: 3rem 2rem;
+        color: var(--kasa-text-secondary, #6b7280);
+    }
+    .kasa-empty-state i { font-size: 3rem; margin-bottom: 1rem; opacity: 0.3; }
+
+    .kasa-filter-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.3rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        cursor: pointer;
+        border: 1.5px solid var(--kasa-border, #e5e7eb);
+        background: var(--kasa-surface, #fff);
+        color: var(--kasa-text-secondary, #6b7280);
+        transition: all 0.2s;
+    }
+    .kasa-filter-chip.active {
+        border-color: var(--kasa-primary, #6366f1);
+        background: rgba(99,102,241,0.08);
+        color: var(--kasa-primary, #6366f1);
+    }
+    .kasa-filter-chip:hover {
+        border-color: var(--kasa-primary, #6366f1);
+    }
+</style>
+}
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- HERO HEADER                                            -->
+<!-- ════════════════════════════════════════════════════════ -->
+<div class="kasa-raporlar-hero">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+        <div>
+            <h2><i class="fas fa-folder-open me-2"></i>Kasa Raporları</h2>
+            <p>Kaydedilmiş hesaplama sonuçlarını yönetin, arayın, dışa aktarın</p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <div class="kasa-stat-mini">
+                <div class="stat-value" id="stat-total">@Model.ToplamRapor</div>
+                <div class="stat-label">Toplam</div>
+            </div>
+            <div class="kasa-stat-mini">
+                <div class="stat-value">@Model.SabahCount</div>
+                <div class="stat-label">☀️ Sabah</div>
+            </div>
+            <div class="kasa-stat-mini">
+                <div class="stat-value">@Model.AksamCount</div>
+                <div class="stat-label">🌙 Akşam</div>
+            </div>
+            <div class="kasa-stat-mini">
+                <div class="stat-value">@Model.GenelCount</div>
+                <div class="stat-label">📊 Genel</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- ARAMA & FİLTRE                                        -->
+<!-- ════════════════════════════════════════════════════════ -->
+<div class="kasa-search-bar">
+    <div class="row g-2 align-items-end">
+        <div class="col-md-4">
+            <input type="text" id="searchInput" class="form-control kasa-search-input"
+                   placeholder="Rapor adı, not veya kişi ara..."
+                   value="@Model.SearchText" autocomplete="off" />
+        </div>
+        <div class="col-md-2">
+            <input type="date" id="filterStartDate" class="form-control form-control-sm"
+                   value="@Model.StartDate?.ToString("yyyy-MM-dd")" />
+        </div>
+        <div class="col-md-2">
+            <input type="date" id="filterEndDate" class="form-control form-control-sm"
+                   value="@Model.EndDate?.ToString("yyyy-MM-dd")" />
+        </div>
+        <div class="col-md-4 d-flex gap-2 flex-wrap align-items-center">
+            <span class="kasa-filter-chip @(Model.KasaTuru == null ? "active" : "")" data-turu="">Hepsi</span>
+            <span class="kasa-filter-chip @(Model.KasaTuru == KasaManager.Domain.Reports.KasaRaporTuru.Sabah ? "active" : "")" data-turu="1">☀️ Sabah</span>
+            <span class="kasa-filter-chip @(Model.KasaTuru == KasaManager.Domain.Reports.KasaRaporTuru.Aksam ? "active" : "")" data-turu="2">🌙 Akşam</span>
+            <span class="kasa-filter-chip @(Model.KasaTuru == KasaManager.Domain.Reports.KasaRaporTuru.Genel ? "active" : "")" data-turu="3">📊 Genel</span>
+            
+            <label class="form-check form-check-inline ms-2 mb-0" style="font-size:0.8rem;">
+                <input type="checkbox" id="chkDeleted" class="form-check-input form-check-input-sm"
+                       @(Model.IncludeDeleted ? "checked" : "") />
+                <span class="form-check-label text-muted">Silinenler</span>
+            </label>
+        </div>
+    </div>
+    <div class="d-flex justify-content-end mt-2 gap-2">
+        <a asp-action="ExportCsv"
+           asp-route-search="@Model.SearchText"
+           asp-route-turu="@((int?)Model.KasaTuru)"
+           asp-route-startDate="@Model.StartDate?.ToString("yyyy-MM-dd")"
+           asp-route-endDate="@Model.EndDate?.ToString("yyyy-MM-dd")"
+           class="btn btn-sm btn-outline-success" id="btnExportCsv">
+            <i class="fas fa-file-csv me-1"></i>CSV İndir
+        </a>
+    </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- TABLO                                                  -->
+<!-- ════════════════════════════════════════════════════════ -->
+<div class="kasa-table-container">
+    <div class="table-responsive">
+        <table class="table kasa-table" id="raporlarTable">
+            <thead>
+                <tr>
+                    <th data-sort="RaporTarihi">Tarih <i class="fas fa-sort ms-1"></i></th>
+                    <th data-sort="KasaTuru">Kasa Tipi <i class="fas fa-sort ms-1"></i></th>
+                    <th data-sort="Name">Rapor Adı <i class="fas fa-sort ms-1"></i></th>
+                    <th>Not / Açıklama</th>
+                    <th>Formül Seti</th>
+                    <th>Hesaplayan</th>
+                    <th data-sort="CalculatedAtUtc">Kayıt Zamanı <i class="fas fa-sort ms-1"></i></th>
+                    <th>Ver.</th>
+                    <th>Durum</th>
+                    <th class="text-end">İşlem</th>
+                </tr>
+            </thead>
+            <tbody id="raporlarBody">
+                @if (Model.Results.Items.Count == 0)
+                {
+                    <tr>
+                        <td colspan="10">
+                            <div class="kasa-empty-state">
+                                <i class="fas fa-inbox d-block"></i>
+                                <h5>Kayıtlı rapor bulunamadı</h5>
+                                <p class="text-muted small">Kasa hesaplaması yapıp "Kaydet" butonuna tıklayarak rapor oluşturabilirsiniz.</p>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var s in Model.Results.Items)
+                    {
+                        <tr class="@(s.IsDeleted ? "deleted-row" : "")" data-id="@s.Id" ondblclick="window.location.href='/KasaPreview/LoadSnapshot?id=@s.Id'">
+                            <td style="white-space:nowrap;">
+                                <strong>@s.RaporTarihi.ToString("dd.MM.yyyy")</strong>
+                            </td>
+                            <td>
+                                <span class="kasa-badge-pill @GetBadgeClass(s.KasaTuru)">
+                                    @s.KasaTuru
+                                </span>
+                            </td>
+                            <td>
+                                <span class="kasa-report-name">
+                                    @(string.IsNullOrWhiteSpace(s.Name) ? $"{s.KasaTuru} Kasa — {s.RaporTarihi:dd.MM.yyyy}" : s.Name)
+                                </span>
+                            </td>
+                            <td>
+                                <span class="kasa-report-note" title="@s.Notes">
+                                    @(string.IsNullOrWhiteSpace(s.Notes) ? "—" : s.Notes)
+                                </span>
+                            </td>
+                            <td class="text-muted small">@(s.FormulaSetName ?? "—")</td>
+                            <td class="text-muted small">@(s.CalculatedBy ?? "—")</td>
+                            <td class="text-muted small" style="white-space:nowrap;">
+                                @s.CalculatedAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+                            </td>
+                            <td>
+                                <span class="kasa-badge-pill kasa-badge-version">v@(s.Version)</span>
+                            </td>
+                            <td>
+                                @if (s.IsDeleted)
+                                {
+                                    <span class="kasa-badge-pill kasa-badge-deleted">
+                                        <i class="fas fa-trash-alt me-1"></i>Silinmiş
+                                    </span>
+                                }
+                                else if (s.IsActive)
+                                {
+                                    <span class="kasa-badge-pill kasa-badge-active">
+                                        <i class="fas fa-check me-1"></i>Aktif
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="kasa-badge-pill kasa-badge-version">Pasif</span>
+                                }
+                            </td>
+                            <td class="text-end" style="white-space:nowrap;">
+                                <a asp-action="Detay" asp-route-id="@s.Id"
+                                   class="kasa-action-btn btn btn-sm btn-outline-primary" title="Detay Görüntüle">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <a asp-action="ExportJson" asp-route-id="@s.Id"
+                                   class="kasa-action-btn btn btn-sm btn-outline-info" title="JSON İndir">
+                                    <i class="fas fa-download"></i>
+                                </a>
+                                <a href="/KasaPreview/LoadSnapshot?id=@s.Id"
+                                   class="kasa-action-btn btn btn-sm btn-outline-primary" title="KasaPreview'da Aç" style="background:linear-gradient(135deg,#6366f1,#4f46e5); color:white; border:none;">
+                                    <i class="fas fa-play"></i>
+                                </a>
+                                @if (s.IsDeleted)
+                                {
+                                    <button class="kasa-action-btn btn btn-sm btn-outline-success btn-restore" 
+                                            data-id="@s.Id" title="Geri Yükle">
+                                        <i class="fas fa-undo"></i>
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button class="kasa-action-btn btn btn-sm btn-outline-danger btn-delete"
+                                            data-id="@s.Id" title="Sil">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    @if (Model.Results.TotalPages > 1)
+    {
+        <div class="kasa-pagination">
+            <div class="text-muted small">
+                Toplam <strong>@Model.Results.TotalCount</strong> kayıt • Sayfa <strong>@Model.Results.Page</strong> / <strong>@Model.Results.TotalPages</strong>
+            </div>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    @if (Model.Results.HasPrevious)
+                    {
+                        <li class="page-item">
+                            <a class="page-link" asp-action="Index"
+                               asp-route-search="@Model.SearchText"
+                               asp-route-turu="@((int?)Model.KasaTuru)"
+                               asp-route-startDate="@Model.StartDate?.ToString("yyyy-MM-dd")"
+                               asp-route-endDate="@Model.EndDate?.ToString("yyyy-MM-dd")"
+                               asp-route-includeDeleted="@Model.IncludeDeleted"
+                               asp-route-sortBy="@Model.SortBy"
+                               asp-route-sortDesc="@Model.SortDescending"
+                               asp-route-page="@(Model.Results.Page - 1)">
+                                <i class="fas fa-chevron-left"></i>
+                            </a>
+                        </li>
+                    }
+                    @for (var p = Math.Max(1, Model.Results.Page - 2); p <= Math.Min(Model.Results.TotalPages, Model.Results.Page + 2); p++)
+                    {
+                        <li class="page-item @(p == Model.Results.Page ? "active" : "")">
+                            <a class="page-link" asp-action="Index"
+                               asp-route-search="@Model.SearchText"
+                               asp-route-turu="@((int?)Model.KasaTuru)"
+                               asp-route-startDate="@Model.StartDate?.ToString("yyyy-MM-dd")"
+                               asp-route-endDate="@Model.EndDate?.ToString("yyyy-MM-dd")"
+                               asp-route-includeDeleted="@Model.IncludeDeleted"
+                               asp-route-sortBy="@Model.SortBy"
+                               asp-route-sortDesc="@Model.SortDescending"
+                               asp-route-page="@p">@p</a>
+                        </li>
+                    }
+                    @if (Model.Results.HasNext)
+                    {
+                        <li class="page-item">
+                            <a class="page-link" asp-action="Index"
+                               asp-route-search="@Model.SearchText"
+                               asp-route-turu="@((int?)Model.KasaTuru)"
+                               asp-route-startDate="@Model.StartDate?.ToString("yyyy-MM-dd")"
+                               asp-route-endDate="@Model.EndDate?.ToString("yyyy-MM-dd")"
+                               asp-route-includeDeleted="@Model.IncludeDeleted"
+                               asp-route-sortBy="@Model.SortBy"
+                               asp-route-sortDesc="@Model.SortDescending"
+                               asp-route-page="@(Model.Results.Page + 1)">
+                                <i class="fas fa-chevron-right"></i>
+                            </a>
+                        </li>
+                    }
+                </ul>
+            </nav>
+        </div>
+    }
+</div>
+
+@section Scripts {
+<script>
+(function() {
+    const antiForgeryToken = document.querySelector('input[name="__RequestVerificationToken"]')?.value
+        || document.querySelector('meta[name="RequestVerificationToken"]')?.getAttribute('content') || '';
+
+    // Anti-forgery form (for AJAX POST)
+    function getTokenHeader() {
+        return { 'RequestVerificationToken': antiForgeryToken };
+    }
+
+    // ═══ ARAMA (debounce) ═══
+    let searchTimer = null;
+    const searchInput = document.getElementById('searchInput');
+    const filterStart = document.getElementById('filterStartDate');
+    const filterEnd = document.getElementById('filterEndDate');
+    const chkDeleted = document.getElementById('chkDeleted');
+    
+    function reloadWithFilters() {
+        const params = new URLSearchParams();
+        const search = searchInput?.value?.trim();
+        if (search) params.set('search', search);
+        
+        const startDate = filterStart?.value;
+        if (startDate) params.set('startDate', startDate);
+        
+        const endDate = filterEnd?.value;
+        if (endDate) params.set('endDate', endDate);
+
+        const activeTuru = document.querySelector('.kasa-filter-chip.active')?.dataset?.turu;
+        if (activeTuru) params.set('turu', activeTuru);
+        
+        if (chkDeleted?.checked) params.set('includeDeleted', 'true');
+
+        window.location.href = '@Url.Action("Index")?' + params.toString();
+    }
+
+    searchInput?.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(reloadWithFilters, 500);
+    });
+    
+    filterStart?.addEventListener('change', reloadWithFilters);
+    filterEnd?.addEventListener('change', reloadWithFilters);
+    chkDeleted?.addEventListener('change', reloadWithFilters);
+
+    // ═══ KASA TİPİ FİLTRE ═══
+    document.querySelectorAll('.kasa-filter-chip').forEach(chip => {
+        chip.addEventListener('click', function() {
+            document.querySelectorAll('.kasa-filter-chip').forEach(c => c.classList.remove('active'));
+            this.classList.add('active');
+            reloadWithFilters();
+        });
+    });
+
+    // ═══ SIRALAMA ═══
+    document.querySelectorAll('.kasa-table thead th[data-sort]').forEach(th => {
+        th.addEventListener('click', function() {
+            const params = new URLSearchParams(window.location.search);
+            const currentSort = params.get('sortBy');
+            const currentDesc = params.get('sortDesc') !== 'false';
+            
+            params.set('sortBy', this.dataset.sort);
+            params.set('sortDesc', currentSort === this.dataset.sort ? (!currentDesc).toString() : 'true');
+            
+            window.location.href = '@Url.Action("Index")?' + params.toString();
+        });
+    });
+
+    // ═══ SİLME ═══
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.btn-delete');
+        if (!btn) return;
+        
+        if (!confirm('Bu raporu silmek istediğinize emin misiniz?')) return;
+        
+        const id = btn.dataset.id;
+        fetch('@Url.Action("Sil")', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                ...getTokenHeader()
+            },
+            body: `id=${id}`
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                if (typeof kasaToast === 'function') kasaToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            }
+        })
+        .catch(err => console.error('Silme hatası:', err));
+    });
+
+    // ═══ GERİ YÜKLEME ═══
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.btn-restore');
+        if (!btn) return;
+        
+        if (!confirm('Bu raporu geri yüklemek istediğinize emin misiniz?')) return;
+        
+        const id = btn.dataset.id;
+        fetch('@Url.Action("GeriYukle")', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                ...getTokenHeader()
+            },
+            body: `id=${id}`
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                if (typeof kasaToast === 'function') kasaToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            }
+        })
+        .catch(err => console.error('Geri yükleme hatası:', err));
+    });
+})();
+</script>
+}

@@ -1,0 +1,32 @@
+@* 
+    HiddenValue – Gizlenebilir değer (👁 toggle)
+    
+    Usage:
+    @await Html.PartialAsync("Components/_HiddenValue", new ViewDataDictionary(ViewData) {
+        { "Value", 123456.78m },
+        { "MaskChar", "•" },
+        { "CssClass", "money-lg" }
+    })
+*@
+@{
+    var rawVal   = ViewData["Value"];
+    var maskChar = ViewData["MaskChar"]?.ToString() ?? "•";
+    var cssClass = ViewData["CssClass"]?.ToString() ?? "";
+
+    decimal value = 0;
+    if (rawVal is decimal d) value = d;
+    else if (rawVal is double dbl) value = (decimal)dbl;
+
+    var formatted = value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR"));
+    var mask = string.Concat(Enumerable.Repeat(maskChar, 8));
+}
+
+<span class="hidden-value">
+    <span class="hidden-value-actual font-mono @cssClass" style="display:none;">
+        @formatted <span class="money-currency">₺</span>
+    </span>
+    <span class="hidden-value-mask">@mask</span>
+    <button class="hidden-value-toggle" onclick="toggleHiddenValue(this)" type="button" title="Göster/Gizle">
+        <i class="fas fa-eye"></i>
+    </button>
+</span>

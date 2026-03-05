@@ -1,0 +1,1179 @@
+@model KasaManager.Domain.Reports.ComparisonReport
+@{
+    ViewData["Title"] = Model.Type switch
+    {
+        KasaManager.Domain.Reports.ComparisonType.TahsilatMasraf => "Tahsilat-Masraf Karşılaştırma Sonuçları",
+        KasaManager.Domain.Reports.ComparisonType.HarcamaHarc => "Harcama-Harç Karşılaştırma Sonuçları",
+        KasaManager.Domain.Reports.ComparisonType.ReddiyatCikis => "Reddiyat - Çıkan Ödemeler Karşılaştırma Sonuçları",
+        _ => "Karşılaştırma Sonuçları"
+    };
+    
+    var typeColor = Model.Type switch
+    {
+        KasaManager.Domain.Reports.ComparisonType.TahsilatMasraf => "success",
+        KasaManager.Domain.Reports.ComparisonType.HarcamaHarc => "primary",
+        KasaManager.Domain.Reports.ComparisonType.ReddiyatCikis => "warning",
+        _ => "secondary"
+    };
+    
+    var onlineLabel = Model.Type switch
+    {
+        KasaManager.Domain.Reports.ComparisonType.TahsilatMasraf => "UYAP Online Masraf",
+        KasaManager.Domain.Reports.ComparisonType.HarcamaHarc => "UYAP Online Harç",
+        KasaManager.Domain.Reports.ComparisonType.ReddiyatCikis => "Online Reddiyat",
+        _ => "Online"
+    };
+    
+    var bankaLabel = Model.Type switch
+    {
+        KasaManager.Domain.Reports.ComparisonType.TahsilatMasraf => "Banka Tahsilat (+)",
+        KasaManager.Domain.Reports.ComparisonType.HarcamaHarc => "Banka Harç (+)",
+        KasaManager.Domain.Reports.ComparisonType.ReddiyatCikis => "Banka Çıkış (-)",
+        _ => "Banka"
+    };
+    
+    var matchRate = Model.TotalOnlineRecords > 0 
+        ? (Model.MatchedCount + Model.PartialMatchCount) * 100 / Model.TotalOnlineRecords 
+        : 0;
+    
+    var isReddiyat = Model.Type == KasaManager.Domain.Reports.ComparisonType.ReddiyatCikis;
+}
+
+<style>
+    .source-badge-uyap { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+    .source-badge-banka { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+    .match-card { transition: all 0.3s ease; border-left: 4px solid transparent; }
+    .match-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    .match-card.matched { border-left-color: #28a745; }
+    .match-card.partial { border-left-color: #ffc107; }
+    .match-card.notfound { border-left-color: #dc3545; }
+    .match-card.multiple { border-left-color: #17a2b8; }
+    .data-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .data-value { font-weight: 600; color: var(--text-primary); }
+    .expand-btn { cursor: pointer; user-select: none; }
+    .raw-data { font-family: 'Consolas', monospace; font-size: 0.8rem; background: var(--surface-body); color: var(--text-primary); padding: 1rem; border-radius: 0.5rem; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; border: 1px solid var(--border-light); }
+    .confidence-bar { height: 8px; border-radius: 4px; background: var(--border-light); overflow: hidden; }
+    .confidence-fill { height: 100%; transition: width 0.5s ease; }
+    .legend-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+    .view-toggle .btn.active { background: var(--surface-input); color: var(--text-primary); }
+    .list-row { transition: background-color 0.2s; }
+    .list-row:hover { background-color: var(--surface-input); }
+    .list-row.matched { border-left: 3px solid #28a745; }
+    .list-row.partial { border-left: 3px solid #ffc107; }
+    .list-row.notfound { border-left: 3px solid #dc3545; }
+    .list-row.multiple { border-left: 3px solid #17a2b8; }
+
+    /* Onay/Red mekanizması */
+    .decision-actions { display: flex; }
+    .decision-actions .btn { transition: all 0.2s ease; }
+    .match-card.decision-approved { border-left-color: #28a745 !important; opacity: 0.7; }
+    .match-card.decision-rejected { border-left-color: #dc3545 !important; opacity: 0.7; }
+    .match-card.decision-approved .decision-actions .btn-approve { display: none; }
+    .match-card.decision-rejected .decision-actions .btn-reject { display: none; }
+    .decision-undo { display: none; }
+    .match-card.decision-approved .decision-undo,
+    .match-card.decision-rejected .decision-undo { display: inline-flex !important; }
+    .decision-status-label { display: none; font-size: 0.8rem; font-weight: 600; }
+    .match-card.decision-approved .decision-status-label.label-approved { display: inline; color: #28a745; }
+    .match-card.decision-rejected .decision-status-label.label-rejected { display: inline; color: #dc3545; }
+
+    /* ── Dark mode overrides ── */
+    [data-theme="dark"] .match-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
+    [data-theme="dark"] .bg-light { background-color: var(--surface-input) !important; color: var(--text-primary) !important; }
+    [data-theme="dark"] .table-light { background-color: var(--surface-input) !important; }
+    [data-theme="dark"] .table-light th { color: var(--text-secondary) !important; }
+    [data-theme="dark"] .text-dark { color: var(--text-primary) !important; }
+    [data-theme="dark"] .bg-light.text-center { background-color: var(--surface-input) !important; }
+    [data-theme="dark"] .badge.bg-info.text-dark { color: #ffffff !important; }
+    [data-theme="dark"] .badge.bg-warning.text-dark { color: #1e293b !important; }
+    [data-theme="dark"] code { color: #22d3ee; }
+    [data-theme="dark"] .alert-info { background-color: rgba(6, 182, 212, 0.15); border-color: rgba(6, 182, 212, 0.3); color: var(--text-primary); }
+    [data-theme="dark"] .alert-danger { background-color: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3); color: var(--text-primary); }
+</style>
+
+<div class="container-fluid">
+    <!-- Başlık -->
+    <div class="row mb-4">
+        <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <h2 class="text-@typeColor mb-1">
+                    <i class="fas fa-chart-pie me-2"></i>
+                    @ViewData["Title"]
+                </h2>
+                <p class="text-muted mb-0">
+                    <i class="fas fa-calendar me-1"></i>
+                    @if (Model.ReportDate.HasValue)
+                    {
+                        <text>@Model.ReportDate.Value.ToString("dd MMMM yyyy", new System.Globalization.CultureInfo("tr-TR"))</text>
+                    }
+                    else
+                    {
+                        <text>Tüm tarihler</text>
+                    }
+                    <span class="mx-2">|</span>
+                    <i class="fas fa-clock me-1"></i>
+                    @Model.GeneratedAt.ToString("dd.MM.yyyy HH:mm")
+                </p>
+            </div>
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+                <button type="button" class="btn btn-info text-white" onclick="showUserDecisions()">
+                    <i class="fas fa-user-check me-1"></i>
+                    Kullanıcı Seçimleri <span id="userDecisionBadge" class="badge bg-white text-info ms-1">0</span>
+                </button>
+                <button type="button" id="btnExportPdf" class="btn btn-danger" onclick="submitPdfExport()">
+                    <i class="fas fa-file-pdf me-2"></i>
+                    PDF İndir
+                </button>
+                <a asp-controller="HesapKontrol" asp-action="Index" class="btn btn-outline-primary">
+                    <i class="fas fa-university me-2"></i>
+                    Hesap Kontrole Git
+                </a>
+                <a asp-action="Index" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>
+                    Geri Dön
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Özet Kartları -->
+    <div class="row g-3 mb-4">
+        <div class="col-lg-3 col-md-6">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <div class="display-4 fw-bold text-@(matchRate >= 80 ? "success" : matchRate >= 50 ? "warning" : "danger")" data-stat="matchRate">
+                        %@matchRate
+                    </div>
+                    <p class="text-muted mb-2">Eşleşme Oranı</p>
+                    <div class="confidence-bar">
+                        <div class="confidence-fill bg-@(matchRate >= 80 ? "success" : matchRate >= 50 ? "warning" : "danger")" 
+                             style="width: @matchRate%" data-stat="matchRateBar"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-3 col-md-6">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted mb-3"><i class="fas fa-database me-2"></i>Kaynak Verileri</h6>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="badge source-badge-uyap text-white px-3 py-2">
+                            <i class="fas fa-cloud me-1"></i> UYAP
+                        </span>
+                        <span class="h5 mb-0">@Model.TotalOnlineRecords kayıt</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="badge source-badge-banka text-white px-3 py-2">
+                            <i class="fas fa-university me-1"></i> Banka
+                        </span>
+                        <span class="h5 mb-0">@Model.TotalBankaAlacakRecords kayıt</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-3 col-md-6">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted mb-3"><i class="fas fa-tasks me-2"></i>Durum Dağılımı</h6>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span><span class="legend-dot bg-success"></span> Tam Eşleşme</span>
+                        <strong class="text-success" data-stat="matched">@Model.MatchedCount</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span><span class="legend-dot bg-warning"></span> Kısmi Eşleşme</span>
+                        <strong class="text-warning" data-stat="partial">@Model.PartialMatchCount</strong>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span><span class="legend-dot bg-danger"></span> Eşleşmedi</span>
+                        <strong class="text-danger" data-stat="notfound">@Model.NotFoundCount</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-3 col-md-6">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted mb-3"><i class="fas fa-coins me-2"></i>Tutar Özeti</h6>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Toplam UYAP</span>
+                        <strong>@Model.TotalOnlineAmount.ToString("N2") ₺</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-success">Eşleşen</span>
+                        <strong class="text-success" data-stat="matchedAmt">@Model.TotalMatchedAmount.ToString("N2") ₺</strong>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-danger">Eşleşmeyen</span>
+                        <strong class="text-danger" data-stat="unmatchedAmt">@Model.UnmatchedAmount.ToString("N2") ₺</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reddiyat / Stopaj Analizi (Sadece ReddiyatCikis türü) -->
+    @if (isReddiyat)
+    {
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card border-0 shadow-sm border-start border-warning border-4">
+                    <div class="card-header bg-warning bg-opacity-10 py-3">
+                        <h5 class="mb-0 text-warning">
+                            <i class="fas fa-coins me-2"></i>
+                            Stopaj ve Fark Analizi
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- Stopaj Durumu Mesajı -->
+                        @if (!string.IsNullOrEmpty(Model.StopajStatus))
+                        {
+                            <div class="alert @(Model.StopajStatus.Contains("✅") ? "alert-success" : Model.StopajStatus.Contains("⚠️") ? "alert-warning" : "alert-info") mb-4">
+                                <div style="white-space: pre-line; line-height: 1.8; font-size: 1.05rem;">
+                                    @Model.StopajStatus
+                                </div>
+                            </div>
+                        }
+                        
+                        <!-- Tutar Bilgileri -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-4">
+                                <div class="p-3 rounded bg-primary bg-opacity-10 text-center">
+                                    <div class="h4 mb-0 text-primary">@Model.TotalOdenecekMiktar.ToString("N2") ₺</div>
+                                    <small class="text-muted">Online Brüt Toplam</small>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="p-3 rounded bg-success bg-opacity-10 text-center">
+                                    <div class="h4 mb-0 text-success">@Model.TotalNetOdenecek.ToString("N2") ₺</div>
+                                    <small class="text-muted">Net Ödenecek (Stopaj Düşülmüş)</small>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="p-3 rounded bg-warning bg-opacity-10 text-center">
+                                    <div class="h4 mb-0 text-warning">@Model.TotalBankaCikis.ToString("N2") ₺</div>
+                                    <small class="text-muted">Banka Çıkış Toplamı</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Stopaj Detayları -->
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="card bg-light h-100">
+                                    <div class="card-body">
+                                        <h6 class="text-muted mb-3"><i class="fas fa-receipt me-2"></i>Stopaj Detayları</h6>
+                                        <div class="d-flex justify-content-between mb-2">
+                                            <span>Gelir Vergisi</span>
+                                            <strong class="text-danger">@Model.TotalGelirVergisi.ToString("N2") ₺</strong>
+                                        </div>
+                                        <div class="d-flex justify-content-between mb-2">
+                                            <span>Damga Vergisi</span>
+                                            <strong class="text-danger">@Model.TotalDamgaVergisi.ToString("N2") ₺</strong>
+                                        </div>
+                                        <hr>
+                                        <div class="d-flex justify-content-between">
+                                            <span class="fw-bold">Toplam Stopaj</span>
+                                            <strong class="text-danger fs-5">@Model.TotalStopaj.ToString("N2") ₺</strong>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card bg-light h-100">
+                                    <div class="card-body">
+                                        <h6 class="text-muted mb-3"><i class="fas fa-balance-scale me-2"></i>Fark Analizi</h6>
+                                        <div class="d-flex justify-content-between mb-2">
+                                            <span>Net Ödenecek</span>
+                                            <strong>@Model.TotalNetOdenecek.ToString("N2") ₺</strong>
+                                        </div>
+                                        <div class="d-flex justify-content-between mb-2">
+                                            <span>Banka Çıkışı</span>
+                                            <strong>@Model.TotalBankaCikis.ToString("N2") ₺</strong>
+                                        </div>
+                                        <hr>
+                                        @{
+                                            var reddiyatFark = Model.TotalNetOdenecek - Model.TotalBankaCikis;
+                                            var farkClass = Math.Abs(reddiyatFark) < 0.01m ? "text-success" :
+                                                           Math.Abs(reddiyatFark - Model.TotalStopaj) < 0.01m ? "text-warning" : "text-danger";
+                                        }
+                                        <div class="d-flex justify-content-between">
+                                            <span class="fw-bold">Gerçek Fark</span>
+                                            <strong class="@farkClass fs-5">
+                                                @(reddiyatFark >= 0 ? "+" : "")@reddiyatFark.ToString("N2") ₺
+                                            </strong>
+                                        </div>
+                                        @if (Math.Abs(reddiyatFark - Model.TotalStopaj) < 0.01m)
+                                        {
+                                            <small class="text-muted mt-2 d-block">
+                                                <i class="fas fa-info-circle me-1"></i>
+                                                Fark = Stopaj (Virman bekleniyor)
+                                            </small>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Fazla/Eksik Kayıt Uyarıları -->
+    @if (Model.SurplusBankaRecords.Any() || Model.MissingBankaRecords.Any() || Math.Abs(Model.NetAmountDifference) > 0.01m)
+    {
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-light py-3">
+                        <h5 class="mb-0">
+                            <i class="fas fa-balance-scale me-2 text-warning"></i>
+                            Tutar Dengesi Analizi
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- Özet Mesaj -->
+                        @if (!string.IsNullOrEmpty(Model.BalanceSummary))
+                        {
+                            <div class="mb-4" style="white-space: pre-line; line-height: 1.8;">
+                                @Model.BalanceSummary
+                            </div>
+                        }
+                        
+                        <!-- İstatistik Kartları -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-4">
+                                <div class="p-3 rounded bg-light text-center">
+                                    <div class="h4 mb-0 text-primary">@Model.TotalOnlineAmount.ToString("N2") ₺</div>
+                                    <small class="text-muted">Online Toplam</small>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="p-3 rounded bg-light text-center">
+                                    <div class="h4 mb-0 text-success">@((Model.TotalOnlineAmount + Model.SurplusAmount - Model.MissingAmount).ToString("N2")) ₺</div>
+                                    <small class="text-muted">Banka Toplam (Alacak)</small>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="p-3 rounded @(Model.NetAmountDifference > 0 ? "bg-success bg-opacity-10" : Model.NetAmountDifference < 0 ? "bg-danger bg-opacity-10" : "bg-light") text-center">
+                                    <div class="h4 mb-0 @(Model.NetAmountDifference > 0 ? "text-success" : Model.NetAmountDifference < 0 ? "text-danger" : "text-secondary")">
+                                        @(Model.NetAmountDifference >= 0 ? "+" : "")@Model.NetAmountDifference.ToString("N2") ₺
+                                    </div>
+                                    <small class="text-muted">Net Fark</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Fazla Kayıtlar (Banka'da var, Online'da yok) -->
+                        @if (Model.SurplusBankaRecords.Any())
+                        {
+                            <div class="alert alert-warning mb-3">
+                                <h6 class="alert-heading mb-2">
+                                    <i class="fas fa-plus-circle me-2"></i>
+                                    Fazla Giren Kayıtlar (@Model.SurplusBankaCount adet - Toplam: @Model.SurplusAmount.ToString("N2") ₺)
+                                </h6>
+                                <p class="mb-0 small">
+                                    Aşağıdaki kayıtlar banka dosyasında mevcut ancak online sistemde karşılıkları bulunamadı. 
+                                    Manuel giriş veya farklı kaynak olabilir.
+                                </p>
+                            </div>
+                            
+                            <div class="table-responsive mb-4">
+                                <table class="table table-sm table-hover">
+                                    <thead class="table-warning">
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Tür</th>
+                                            <th class="text-end">Tutar</th>
+                                            <th>Tarih</th>
+                                            <th>Esas No</th>
+                                            <th>Mahkeme</th>
+                                            <th style="width: 50px;"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @{ int surplusIdx = 0; }
+                                        @foreach (var surplus in Model.SurplusBankaRecords.OrderByDescending(s => s.Tutar))
+                                        {
+                                            surplusIdx++;
+                                            <tr>
+                                                <td class="text-muted">@surplusIdx</td>
+                                                <td><span class="badge bg-warning text-dark">@(surplus.DetectedType ?? "-")</span></td>
+                                                <td class="text-end fw-bold text-warning">@surplus.Tutar.ToString("N2") ₺</td>
+                                                <td>@(surplus.Tarih?.ToString("dd.MM.yyyy") ?? "-")</td>
+                                                <td><code>@(surplus.ParsedEsasNo ?? "-")</code></td>
+                                                <td class="text-truncate" style="max-width: 150px;" title="@surplus.ParsedMahkeme">
+                                                    @(surplus.ParsedMahkeme ?? "-")
+                                                </td>
+                                                <td>
+                                                    <button class="btn btn-sm btn-outline-secondary" type="button" 
+                                                            data-bs-toggle="collapse" data-bs-target="#surplus-detail-@surplusIdx">
+                                                        <i class="fas fa-eye"></i>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                            <tr class="collapse" id="surplus-detail-@surplusIdx">
+                                                <td colspan="7" class="bg-light">
+                                                    <div class="raw-data small">@(surplus.Aciklama ?? "Açıklama yok")</div>
+                                                    <small class="text-muted">Excel Satırı: @(surplus.RowIndex + 2) | @(surplus.PossibleReason)</small>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        
+                        <!-- Eksik Kayıtlar (Online'da var, Banka'da yok) -->
+                        @if (Model.MissingBankaRecords.Any())
+                        {
+                            <div class="alert alert-danger mb-3">
+                                <h6 class="alert-heading mb-2">
+                                    <i class="fas fa-minus-circle me-2"></i>
+                                    Karşılığı Bulunamayan Kayıtlar (@Model.MissingBankaCount adet - Toplam: @Model.MissingAmount.ToString("N2") ₺)
+                                </h6>
+                                <p class="mb-0 small">
+                                    Aşağıdaki kayıtlar online sistemde mevcut ancak banka dosyasında eşleşmeleri bulunamadı. 
+                                    Bedeli henüz yatmamış veya farklı tutarla gelmiş olabilir.
+                                </p>
+                            </div>
+                            
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover">
+                                    <thead class="table-danger">
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Dosya No</th>
+                                            <th>Birim</th>
+                                            <th class="text-end">Beklenen Tutar</th>
+                                            <th>Tarih</th>
+                                            <th>Durum</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @{ int missingIdx = 0; }
+                                        @foreach (var missing in Model.MissingBankaRecords.OrderByDescending(m => m.Miktar))
+                                        {
+                                            missingIdx++;
+                                            <tr>
+                                                <td class="text-muted">@missingIdx</td>
+                                                <td><code>@(missing.DosyaNo ?? "-")</code></td>
+                                                <td class="text-truncate" style="max-width: 200px;" title="@missing.BirimAdi">
+                                                    @(missing.BirimAdi ?? "-")
+                                                </td>
+                                                <td class="text-end fw-bold text-danger">@missing.Miktar.ToString("N2") ₺</td>
+                                                <td>@(missing.Tarih?.ToString("dd.MM.yyyy") ?? "-")</td>
+                                                <td><small class="text-muted">@(missing.Reason ?? "-")</small></td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Filtre ve Görünüm Seçici -->
+    <div class="card mb-4 border-0 shadow-sm">
+        <div class="card-body py-3">
+            <div class="d-flex flex-wrap gap-3 align-items-center justify-content-between">
+                <!-- Filtreler -->
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <span class="text-muted me-1"><i class="fas fa-filter me-1"></i> Filtre:</span>
+                    <button class="btn btn-sm btn-outline-secondary active" onclick="filterResults('all', this)">
+                        Tümü (@Model.Results.Count)
+                    </button>
+                    <button class="btn btn-sm btn-outline-success" onclick="filterResults('matched', this)">
+                        <i class="fas fa-check-circle me-1"></i> Eşleşen (<span data-filter-count="matched">@Model.MatchedCount</span>)
+                    </button>
+                    <button class="btn btn-sm btn-outline-warning" onclick="filterResults('partial', this)">
+                        <i class="fas fa-exclamation-circle me-1"></i> Kısmi (<span data-filter-count="partial">@Model.PartialMatchCount</span>)
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="filterResults('notfound', this)">
+                        <i class="fas fa-times-circle me-1"></i> Eşleşmeyen (<span data-filter-count="notfound">@Model.NotFoundCount</span>)
+                    </button>
+                </div>
+                
+                <!-- Görünüm Toggle -->
+                <div class="btn-group view-toggle" role="group">
+                    <button type="button" class="btn btn-sm btn-outline-dark active" onclick="switchView('card', this)">
+                        <i class="fas fa-th-large me-1"></i> Kart
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-dark" onclick="switchView('list', this)">
+                        <i class="fas fa-list me-1"></i> Liste
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- KART GÖRÜNÜMÜ -->
+    <div id="cardView">
+        @{ int cardIndex = 0; }
+        @foreach (var result in Model.Results.OrderByDescending(r => r.Status == KasaManager.Domain.Reports.MatchStatus.PartialMatch)
+            .ThenByDescending(r => r.Status == KasaManager.Domain.Reports.MatchStatus.NotFound)
+            .ThenByDescending(r => r.ConfidenceScore))
+        {
+            cardIndex++;
+            var statusClass = result.Status switch
+            {
+                KasaManager.Domain.Reports.MatchStatus.Matched => "matched",
+                KasaManager.Domain.Reports.MatchStatus.PartialMatch => "partial",
+                KasaManager.Domain.Reports.MatchStatus.MultipleMatches => "multiple",
+                _ => "notfound"
+            };
+            
+            var statusText = result.Status switch
+            {
+                KasaManager.Domain.Reports.MatchStatus.Matched => "Tam Eşleşme",
+                KasaManager.Domain.Reports.MatchStatus.PartialMatch => "Kısmi Eşleşme",
+                KasaManager.Domain.Reports.MatchStatus.NotFound => "Eşleşme Bulunamadı",
+                KasaManager.Domain.Reports.MatchStatus.MultipleMatches => "Birden Fazla Eşleşme",
+                _ => ""
+            };
+            
+            var confidencePercent = (int)(result.ConfidenceScore * 100);
+            
+            <div class="card match-card @statusClass mb-3 border-0 shadow-sm" data-status="@statusClass">
+                <div class="card-body">
+                    <!-- Kart Başlığı -->
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div class="d-flex align-items-center gap-3">
+                            <span class="fs-5 fw-bold text-muted">#@cardIndex</span>
+                            <div>
+                                <span class="badge bg-@(result.Status == KasaManager.Domain.Reports.MatchStatus.Matched ? "success" : result.Status == KasaManager.Domain.Reports.MatchStatus.PartialMatch ? "warning" : result.Status == KasaManager.Domain.Reports.MatchStatus.MultipleMatches ? "info" : "danger") px-3 py-2">
+                                    @statusText
+                                </span>
+                                @if (confidencePercent > 0)
+                                {
+                                    <span class="badge bg-secondary ms-2 px-2 py-1">%@confidencePercent</span>
+                                }
+                            </div>
+                        </div>
+                        <button class="btn btn-sm btn-outline-secondary expand-btn" type="button" data-bs-toggle="collapse" data-bs-target="#detail-@cardIndex">
+                            <i class="fas fa-chevron-down"></i> Ham Veri
+                        </button>
+                    </div>
+
+                    <!-- Ana Bilgiler -->
+                    <div class="row g-3">
+                        <!-- UYAP -->
+                        <div class="col-md-6">
+                            <div class="p-3 rounded" style="background: linear-gradient(135deg, rgba(102,126,234,0.1) 0%, rgba(118,75,162,0.1) 100%);">
+                                <div class="d-flex align-items-center mb-2">
+                                    <span class="badge source-badge-uyap text-white me-2"><i class="fas fa-cloud me-1"></i> UYAP</span>
+                                </div>
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <div class="data-label">Dosya No</div>
+                                        <div class="data-value"><code>@(result.OnlineDosyaNo ?? "-")</code></div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="data-label">Tutar</div>
+                                        <div class="data-value text-primary fs-5">@result.OnlineMiktar.ToString("N2") ₺</div>
+                                    </div>
+                                    <div class="col-12">
+                                        <div class="data-label">Birim</div>
+                                        <div class="data-value small">@(result.OnlineBirimAdi ?? "-")</div>
+                                    </div>
+                                    @if (result.OnlineTarih.HasValue)
+                                    {
+                                        <div class="col-6">
+                                            <div class="data-label">Tarih</div>
+                                            <div class="data-value">@result.OnlineTarih.Value.ToString("dd.MM.yyyy")</div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Banka -->
+                        <div class="col-md-6">
+                            @if (result.BankaRowIndex.HasValue)
+                            {
+                                <div class="p-3 rounded" style="background: linear-gradient(135deg, rgba(17,153,142,0.1) 0%, rgba(56,239,125,0.1) 100%);">
+                                    <div class="d-flex align-items-center mb-2">
+                                        <span class="badge source-badge-banka text-white me-2"><i class="fas fa-university me-1"></i> Banka</span>
+                                    </div>
+                                    <div class="row g-2">
+                                        <div class="col-6">
+                                            <div class="data-label">Bulunan Esas No</div>
+                                            <div class="data-value"><code>@(result.ParsedEsasNo ?? "-")</code></div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="data-label">Tutar</div>
+                                            <div class="data-value text-success fs-5">@(result.BankaTutar?.ToString("N2") ?? "-") ₺</div>
+                                        </div>
+                                        @if (!string.IsNullOrEmpty(result.ParsedMahkeme))
+                                        {
+                                            <div class="col-12">
+                                                <div class="data-label">Bulunan Mahkeme</div>
+                                                <div class="data-value small">@result.ParsedMahkeme</div>
+                                            </div>
+                                        }
+                                        @if (!string.IsNullOrEmpty(result.ParsedKeyword))
+                                        {
+                                            <div class="col-6">
+                                                <div class="data-label">Anahtar</div>
+                                                <span class="badge bg-info text-dark">@result.ParsedKeyword</span>
+                                            </div>
+                                        }
+                                        @if (result.BankaTarih.HasValue)
+                                        {
+                                            <div class="col-6">
+                                                <div class="data-label">Tarih</div>
+                                                <div class="data-value">@result.BankaTarih.Value.ToString("dd.MM.yyyy")</div>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="p-3 rounded bg-light text-center h-100 d-flex flex-column justify-content-center">
+                                    <i class="fas fa-search fa-2x text-muted mb-2"></i>
+                                    <h6 class="text-danger mb-1">Banka Kaydı Bulunamadı</h6>
+                                    <small class="text-muted">Bu tutara eşleşen kayıt yok</small>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(result.MatchReason))
+                    {
+                        <div class="mt-3 p-2 bg-light rounded">
+                            <small><i class="fas fa-info-circle text-info me-1"></i> <strong>Neden:</strong> @result.MatchReason</small>
+                        </div>
+                    }
+
+                    @* ── Onay/Red Butonları (sadece kısmi eşleşmeler) ── *@
+                    @if (result.Status == KasaManager.Domain.Reports.MatchStatus.PartialMatch)
+                    {
+                        <div class="mt-3 d-flex align-items-center gap-2 decision-actions"
+                             data-dosya-no="@(result.OnlineDosyaNo ?? "")"
+                             data-miktar="@result.OnlineMiktar.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                             data-birim="@(result.OnlineBirimAdi ?? "")"
+                             data-banka-tutar="@(result.BankaTutar?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "")"
+                             data-banka-aciklama="@(result.BankaAciklama?.Length > 100 ? result.BankaAciklama[..100] : result.BankaAciklama ?? "")"
+                             data-confidence="@result.ConfidenceScore.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                             data-match-reason="@(result.MatchReason ?? "")">
+                            <button type="button" class="btn btn-sm btn-success" onclick="saveDecisionAjax(this, 'approved')">
+                                <i class="fas fa-check me-1"></i> Onayla
+                            </button>
+                            <button type="button" class="btn btn-sm btn-danger" onclick="saveDecisionAjax(this, 'rejected')">
+                                <i class="fas fa-times me-1"></i> Reddet
+                            </button>
+                        </div>
+                    }
+
+                    <!-- Ham Veri Paneli -->
+                    <div class="collapse mt-3" id="detail-@cardIndex">
+                        <hr>
+                        <h6 class="text-muted mb-2"><i class="fas fa-file-code me-2"></i>Banka Açıklama (Orijinal)</h6>
+                        @if (!string.IsNullOrEmpty(result.BankaAciklama))
+                        {
+                            <div class="raw-data">@result.BankaAciklama</div>
+                        }
+                        else
+                        {
+                            <p class="text-muted small">Banka verisi yok</p>
+                        }
+                        <div class="row mt-2">
+                            <div class="col-6"><small class="text-muted">UYAP Excel Satırı: <strong>@(result.OnlineRowIndex + 2)</strong></small></div>
+                            @if (result.BankaRowIndex.HasValue)
+                            {
+                                <div class="col-6"><small class="text-muted">Banka Excel Satırı: <strong>@(result.BankaRowIndex.Value + 2)</strong></small></div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- LİSTE GÖRÜNÜMÜ -->
+    <div id="listView" style="display: none;">
+        <div class="card border-0 shadow-sm">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:50px">#</th>
+                            <th style="width:100px">Durum</th>
+                            <th>UYAP Dosya No</th>
+                            <th>UYAP Birim</th>
+                            <th class="text-end">UYAP Tutar</th>
+                            <th>Banka Esas No</th>
+                            <th>Banka Mahkeme</th>
+                            <th class="text-end">Banka Tutar</th>
+                            <th>Anahtar</th>
+                            <th style="width:50px">%</th>
+                            <th style="width:80px"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{ int listIndex = 0; }
+                        @foreach (var result in Model.Results.OrderByDescending(r => r.Status == KasaManager.Domain.Reports.MatchStatus.NotFound)
+                            .ThenBy(r => r.Status == KasaManager.Domain.Reports.MatchStatus.PartialMatch)
+                            .ThenByDescending(r => r.ConfidenceScore))
+                        {
+                            listIndex++;
+                            var statusClass = result.Status switch
+                            {
+                                KasaManager.Domain.Reports.MatchStatus.Matched => "matched",
+                                KasaManager.Domain.Reports.MatchStatus.PartialMatch => "partial",
+                                KasaManager.Domain.Reports.MatchStatus.MultipleMatches => "multiple",
+                                _ => "notfound"
+                            };
+                            var statusBadge = result.Status switch
+                            {
+                                KasaManager.Domain.Reports.MatchStatus.Matched => "success",
+                                KasaManager.Domain.Reports.MatchStatus.PartialMatch => "warning",
+                                KasaManager.Domain.Reports.MatchStatus.MultipleMatches => "info",
+                                _ => "danger"
+                            };
+                            var statusIcon = result.Status switch
+                            {
+                                KasaManager.Domain.Reports.MatchStatus.Matched => "fa-check-circle",
+                                KasaManager.Domain.Reports.MatchStatus.PartialMatch => "fa-exclamation-circle",
+                                KasaManager.Domain.Reports.MatchStatus.MultipleMatches => "fa-copy",
+                                _ => "fa-times-circle"
+                            };
+                            var confidencePercent = (int)(result.ConfidenceScore * 100);
+                            
+                            <tr class="list-row @statusClass" data-status="@statusClass">
+                                <td class="text-muted">@listIndex</td>
+                                <td>
+                                    <span class="badge bg-@statusBadge">
+                                        <i class="fas @statusIcon"></i>
+                                    </span>
+                                </td>
+                                <td><code>@(result.OnlineDosyaNo ?? "-")</code></td>
+                                <td class="text-truncate" style="max-width:150px" title="@result.OnlineBirimAdi">
+                                    @(result.OnlineBirimAdi ?? "-")
+                                </td>
+                                <td class="text-end text-primary fw-bold">@result.OnlineMiktar.ToString("N2")</td>
+                                <td><code>@(result.ParsedEsasNo ?? "-")</code></td>
+                                <td class="text-truncate" style="max-width:120px" title="@result.ParsedMahkeme">
+                                    @(result.ParsedMahkeme ?? "-")
+                                </td>
+                                <td class="text-end text-success fw-bold">@(result.BankaTutar?.ToString("N2") ?? "-")</td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(result.ParsedKeyword))
+                                    {
+                                        <span class="badge bg-info text-dark small">@result.ParsedKeyword</span>
+                                    }
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge bg-secondary">@confidencePercent</span>
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#modal-@listIndex">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detay Modal'ları (Liste görünümü için) -->
+    @{ int modalIndex = 0; }
+    @foreach (var result in Model.Results.OrderByDescending(r => r.Status == KasaManager.Domain.Reports.MatchStatus.NotFound)
+        .ThenBy(r => r.Status == KasaManager.Domain.Reports.MatchStatus.PartialMatch)
+        .ThenByDescending(r => r.ConfidenceScore))
+    {
+        modalIndex++;
+        <div class="modal fade" id="modal-@modalIndex" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Kayıt #@modalIndex - Detay</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <h6><span class="badge source-badge-uyap text-white"><i class="fas fa-cloud me-1"></i> UYAP</span></h6>
+                                <table class="table table-sm">
+                                    <tr><th>Dosya No</th><td><code>@(result.OnlineDosyaNo ?? "-")</code></td></tr>
+                                    <tr><th>Birim</th><td>@(result.OnlineBirimAdi ?? "-")</td></tr>
+                                    <tr><th>Tutar</th><td class="text-primary fw-bold">@result.OnlineMiktar.ToString("N2") ₺</td></tr>
+                                    <tr><th>Tarih</th><td>@(result.OnlineTarih?.ToString("dd.MM.yyyy") ?? "-")</td></tr>
+                                    <tr><th>Excel Satırı</th><td>@(result.OnlineRowIndex + 2)</td></tr>
+                                </table>
+                            </div>
+                            <div class="col-md-6">
+                                <h6><span class="badge source-badge-banka text-white"><i class="fas fa-university me-1"></i> Banka</span></h6>
+                                @if (result.BankaRowIndex.HasValue)
+                                {
+                                    <table class="table table-sm">
+                                        <tr><th>Esas No</th><td><code>@(result.ParsedEsasNo ?? "-")</code></td></tr>
+                                        <tr><th>Mahkeme</th><td>@(result.ParsedMahkeme ?? "-")</td></tr>
+                                        <tr><th>Tutar</th><td class="text-success fw-bold">@(result.BankaTutar?.ToString("N2") ?? "-") ₺</td></tr>
+                                        <tr><th>Tarih</th><td>@(result.BankaTarih?.ToString("dd.MM.yyyy") ?? "-")</td></tr>
+                                        <tr><th>Excel Satırı</th><td>@(result.BankaRowIndex.Value + 2)</td></tr>
+                                        <tr><th>Anahtar</th><td><span class="badge bg-info text-dark">@(result.ParsedKeyword ?? "-")</span></td></tr>
+                                    </table>
+                                }
+                                else
+                                {
+                                    <div class="alert alert-danger"><i class="fas fa-times-circle me-2"></i>Eşleşen kayıt bulunamadı</div>
+                                }
+                            </div>
+                        </div>
+                        @if (!string.IsNullOrEmpty(result.BankaAciklama))
+                        {
+                            <h6 class="mt-3"><i class="fas fa-file-code me-2"></i>Banka Ham Açıklama</h6>
+                            <div class="raw-data">@result.BankaAciklama</div>
+                        }
+                        @if (!string.IsNullOrEmpty(result.MatchReason))
+                        {
+                            <div class="alert alert-info mt-3 mb-0">
+                                <i class="fas fa-info-circle me-2"></i><strong>Eşleşme Nedeni:</strong> @result.MatchReason
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@* ── PDF Export Form (hidden) ── *@
+<form id="pdfExportForm" asp-controller="Comparison" asp-action="ExportPdf" method="post" style="display:none;">
+    <input type="hidden" name="reportJson" id="reportJsonField" />
+    <input type="hidden" name="decisionsJson" id="decisionsJsonField" />
+</form>
+
+@* ── Kullanıcı Seçimleri Modal ── *@
+<div class="modal fade" id="userDecisionsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-user-check me-2"></i>Kullanıcı Seçimleri</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="decisionsLoading" class="text-center py-4"><i class="fas fa-spinner fa-spin me-2"></i>Yükleniyor...</div>
+                <div id="decisionsEmpty" class="text-center py-4 text-muted" style="display:none;">
+                    <i class="fas fa-inbox fa-3x mb-3 d-block"></i>
+                    Henüz karar verilmemiş.
+                </div>
+                <div class="table-responsive" id="decisionsTableWrap" style="display:none;">
+                    <table class="table table-sm table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th>Dosya No</th>
+                                <th class="text-end">UYAP Tutar</th>
+                                <th>Birim</th>
+                                <th class="text-end">Banka Tutar</th>
+                                <th class="text-center">Karar</th>
+                                <th>Tarih</th>
+                                <th class="text-center">Aksiyon</th>
+                            </tr>
+                        </thead>
+                        <tbody id="decisionsTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        // ═══════════════════════════════════════════════════════════════
+        // Sabitler
+        // ═══════════════════════════════════════════════════════════════
+        const comparisonType = @((int)Model.Type);
+        let savedDecisionCount = 0;
+
+        // İstatistik sayaçları (sunucudan gelen değerler)
+        let statMatched = @Model.MatchedCount;
+        let statPartial = @Model.PartialMatchCount;
+        let statNotFound = @Model.NotFoundCount;
+        let statMatchedAmt = @Model.TotalMatchedAmount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        let statUnmatchedAmt = @Model.UnmatchedAmount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        // ═══════════════════════════════════════════════════════════════
+        // AJAX: Karar Kaydet (Onayla / Reddet)
+        // ═══════════════════════════════════════════════════════════════
+        async function saveDecisionAjax(btn, decision) {
+            const actions = btn.closest('.decision-actions');
+            const card = btn.closest('.match-card');
+
+            const payload = {
+                comparisonType: comparisonType,
+                dosyaNo: actions.dataset.dosyaNo,
+                miktar: parseFloat(actions.dataset.miktar) || 0,
+                birimAdi: actions.dataset.birim || null,
+                bankaTutar: actions.dataset.bankaTutar ? parseFloat(actions.dataset.bankaTutar) : null,
+                bankaAciklama: actions.dataset.bankaAciklama || null,
+                confidence: parseFloat(actions.dataset.confidence) || 0,
+                matchReason: actions.dataset.matchReason || null,
+                decision: decision
+            };
+
+            // UI feedback — butonları devre dışı bırak
+            actions.querySelectorAll('button').forEach(b => { b.disabled = true; });
+
+            try {
+                const res = await fetch('@Url.Action("SaveDecision", "Comparison")', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) throw new Error('Karar kaydedilemedi');
+
+                // Başarılı — kartı animasyonla gizle
+                card.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+                card.style.opacity = '0';
+                card.style.transform = 'translateX(' + (decision === 'approved' ? '50px' : '-50px') + ')';
+                setTimeout(() => {
+                    card.style.display = 'none';
+                    // İstatistikleri güncelle
+                    statPartial--;
+                    if (decision === 'approved') {
+                        statMatched++;
+                        statMatchedAmt += payload.miktar;
+                        statUnmatchedAmt -= payload.miktar;
+                    } else {
+                        statNotFound++;
+                        // Rejected: miktar eşleşmeyen olarak kalır, ama zaten unmatchedAmt'te
+                        // PartialMatch -> NotFound geçişinde tutar unmatchedAmt'te kalır
+                    }
+                    updateStatsUI();
+                }, 400);
+
+                savedDecisionCount++;
+                updateDecisionBadge();
+
+            } catch (err) {
+                console.error(err);
+                actions.querySelectorAll('button').forEach(b => { b.disabled = false; });
+                alert('Karar kaydedilirken hata oluştu.');
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // İstatistik Kartlarını Güncelle
+        // ═══════════════════════════════════════════════════════════════
+        function updateStatsUI() {
+            // Eşleşme oranını yeniden hesapla
+            const totalRecords = @Model.TotalOnlineRecords;
+            const newMatchRate = totalRecords > 0 
+                ? Math.round((statMatched + statPartial) * 100 / totalRecords) 
+                : 0;
+
+            // Eşleşme oranı kartını güncelle
+            const matchRateEl = document.querySelector('[data-stat="matchRate"]');
+            if (matchRateEl) matchRateEl.textContent = '%' + newMatchRate;
+            const matchRateBar = document.querySelector('[data-stat="matchRateBar"]');
+            if (matchRateBar) matchRateBar.style.width = newMatchRate + '%';
+
+            // Stat kartlarındaki sayıları güncelle
+            const statEls = document.querySelectorAll('[data-stat]');
+            statEls.forEach(el => {
+                switch (el.dataset.stat) {
+                    case 'matched': el.textContent = statMatched; break;
+                    case 'partial': el.textContent = statPartial; break;
+                    case 'notfound': el.textContent = statNotFound; break;
+                    case 'matchedAmt': el.textContent = statMatchedAmt.toLocaleString('tr-TR', { minimumFractionDigits: 2 }) + ' ₺'; break;
+                    case 'unmatchedAmt': el.textContent = statUnmatchedAmt.toLocaleString('tr-TR', { minimumFractionDigits: 2 }) + ' ₺'; break;
+                }
+            });
+            // Filter badge'lerini güncelle
+            const filterBtns = document.querySelectorAll('[data-filter-count]');
+            filterBtns.forEach(el => {
+                switch (el.dataset.filterCount) {
+                    case 'matched': el.textContent = statMatched; break;
+                    case 'partial': el.textContent = statPartial; break;
+                    case 'notfound': el.textContent = statNotFound; break;
+                }
+            });
+        }
+
+        function updateDecisionBadge() {
+            const badge = document.getElementById('userDecisionBadge');
+            if (badge) badge.textContent = savedDecisionCount;
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // Kullanıcı Seçimleri Modal
+        // ═══════════════════════════════════════════════════════════════
+        async function showUserDecisions() {
+            const modal = new bootstrap.Modal(document.getElementById('userDecisionsModal'));
+            modal.show();
+
+            document.getElementById('decisionsLoading').style.display = '';
+            document.getElementById('decisionsEmpty').style.display = 'none';
+            document.getElementById('decisionsTableWrap').style.display = 'none';
+
+            try {
+                const res = await fetch(`@Url.Action("UserDecisions", "Comparison")?type=${comparisonType}`);
+                const data = await res.json();
+
+                document.getElementById('decisionsLoading').style.display = 'none';
+
+                if (!data || data.length === 0) {
+                    document.getElementById('decisionsEmpty').style.display = '';
+                    return;
+                }
+
+                savedDecisionCount = data.length;
+                updateDecisionBadge();
+
+                const tbody = document.getElementById('decisionsTableBody');
+                tbody.innerHTML = '';
+                data.forEach(d => {
+                    const decisionIcon = d.decision === 'approved'
+                        ? '<span class="badge bg-success"><i class="fas fa-check me-1"></i>Onay</span>'
+                        : '<span class="badge bg-danger"><i class="fas fa-times me-1"></i>Red</span>';
+                    const oppositeLabel = d.decision === 'approved' ? 'Reddet' : 'Onayla';
+                    const oppositeDecision = d.decision === 'approved' ? 'rejected' : 'approved';
+                    const oppositeClass = d.decision === 'approved' ? 'btn-outline-danger' : 'btn-outline-success';
+
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td><code>${d.onlineDosyaNo}</code></td>
+                        <td class="text-end">${parseFloat(d.onlineMiktar).toLocaleString('tr-TR', {minimumFractionDigits:2})} ₺</td>
+                        <td class="text-truncate" style="max-width:200px" title="${d.onlineBirimAdi || ''}">${d.onlineBirimAdi || '-'}</td>
+                        <td class="text-end">${d.bankaTutar ? parseFloat(d.bankaTutar).toLocaleString('tr-TR',{minimumFractionDigits:2})+' ₺' : '-'}</td>
+                        <td class="text-center">${decisionIcon}</td>
+                        <td><small>${d.decidedAt}</small></td>
+                        <td class="text-center">
+                            <button class="btn btn-sm ${oppositeClass} me-1" onclick="changeDecision(${d.id},'${oppositeDecision}','${d.onlineDosyaNo}',${d.onlineMiktar},'${d.onlineBirimAdi||''}',${d.bankaTutar||'null'},'${(d.bankaAciklamaSummary||'').replace(/'/g,'')}',${d.confidence||0},'${(d.originalMatchReason||'').replace(/'/g,'')}')"><i class="fas fa-exchange-alt me-1"></i>${oppositeLabel}</button>
+                            <button class="btn btn-sm btn-outline-warning" onclick="revertDecision(${d.id})"><i class="fas fa-undo me-1"></i>Geri Al</button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                document.getElementById('decisionsTableWrap').style.display = '';
+            } catch (err) {
+                document.getElementById('decisionsLoading').style.display = 'none';
+                document.getElementById('decisionsEmpty').textContent = 'Kararlar yüklenirken hata oluştu.';
+                document.getElementById('decisionsEmpty').style.display = '';
+            }
+        }
+
+        async function changeDecision(id, newDecision, dosyaNo, miktar, birim, bankaTutar, bankaAciklama, confidence, matchReason) {
+            // Önce eski kararı sil, sonra yenisini kaydet
+            try {
+                await fetch('@Url.Action("DeleteDecision", "Comparison")', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: id })
+                });
+
+                await fetch('@Url.Action("SaveDecision", "Comparison")', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        comparisonType: comparisonType,
+                        dosyaNo: dosyaNo,
+                        miktar: miktar,
+                        birimAdi: birim || null,
+                        bankaTutar: bankaTutar,
+                        bankaAciklama: bankaAciklama || null,
+                        confidence: confidence,
+                        matchReason: matchReason || null,
+                        decision: newDecision
+                    })
+                });
+
+                // Modal'ı yenile
+                showUserDecisions();
+            } catch (err) {
+                alert('Karar değiştirilirken hata oluştu.');
+            }
+        }
+
+        async function revertDecision(id) {
+            if (!confirm('Bu kararı geri almak istediğinize emin misiniz? Kayıt tekrar kısmi eşleşmeler arasında görünecek.')) return;
+            try {
+                await fetch('@Url.Action("DeleteDecision", "Comparison")', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: id })
+                });
+
+                savedDecisionCount = Math.max(0, savedDecisionCount - 1);
+                updateDecisionBadge();
+
+                // Modal'ı yenile
+                showUserDecisions();
+
+                // Not: Sayfayı yenilemeden kart geri görünmez — 
+                // kullanıcıya bilgi ver
+                alert('Karar geri alındı. Değişikliğin tam yansıması için sayfayı yeniden yükleyiniz.');
+            } catch (err) {
+                alert('Karar geri alınırken hata oluştu.');
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // PDF Export
+        // ═══════════════════════════════════════════════════════════════
+        function submitPdfExport() {
+            const reportData = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model, new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = null }));
+            document.getElementById('reportJsonField').value = JSON.stringify(reportData);
+            document.getElementById('decisionsJsonField').value = '{}';
+            document.getElementById('pdfExportForm').submit();
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // Filtreleme & Görünüm
+        // ═══════════════════════════════════════════════════════════════
+        function filterResults(status, btn) {
+            document.querySelectorAll('.card-body .btn-outline-secondary, .card-body .btn-outline-success, .card-body .btn-outline-warning, .card-body .btn-outline-danger').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            document.querySelectorAll('.match-card, .list-row').forEach(item => {
+                item.style.display = (status === 'all' || item.dataset.status === status) ? '' : 'none';
+            });
+        }
+
+        function switchView(view, btn) {
+            document.querySelectorAll('.view-toggle .btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('cardView').style.display = view === 'card' ? '' : 'none';
+            document.getElementById('listView').style.display = view === 'list' ? '' : 'none';
+        }
+
+        // Collapse ikon güncellemesi
+        document.querySelectorAll('.expand-btn').forEach(btn => {
+            const target = document.querySelector(btn.dataset.bsTarget);
+            if (target) {
+                target.addEventListener('show.bs.collapse', () => {
+                    btn.innerHTML = '<i class="fas fa-chevron-up"></i> Gizle';
+                });
+                target.addEventListener('hide.bs.collapse', () => {
+                    btn.innerHTML = '<i class="fas fa-chevron-down"></i> Ham Veri';
+                });
+            }
+        });
+
+        // Sayfa yüklendiğinde karar sayısını getir
+        (async function() {
+            try {
+                const res = await fetch(`@Url.Action("UserDecisions", "Comparison")?type=${comparisonType}`);
+                const data = await res.json();
+                savedDecisionCount = data ? data.length : 0;
+                updateDecisionBadge();
+            } catch(e) {}
+        })();
+    </script>
+}

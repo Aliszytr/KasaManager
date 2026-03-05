@@ -1,0 +1,223 @@
+@model KasaManager.Web.Models.ImportResultViewModel
+
+@using System.Text.Json
+@using KasaManager.Domain.Reports
+
+@{
+    ViewData["Title"] = "Import Sonucu";
+
+    var cols = Model.ColumnMetas ?? new List<KasaManager.Domain.Reports.ImportedColumnMeta>();
+    var rows = Model.Rows ?? new List<Dictionary<string, string?>>();
+    var nrows = Model.NarrativePreviewRows ?? new List<KasaManager.Web.Models.NarrativePreviewRow>();
+
+    var headersJson = JsonSerializer.Serialize(cols.Select(c => new
+    {
+        c.Index,
+        c.CanonicalName,
+        c.OriginalHeader
+    }));
+
+    var defaultDateIso = DateTime.Today.ToString("yyyy-MM-dd");
+    var raporTurleri = Enum.GetValues<KasaRaporTuru>();
+}
+
+<!-- Page Title -->
+<div class="kasa-page-title">
+    <h2><i class="fas fa-table text-kasa-primary me-2"></i>Import Sonucu</h2>
+    <div class="d-flex gap-sm align-items-center flex-wrap">
+        <span class="kasa-badge kasa-badge-primary">
+            <i class="fas fa-file"></i> @Model.SourceFileName
+        </span>
+        <span class="kasa-badge kasa-badge-secondary">
+            <i class="fas fa-tag"></i> @Model.Kind
+        </span>
+        <span class="kasa-badge kasa-badge-success">
+            <i class="fas fa-list"></i> @rows.Count satır
+        </span>
+        <a class="kasa-btn kasa-btn-sm kasa-btn-secondary" asp-controller="Import" asp-action="Index">
+            <i class="fas fa-arrow-left"></i> Geri
+        </a>
+    </div>
+</div>
+
+<!-- Snapshot Kaydet Paneli -->
+<div class="kasa-card mb-4">
+    <div class="kasa-card-header">
+        <h6><i class="fas fa-save text-kasa-primary me-2"></i>Kaydet (Snapshot)</h6>
+        <span class="kasa-badge kasa-badge-warning" style="font-size:10px;">
+            <i class="fas fa-info-circle"></i> Aynı haliyle DB'ye yazar
+        </span>
+    </div>
+    <div class="kasa-card-body">
+        <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+            Bu ekranı veritabanına <strong>aynı haliyle</strong> kaydeder. Snapshot görüntülerken yeniden hesap yapılmaz.
+        </div>
+
+        <form asp-controller="KasaRapor" asp-action="Save" method="post">
+            @Html.AntiForgeryToken()
+
+            <div class="d-flex flex-wrap gap-md align-items-end">
+                <div class="kasa-form-group" style="margin-bottom:0;min-width:180px;">
+                    <label class="kasa-form-label"><i class="fas fa-calendar me-1"></i>Rapor Tarihi</label>
+                    <input type="date" name="RaporTarihi" class="kasa-form-input" value="@defaultDateIso" required />
+                </div>
+
+                <div class="kasa-form-group" style="margin-bottom:0;min-width:180px;">
+                    <label class="kasa-form-label"><i class="fas fa-tag me-1"></i>Rapor Türü</label>
+                    <select name="RaporTuru" class="kasa-form-input" required>
+                        @foreach (var t in raporTurleri)
+                        {
+                            <option value="@t">@t</option>
+                        }
+                    </select>
+                </div>
+
+                <button type="submit" class="kasa-btn kasa-btn-primary"
+                        onclick="setLoadingState(this, true)">
+                    <i class="fas fa-save"></i> Kaydet (Snapshot)
+                </button>
+            </div>
+
+            <input type="hidden" name="Version" value="6" />
+            <input type="hidden" name="SelectionTotal" value="0" />
+            <input type="hidden" name="WarningsJson" value="" />
+            <input type="hidden" name="InputsJson" value="" />
+            <input type="hidden" name="ResultsJson" value="" />
+
+            @{
+                for (int i = 0; i < rows.Count; i++)
+                {
+                    var srcRow = rows[i] ?? new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+                    var dict = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+                    for (int c = 0; c < cols.Count; c++)
+                    {
+                        var canon = cols[c].CanonicalName ?? string.Empty;
+                        if (string.IsNullOrWhiteSpace(canon)) continue;
+                        srcRow.TryGetValue(canon, out var v);
+                        dict[canon] = v;
+                    }
+                    var columnsJson = JsonSerializer.Serialize(dict);
+
+                    <input type="hidden" name="Rows[@i].Veznedar" value="" />
+                    <input type="hidden" name="Rows[@i].IsSelected" value="true" />
+                    <input type="hidden" name="Rows[@i].Bakiye" value="" />
+                    <input type="hidden" name="Rows[@i].IsSummaryRow" value="false" />
+                    <input type="hidden" name="Rows[@i].HeadersJson" value="@headersJson" />
+                    <input type="hidden" name="Rows[@i].ColumnsJson" value="@columnsJson" />
+                }
+            }
+        </form>
+    </div>
+    <div class="kasa-card-footer">
+        <div class="kasa-alert kasa-alert-warning" style="margin-bottom:0;">
+            <i class="fas fa-exclamation-triangle"></i>
+            <div>
+                <strong>Not:</strong> Bu ekran "Import Sonucu" grid'ini snapshot olarak kaydeder.
+                KasaÜstRapor (üst rapor) ekranı geldiğinde aynı mekanizma oraya da bağlanacak.
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (nrows.Count > 0)
+{
+    <!-- Narrative Preview -->
+    <div class="kasa-card mb-4">
+        <div class="kasa-card-header">
+            <div>
+                <h6><i class="fas fa-align-left text-kasa-primary me-2"></i>Narrative Preview</h6>
+                <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">Açıklama parse/normalize çıktıları</div>
+            </div>
+            <span class="kasa-badge kasa-badge-secondary">@nrows.Count</span>
+        </div>
+        <div class="kasa-card-body" style="padding:0; overflow-x:auto;">
+            <table class="kasa-table">
+                <thead>
+                    <tr>
+                        <th style="width:60px;">#</th>
+                        <th>Tarih</th>
+                        <th>Tutar</th>
+                        <th>Açıklama (Ham)</th>
+                        <th>Açıklama (Seçilen)</th>
+                        <th>Açıklama (Normalize)</th>
+                        <th>CourtUnit</th>
+                        <th>FileNo</th>
+                        <th style="width:120px;">Issues</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in nrows)
+                    {
+                        <tr>
+                            <td style="color:var(--text-muted);">@r.RowNo</td>
+                            <td style="white-space:nowrap;">@r.Tarih</td>
+                            <td style="white-space:nowrap;" class="font-mono">@r.Tutar</td>
+                            <td style="color:var(--text-muted); max-width:200px; overflow:hidden; text-overflow:ellipsis;">@r.AciklamaHam</td>
+                            <td>@r.AciklamaSecilen</td>
+                            <td>@r.AciklamaNormalize</td>
+                            <td style="white-space:nowrap;">@r.NormalizedCourtUnit</td>
+                            <td style="white-space:nowrap;">@r.FileNo</td>
+                            <td>
+                                @if (r.IssueCount > 0)
+                                {
+                                    <span class="kasa-badge kasa-badge-danger" style="font-size:10px;">
+                                        <i class="fas fa-exclamation-circle"></i> @r.IssueCount
+                                    </span>
+                                    <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">@r.Issues</div>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+<!-- Ham Import Grid -->
+<div class="kasa-card">
+    <div class="kasa-card-header">
+        <div>
+            <h6><i class="fas fa-grid text-kasa-primary me-2"></i>Ham Import Grid</h6>
+            <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">Orijinal kolonlar + (varsa) R3D ek kolonlar</div>
+        </div>
+        <span class="kasa-badge kasa-badge-secondary">@rows.Count</span>
+    </div>
+    <div class="kasa-card-body" style="padding:0; overflow-x:auto;">
+        @if (cols.Count == 0 || rows.Count == 0)
+        {
+            <div class="kasa-file-empty">
+                <i class="fas fa-inbox"></i>
+                <span>Gösterilecek veri yok.</span>
+            </div>
+        }
+        else
+        {
+            <table class="kasa-table">
+                <thead>
+                    <tr>
+                        @foreach (var c in cols.OrderBy(x => x.Index))
+                        {
+                            <th style="white-space:nowrap;">
+                                <div style="font-weight:700;">@c.OriginalHeader</div>
+                                <div style="font-size:10px; color:var(--text-muted); font-weight:500;">@c.CanonicalName</div>
+                            </th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in rows)
+                    {
+                        <tr>
+                            @foreach (var c in cols.OrderBy(x => x.Index))
+                            {
+                                r.TryGetValue(c.CanonicalName ?? string.Empty, out var value);
+                                <td style="white-space:nowrap;">@value</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>

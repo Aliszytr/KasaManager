@@ -1,0 +1,139 @@
+@model KasaManager.Domain.Reports.Snapshots.KasaRaporSnapshot
+@using System.Text.Json
+
+@{
+    ViewData["Title"] = "Snapshot Görüntüle";
+
+    var rows = Model.Rows ?? new List<KasaManager.Domain.Reports.Snapshots.KasaRaporSnapshotRow>();
+
+    // Header kaynağı: ilk satırın HeadersJson'u (varsa)
+    string? headersJson = rows.FirstOrDefault()?.HeadersJson;
+
+    var headers = new List<(int Index, string Canonical, string Header)>();
+
+    if (!string.IsNullOrWhiteSpace(headersJson))
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(headersJson);
+            if (doc.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var el in doc.RootElement.EnumerateArray())
+                {
+                    var idx = el.TryGetProperty("Index", out var pIdx) && pIdx.TryGetInt32(out var i) ? i : 0;
+                    var canonical = el.TryGetProperty("CanonicalName", out var pC) ? pC.GetString() ?? "" : "";
+                    var header = el.TryGetProperty("OriginalHeader", out var pH) ? pH.GetString() ?? canonical : canonical;
+
+                    if (!string.IsNullOrWhiteSpace(canonical))
+                        headers.Add((idx, canonical, header));
+                }
+            }
+        }
+        catch { /* snapshot bozulmasın; tablo yine de açılmalı */ }
+    }
+
+    headers = headers.OrderBy(x => x.Index).ToList();
+}
+
+<div class="container-fluid py-3">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div>
+            <h4 class="mb-1">Snapshot</h4>
+            <div class="text-muted">
+                <strong>Tarih:</strong> @Model.RaporTarihi
+                <span class="mx-2">•</span>
+                <strong>Tür:</strong> @Model.RaporTuru
+                <span class="mx-2">•</span>
+                <strong>Id:</strong> @Model.Id
+            </div>
+        </div>
+
+        <div class="d-flex gap-2">
+            <a class="btn btn-outline-secondary" asp-controller="Import" asp-action="Index">
+                <i class="bi bi-arrow-left"></i> Import'a Dön
+            </a>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Model.WarningsJson))
+    {
+        <div class="alert alert-warning small">
+            <strong>Uyarılar:</strong>
+            <pre class="mb-0">@Model.WarningsJson</pre>
+        </div>
+    }
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <div>
+                <strong>Snapshot Grid</strong>
+                <div class="text-muted small">DB’de kaydedildiği haliyle gösterilir (yeniden hesap yok)</div>
+            </div>
+            <span class="badge bg-secondary">@rows.Count</span>
+        </div>
+
+        <div class="card-body">
+            @if (rows.Count == 0)
+            {
+                <div class="text-muted">Snapshot satırı bulunamadı.</div>
+            }
+            else if (headers.Count == 0)
+            {
+                <div class="text-muted">
+                    Header bilgisi bulunamadı (HeadersJson boş). Yine de ColumnsJson ham olarak gösteriliyor.
+                </div>
+
+                <ul class="list-group list-group-flush mt-2">
+                    @foreach (var r in rows)
+                    {
+                        <li class="list-group-item">
+                            <pre class="mb-0">@r.ColumnsJson</pre>
+                        </li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                @foreach (var h in headers)
+                                {
+                                    <th style="white-space:nowrap;">
+                                        <div class="fw-semibold">@h.Header</div>
+                                        <div class="small text-muted">@h.Canonical</div>
+                                    </th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in rows)
+                            {
+                                Dictionary<string, string?> dict = new(StringComparer.OrdinalIgnoreCase);
+                                try
+                                {
+                                    using var d = JsonDocument.Parse(r.ColumnsJson ?? "{}");
+                                    if (d.RootElement.ValueKind == JsonValueKind.Object)
+                                    {
+                                        foreach (var p in d.RootElement.EnumerateObject())
+                                            dict[p.Name] = p.Value.ValueKind == JsonValueKind.String ? p.Value.GetString() : p.Value.ToString();
+                                    }
+                                }
+                                catch { /* JSON parse failed - show empty cell, don't break page */ }
+
+                                <tr>
+                                    @foreach (var h in headers)
+                                    {
+                                        dict.TryGetValue(h.Canonical, out var v);
+                                        <td style="white-space:nowrap;">@v</td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>

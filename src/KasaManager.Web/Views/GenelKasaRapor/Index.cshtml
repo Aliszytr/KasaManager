@@ -1,0 +1,712 @@
+@model KasaManager.Web.Models.GenelKasaRaporViewModel
+@{
+    ViewData["Title"] = "Genel Kasa Raporu";
+    var trCulture = System.Globalization.CultureInfo.GetCultureInfo("tr-TR");
+    string FormatMoney(decimal? val) => val?.ToString("N2", trCulture) ?? "—";
+    string FormatDate(DateOnly d) => d == default ? "—" : d.ToString("dd.MM.yyyy");
+
+    var mutabakatClass = (Model.MutabakatFarki ?? 0) >= 0 ? "var(--kasa-success)" : "var(--kasa-danger)";
+    var genelKasaClass = (Model.GenelKasa ?? 0) >= 0 ? "var(--kasa-success)" : "var(--kasa-danger)";
+}
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- HEADER                                                             -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div style="margin-bottom: 24px;">
+    <div class="d-flex align-items-center gap-3 mb-2">
+        <div style="width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, var(--kasa-primary), var(--kasa-secondary)); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <i class="fas fa-chart-bar" style="color: #fff; font-size: 22px;"></i>
+        </div>
+        <div>
+            <h3 class="mb-0" style="font-weight: 800; color: var(--text-primary);">Genel Kasa Raporu</h3>
+            <div style="font-size: 12px; color: var(--text-muted);">Master denetim ve mutabakat raporu</div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- TARİH SEÇİM FORMU                                                 -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="kasa-card" style="border-radius: var(--radius-md); margin-bottom: 20px;">
+    <div class="kasa-card-body" style="padding: 16px 24px;">
+        <form asp-action="Hazirla" method="post" class="d-flex align-items-end gap-3 flex-wrap">
+            @Html.AntiForgeryToken()
+            <div style="flex: 1; min-width: 180px;">
+                <label class="form-label mb-1" style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);">
+                    <i class="fas fa-calendar-alt me-1"></i> Bitiş Tarihi
+                </label>
+                <input name="selectedBitisTarihi" type="date" class="kasa-input" value="@(Model.BitisTarihi.ToString("yyyy-MM-dd"))" />
+            </div>
+            <div style="flex: 1; min-width: 180px;">
+                <label class="form-label mb-1" style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);">
+                    <i class="fas fa-ban me-1"></i> Gelmeyen D.
+                </label>
+                <input name="gelmeyenD" type="text" inputmode="decimal" class="kasa-input"
+                       placeholder="0,00"
+                       value="@(Model.Gelmeyen.HasValue ? Model.Gelmeyen.Value.ToString("0.##", trCulture) : "")" />
+            </div>
+            <button class="kasa-btn kasa-btn-primary" type="submit" style="height: 44px; padding: 0 24px; white-space: nowrap;">
+                <i class="fas fa-play me-2"></i>Kasa Hazırla
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- ÇIKTI ARAÇ ÇUBUĞU — Genel Kasa                                   -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="kasa-card" style="border-radius: var(--radius-md); margin-bottom: 20px; border-left: 4px solid var(--kasa-accent, #0891b2);">
+    <div class="kasa-card-body" style="padding: 12px 20px;">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-2">
+                <i class="fas fa-download" style="color: var(--kasa-accent, #0891b2); font-size: 16px;"></i>
+                <span style="font-size: 13px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Çıktı Seçenekleri</span>
+            </div>
+            <div class="d-flex gap-2 flex-wrap" id="exportButtons">
+                <!-- PDF A4 Genel -->
+                <button class="kasa-btn" onclick="exportGenelKasa('pdf_a4')" style="font-size: 12px; padding: 6px 14px; border-radius: 8px; background: rgba(239,68,68,0.08); color: #dc2626; border: 1px solid rgba(239,68,68,0.2);" title="PDF Genel Kasa Rapor (A4 Dikey)">
+                    <i class="fas fa-file-pdf me-1"></i>PDF (A4)
+                </button>
+                <!-- PDF A5 Özet -->
+                <button class="kasa-btn" onclick="exportGenelKasa('pdf_a5')" style="font-size: 12px; padding: 6px 14px; border-radius: 8px; background: rgba(239,68,68,0.08); color: #dc2626; border: 1px solid rgba(239,68,68,0.2);" title="PDF Özet Rapor (A5)">
+                    <i class="fas fa-file-alt me-1"></i>PDF Özet (A5)
+                </button>
+                <!-- Excel -->
+                <button class="kasa-btn" onclick="exportGenelKasa('excel')" style="font-size: 12px; padding: 6px 14px; border-radius: 8px; background: rgba(34,197,94,0.08); color: #16a34a; border: 1px solid rgba(34,197,94,0.2);" title="Excel Genel Kasa Rapor (.xlsx)">
+                    <i class="fas fa-file-excel me-1"></i>Excel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Export Hidden Form -->
+<form id="exportForm" asp-controller="GenelKasaRapor" asp-action="Export" method="post" style="display:none;">
+    @Html.AntiForgeryToken()
+    <input type="hidden" name="exportType" id="exportType" />
+    <input type="hidden" name="selectedBitisTarihi" value="@(Model.BitisTarihi.ToString("yyyy-MM-dd"))" />
+    <input type="hidden" name="gelmeyenD" value="@(Model.Gelmeyen.HasValue ? Model.Gelmeyen.Value.ToString("0.##", trCulture) : "")" />
+</form>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- RAPOR YÖNETİMİ — CRUD Butonları                                  -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="d-flex gap-2 flex-wrap align-items-center" style="margin-bottom: 10px;">
+    @* ── Kaydet ── *@
+    <button type="button" id="btnOpenSaveModal" class="kasa-btn" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border: none; font-weight: 600; padding: 8px 16px; font-size: 12px; box-shadow: 0 2px 8px rgba(245,158,11,0.3);" title="Bu raporu veritabanına kaydet">
+        <i class="fas fa-save me-1"></i> Kaydet
+    </button>
+
+    @* ── Raporları Aç/Kapat ── *@
+    <button type="button" id="btnToggleReports" class="kasa-btn" style="background: linear-gradient(135deg, #6366f1, #4f46e5); color: white; border: none; font-weight: 600; padding: 8px 16px; font-size: 12px;" title="Kaydedilmiş raporları listele">
+        <i class="fas fa-folder-open me-1"></i> Raporlar
+        <i class="fas fa-chevron-down ms-1" id="reportsChevron" style="font-size:10px; transition: transform 0.3s;"></i>
+    </button>
+
+    @* ── Güncelle ── *@
+    <button type="button" id="btnUpdateSnapshot" class="kasa-btn" style="background: linear-gradient(135deg, #10b981, #059669); color: white; border: none; font-weight: 600; padding: 8px 16px; font-size: 12px; opacity: @(Model.LoadedSnapshotId.HasValue ? "1" : "0.4"); pointer-events: @(Model.LoadedSnapshotId.HasValue ? "auto" : "none");" title="@(Model.LoadedSnapshotId.HasValue ? "Yüklü raporu güncelle" : "Önce rapor yüklemelisiniz")" @(Model.LoadedSnapshotId.HasValue ? "" : "disabled")>
+        <i class="fas fa-sync-alt me-1"></i> Güncelle
+    </button>
+
+    @* ── Sil ── *@
+    <button type="button" id="btnDeleteSnapshot" class="kasa-btn" style="background: linear-gradient(135deg, #ef4444, #dc2626); color: white; border: none; font-weight: 600; padding: 8px 16px; font-size: 12px; opacity: @(Model.LoadedSnapshotId.HasValue ? "1" : "0.4"); pointer-events: @(Model.LoadedSnapshotId.HasValue ? "auto" : "none");" title="@(Model.LoadedSnapshotId.HasValue ? "Yüklü raporu sil" : "Önce rapor yüklemelisiniz")" @(Model.LoadedSnapshotId.HasValue ? "" : "disabled")>
+        <i class="fas fa-trash-alt me-1"></i> Sil
+    </button>
+</div>
+
+@* ── İşlem İletileri Alanı ── *@
+<div id="actionAlertArea" style="margin-bottom:8px; display:none;"></div>
+
+@* ── TempData Alerts ── *@
+@if (TempData["SuccessMessage"] is string sMsg)
+{
+    <div class="kasa-alert" style="border-left: 4px solid #10b981; background: rgba(16,185,129,0.08); padding: 10px 14px; border-radius: 8px; display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+        <i class="fas fa-check-circle" style="color: #10b981; font-size: 16px;"></i>
+        <div style="font-size: 12px; font-weight: 600; color: #065f46;">@sMsg</div>
+    </div>
+}
+@if (TempData["ErrorMessage"] is string eMsg)
+{
+    <div class="kasa-alert" style="border-left: 4px solid #ef4444; background: rgba(239,68,68,0.08); padding: 10px 14px; border-radius: 8px; display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+        <i class="fas fa-times-circle" style="color: #ef4444; font-size: 16px;"></i>
+        <div style="font-size: 12px; font-weight: 600; color: #991b1b;">@eMsg</div>
+    </div>
+}
+
+@* ── Yüklü Rapor Bilgi Çubuğu ── *@
+@if (Model.LoadedSnapshotId.HasValue)
+{
+    <div id="loadedReportBar" style="margin-bottom: 10px; padding: 10px 16px; border-radius: 10px; background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(79,70,229,0.04)); border: 1px solid rgba(99,102,241,0.2); display: flex; align-items: center; gap: 10px; flex-wrap:wrap;">
+        <div style="width:32px; height:32px; border-radius:8px; background:linear-gradient(135deg,#6366f1,#4f46e5); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+            <i class="fas fa-file-alt" style="color:white; font-size:13px;"></i>
+        </div>
+        <div>
+            <div style="font-size:13px; font-weight:700; color:var(--text-primary, #111827);">
+                @Model.LoadedSnapshotName
+                <span style="font-size:11px; font-weight:500; color:var(--text-muted, #6b7280); margin-left:6px;">v@(Model.LoadedSnapshotVersion)</span>
+            </div>
+            <div style="font-size:11px; color:var(--text-muted, #6b7280);">Yüklü rapor — değişiklikleri "Güncelle" ile kaydedebilir veya "Sil" ile kaldırabilirsiniz</div>
+        </div>
+        <input type="hidden" id="loadedSnapshotId" value="@Model.LoadedSnapshotId" />
+    </div>
+}
+
+@* ── Raporlar Paneli (Collapsible) ── *@
+<div id="reportsPanel" style="display:none; margin-bottom: 12px;">
+    <div class="kasa-card" style="border-radius: var(--radius-md); border: 1px solid rgba(99,102,241,0.15); overflow:hidden;">
+        <div style="padding: 10px 16px; background: rgba(99,102,241,0.04); display:flex; align-items:center; justify-content:space-between; border-bottom: 1px solid rgba(99,102,241,0.1);">
+            <div class="d-flex align-items-center gap-2">
+                <i class="fas fa-list-ul" style="color:#6366f1; font-size:13px;"></i>
+                <span style="font-size:12px; font-weight:700; color:var(--text-secondary, #374151);">Kayıtlı Genel Kasa Raporları</span>
+                <span id="reportCountBadge" style="font-size:10px; background:#eef2ff; color:#4338ca; padding:1px 8px; border-radius:10px; font-weight:600;">...</span>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <input type="date" id="searchDate" class="kasa-input" style="font-size:11px; padding:3px 8px; width:130px;" />
+                <input type="text" id="searchText" class="kasa-input" placeholder="Ara..." style="font-size:11px; padding:3px 8px; width:120px;" />
+                <button type="button" id="btnSearchReports" style="font-size:11px; padding:4px 10px; border-radius:6px; background:linear-gradient(135deg,#6366f1,#4f46e5); color:white; border:none; cursor:pointer; font-weight:600;" title="Ara">
+                    <i class="fas fa-search"></i>
+                </button>
+            </div>
+        </div>
+        <div style="max-height:300px; overflow-y:auto;">
+            <table style="width:100%; border-collapse:collapse;">
+                <thead>
+                    <tr style="background:rgba(99,102,241,0.03); border-bottom:2px solid #e5e7eb;">
+                        <th style="padding:8px 12px; text-align:left; font-size:11px; font-weight:700; color:#6b7280; text-transform:uppercase;">Rapor Adı</th>
+                        <th style="padding:8px 12px; text-align:center; font-size:11px; font-weight:700; color:#6b7280; text-transform:uppercase;">Tarih</th>
+                        <th style="padding:8px 12px; text-align:center; font-size:11px; font-weight:700; color:#6b7280; text-transform:uppercase;">Versiyon</th>
+                        <th style="padding:8px 12px; text-align:center; font-size:11px; font-weight:700; color:#6b7280; text-transform:uppercase;">Kayıt</th>
+                        <th style="padding:8px 12px; text-align:center; font-size:11px; font-weight:700; color:#6b7280; text-transform:uppercase;">İşlem</th>
+                    </tr>
+                </thead>
+                <tbody id="reportsTableBody">
+                    <tr><td colspan="5" style="padding:20px; text-align:center; color:var(--text-muted);"><i class="fas fa-spinner fa-spin me-2"></i>Yükleniyor...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@* ── Kaydet Modal ── *@
+<div id="saveReportModal" style="display:none; position:fixed; inset:0; z-index:10000; background:rgba(0,0,0,0.5); display:none; align-items:center; justify-content:center;">
+    <div style="background:var(--card-bg, #1e293b); border-radius:16px; width:420px; max-width:90vw; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25); padding:24px;">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <h5 class="mb-0" style="font-weight:700; color:var(--text-primary, #f1f5f9);"><i class="fas fa-save me-2" style="color:#f59e0b;"></i>Raporu Kaydet</h5>
+            <button type="button" id="btnCloseSaveModal" style="background:none; border:none; color:var(--text-muted); font-size:18px; cursor:pointer;">&times;</button>
+        </div>
+        <form id="saveReportForm" asp-controller="GenelKasaRapor" asp-action="SaveReport" method="post">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="selectedBitisTarihi" value="@(Model.BitisTarihi.ToString("yyyy-MM-dd"))" />
+            <input type="hidden" name="gelmeyenD" value="@(Model.Gelmeyen.HasValue ? Model.Gelmeyen.Value.ToString("0.##", trCulture) : "")" />
+            <div style="margin-bottom:12px;">
+                <label class="form-label" style="font-size:12px; font-weight:600; color:var(--text-muted);">Rapor Adı</label>
+                <input type="text" name="SaveRaporAdi" id="saveRaporAdi" class="kasa-input" placeholder="Genel Kasa — @(Model.BaslangicTarihi.ToString("dd.MM.yyyy")) / @(Model.BitisTarihi.ToString("dd.MM.yyyy"))" style="width:100%;" />
+            </div>
+            <div style="margin-bottom:16px;">
+                <label class="form-label" style="font-size:12px; font-weight:600; color:var(--text-muted);">Veznedar</label>
+                <input type="text" name="SaveVeznedar" class="kasa-input" placeholder="Veznedar adı" style="width:100%;" />
+            </div>
+            <div class="d-flex gap-2 justify-content-end">
+                <button type="button" onclick="document.getElementById('saveReportModal').style.display='none'" class="kasa-btn" style="padding:8px 16px; font-size:12px; background:rgba(107,114,128,0.1); color:var(--text-muted); border:none;">İptal</button>
+                <button type="submit" class="kasa-btn" style="padding:8px 20px; font-size:12px; background:linear-gradient(135deg,#f59e0b,#d97706); color:white; border:none; font-weight:600;">
+                    <i class="fas fa-save me-1"></i>Kaydet
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function exportGenelKasa(type) {
+        document.getElementById('exportType').value = type;
+        document.getElementById('exportForm').submit();
+    }
+
+(function() {
+    // ═══════════════════════════════════════════════════════════
+    //  SAVE MODAL
+    // ═══════════════════════════════════════════════════════════
+    var openBtn = document.getElementById('btnOpenSaveModal');
+    var closeBtn = document.getElementById('btnCloseSaveModal');
+    var modal = document.getElementById('saveReportModal');
+
+    if (openBtn && modal) {
+        openBtn.addEventListener('click', function() {
+            modal.style.display = 'flex';
+            var nameInput = document.getElementById('saveRaporAdi');
+            if (nameInput) setTimeout(function() { nameInput.focus(); }, 100);
+        });
+    }
+    if (closeBtn && modal) {
+        closeBtn.addEventListener('click', function() { modal.style.display = 'none'; });
+    }
+    if (modal) {
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) modal.style.display = 'none';
+        });
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  REPORTS PANEL TOGGLE
+    // ═══════════════════════════════════════════════════════════
+    var toggleBtn = document.getElementById('btnToggleReports');
+    var panel = document.getElementById('reportsPanel');
+    var chevron = document.getElementById('reportsChevron');
+    var panelOpen = false;
+
+    if (toggleBtn && panel) {
+        toggleBtn.addEventListener('click', function() {
+            panelOpen = !panelOpen;
+            panel.style.display = panelOpen ? 'block' : 'none';
+            if (chevron) chevron.style.transform = panelOpen ? 'rotate(180deg)' : '';
+            if (panelOpen) loadReports();
+        });
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  UPDATE SNAPSHOT
+    // ═══════════════════════════════════════════════════════════
+    var updateBtn = document.getElementById('btnUpdateSnapshot');
+    if (updateBtn) {
+        updateBtn.addEventListener('click', function() {
+            var loadedEl = document.getElementById('loadedSnapshotId');
+            if (!loadedEl) return;
+            var snapshotId = loadedEl.value;
+            if (!confirm('Bu raporu güncellemek istediğinizden emin misiniz?')) return;
+
+            var token = getAntiForgeryToken();
+            var fd = new FormData();
+            fd.append('snapshotId', snapshotId);
+            fd.append('__RequestVerificationToken', token);
+
+            fetch('/GenelKasaRapor/UpdateSnapshot', { method: 'POST', body: fd })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    showToast(data.message, data.ok ? 'success' : 'error');
+                })
+                .catch(function(err) { showToast('Güncelleme hatası: ' + err.message, 'error'); });
+        });
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  DELETE SNAPSHOT
+    // ═══════════════════════════════════════════════════════════
+    var deleteBtn = document.getElementById('btnDeleteSnapshot');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', function() {
+            var loadedEl = document.getElementById('loadedSnapshotId');
+            if (!loadedEl) return;
+            var snapshotId = loadedEl.value;
+            if (!confirm('Bu raporu silmek istediğinizden emin misiniz?\n\nBu işlem geri alınabilir (soft delete).')) return;
+
+            var token = getAntiForgeryToken();
+            var fd = new FormData();
+            fd.append('snapshotId', snapshotId);
+            fd.append('__RequestVerificationToken', token);
+
+            fetch('/GenelKasaRapor/DeleteSnapshot', { method: 'POST', body: fd })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    showToast(data.message, data.ok ? 'success' : 'error');
+                    if (data.ok) {
+                        var bar = document.getElementById('loadedReportBar');
+                        if (bar) bar.style.display = 'none';
+                        updateBtn.style.opacity = '0.4'; updateBtn.style.pointerEvents = 'none';
+                        deleteBtn.style.opacity = '0.4'; deleteBtn.style.pointerEvents = 'none';
+                        loadReports();
+                    }
+                })
+                .catch(function(err) { showToast('Silme hatası: ' + err.message, 'error'); });
+        });
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  SEARCH & LIST REPORTS
+    // ═══════════════════════════════════════════════════════════
+    var tableBody = document.getElementById('reportsTableBody');
+    var countBadge = document.getElementById('reportCountBadge');
+    var searchDateInput = document.getElementById('searchDate');
+    var searchTextInput = document.getElementById('searchText');
+    var searchBtn = document.getElementById('btnSearchReports');
+
+    if (searchBtn) searchBtn.addEventListener('click', function() { loadReports(); });
+    [searchDateInput, searchTextInput].forEach(function(el) {
+        if (el) el.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); loadReports(); }
+        });
+    });
+
+    function loadReports() {
+        if (!tableBody) return;
+        tableBody.innerHTML = '<tr><td colspan="5" style="padding:20px; text-align:center; color:var(--text-muted);"><i class="fas fa-spinner fa-spin me-2"></i>Yükleniyor...</td></tr>';
+
+        var loadedId = '';
+        var loadedEl = document.getElementById('loadedSnapshotId');
+        if (loadedEl) loadedId = loadedEl.value;
+
+        var url = '/GenelKasaRapor/SearchReports?_=' + Date.now();
+        if (searchDateInput && searchDateInput.value) url += '&searchDate=' + encodeURIComponent(searchDateInput.value);
+        if (searchTextInput && searchTextInput.value.trim()) url += '&search=' + encodeURIComponent(searchTextInput.value.trim());
+
+        fetch(url)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (countBadge) countBadge.textContent = data.totalCount + ' rapor';
+                if (!data.items || data.items.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="5" style="padding:24px; text-align:center; color:#6b7280; background:#fff;"><i class="fas fa-inbox me-2" style="font-size:16px;"></i>Kayıtlı rapor bulunamadı</td></tr>';
+                    return;
+                }
+                var html = '';
+                data.items.forEach(function(item) {
+                    var isLoaded = loadedId && item.id === loadedId;
+                    var rowBg = isLoaded ? 'background: rgba(99,102,241,0.06);' : '';
+                    html += '<tr data-snapshot-id="' + item.id + '" style="border-bottom:1px solid #e5e7eb; cursor:pointer; transition: background 0.15s; color:#1f2937; ' + rowBg + '" ' +
+                            'onmouseenter="this.style.background=\'#eef2ff\'" ' +
+                            'onmouseleave="this.style.background=\'' + (isLoaded ? '#eef2ff' : '#fff') + '\'" ' +
+                            'ondblclick="window.location.href=\'/GenelKasaRapor/LoadSnapshot?id=' + item.id + '\'">';
+                    html += '<td style="padding:8px 12px; color:#1f2937;">';
+                    if (isLoaded) html += '<i class="fas fa-check-circle me-1" style="color:#6366f1; font-size:10px;"></i>';
+                    html += '<span style="font-weight:600; font-size:12px;">' + escapeHtml(item.name) + '</span>';
+                    html += '</td>';
+                    html += '<td style="padding:8px 12px; text-align:center; font-size:12px; color:#374151;">' + item.raporTarihi + '</td>';
+                    html += '<td style="padding:8px 12px; text-align:center;"><span style="font-size:10px; font-weight:600; background:#eef2ff; color:#4338ca; padding:1px 6px; border-radius:10px;">v' + item.version + '</span></td>';
+                    html += '<td style="padding:8px 12px; text-align:center; font-size:11px; color:#6b7280;">' + item.calculatedAt + '</td>';
+                    html += '<td style="padding:8px 12px; text-align:center; white-space:nowrap;">';
+                    if (isLoaded) {
+                        html += '<span style="font-size:10px; color:#6366f1; font-weight:600;">Yüklü</span>';
+                    } else {
+                        html += '<a href="/GenelKasaRapor/LoadSnapshot?id=' + item.id + '" class="kasa-btn" style="font-size:10px; padding:3px 10px; background:linear-gradient(135deg,#6366f1,#4f46e5); color:white; border:none; text-decoration:none; margin-right:4px;">';
+                        html += '<i class="fas fa-download me-1"></i>Yükle</a>';
+                    }
+                    html += '<button type="button" onclick="deleteFromPanel(\'' + item.id + '\')" class="kasa-btn" style="font-size:10px; padding:3px 10px; background:linear-gradient(135deg,#ef4444,#dc2626); color:white; border:none; cursor:pointer; margin-left:4px;" title="Raporu sil">';
+                    html += '<i class="fas fa-trash-alt"></i></button>';
+                    html += '</td></tr>';
+                });
+                tableBody.innerHTML = html;
+            })
+            .catch(function(err) {
+                tableBody.innerHTML = '<tr><td colspan="5" style="padding:20px; text-align:center; color:#dc2626;"><i class="fas fa-exclamation-triangle me-1"></i>Yükleme hatası: ' + err.message + '</td></tr>';
+            });
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  HELPERS
+    // ═══════════════════════════════════════════════════════════
+    function getAntiForgeryToken() {
+        var el = document.querySelector('input[name="__RequestVerificationToken"]');
+        return el ? el.value : '';
+    }
+
+    function escapeHtml(str) {
+        var div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    window.deleteFromPanel = function(snapshotId) {
+        if (!confirm('Bu raporu silmek istediğinizden emin misiniz?\n\nBu işlem geri alınabilir (soft delete).')) return;
+
+        var token = getAntiForgeryToken();
+        var fd = new FormData();
+        fd.append('snapshotId', snapshotId);
+        fd.append('__RequestVerificationToken', token);
+
+        fetch('/GenelKasaRapor/DeleteSnapshot', { method: 'POST', body: fd })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                showToast(data.message, data.ok ? 'success' : 'error');
+                if (data.ok) {
+                    var loadedIdEl = document.getElementById('loadedSnapshotId');
+                    if (loadedIdEl && loadedIdEl.value === snapshotId) {
+                        var bar = document.getElementById('loadedReportBar');
+                        if (bar) bar.style.display = 'none';
+                        var ub = document.getElementById('btnUpdateSnapshot');
+                        var db = document.getElementById('btnDeleteSnapshot');
+                        if (ub) { ub.style.opacity = '0.4'; ub.style.pointerEvents = 'none'; }
+                        if (db) { db.style.opacity = '0.4'; db.style.pointerEvents = 'none'; }
+                    }
+                    loadReports();
+                }
+            })
+            .catch(function(err) { showToast('Silme hatası: ' + err.message, 'error'); });
+    };
+
+    // ═══════════════════════════════════════════════════════════
+    //  VERGİDE BİRİKEN TRANSFER
+    // ═══════════════════════════════════════════════════════════
+    window.transferVergideBiriken = function(value) {
+        var formatted = value.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        if (!confirm('Genel Kasa değeri (' + formatted + ' ₺) Vergide Biriken seed olarak aktarılacak.\n\nSabah/Akşam kasalarda bu değer başlangıç olarak kullanılacak.\n\nDevam etmek istiyor musunuz?')) return;
+
+        var token = getAntiForgeryToken();
+        var fd = new FormData();
+        fd.append('genelKasaValue', value);
+        fd.append('__RequestVerificationToken', token);
+
+        var btn = document.getElementById('btnTransferVergide');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Aktarılıyor...'; }
+
+        fetch('/GenelKasaRapor/TransferVergideBiriken', { method: 'POST', body: fd })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                showToast(data.message, data.ok ? 'success' : 'error');
+                if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-piggy-bank me-1"></i>Vergide Biriken\'e Aktar'; }
+            })
+            .catch(function(err) {
+                showToast('❌ Transfer hatası: ' + err.message, 'error');
+                if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-piggy-bank me-1"></i>Vergide Biriken\'e Aktar'; }
+            });
+    };
+
+    function showToast(message, type) {
+        var area = document.getElementById('actionAlertArea');
+        if (!area) return;
+
+        var icon = type === 'success' ? 'fa-check-circle' :
+                   type === 'warning' ? 'fa-exclamation-triangle' : 'fa-times-circle';
+        var borderColor = type === 'success' ? '#10b981' :
+                          type === 'warning' ? '#f59e0b' : '#ef4444';
+        var bgColor = type === 'success' ? 'rgba(16,185,129,0.1)' :
+                      type === 'warning' ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)';
+        var textColor = type === 'success' ? '#065f46' :
+                        type === 'warning' ? '#92400e' : '#991b1b';
+
+        area.innerHTML = '<div style="border-left:4px solid ' + borderColor + '; background:' + bgColor + '; padding:10px 14px; border-radius:8px; display:flex; align-items:center; gap:10px;">' +
+            '<i class="fas ' + icon + '" style="color:' + borderColor + '; font-size:16px;"></i>' +
+            '<div style="font-size:12px; font-weight:600; color:' + textColor + ';">' + message + '</div>' +
+            '<button onclick="this.parentElement.parentElement.style.display=\'none\'" style="margin-left:auto; background:none; border:none; cursor:pointer; color:' + textColor + '; font-size:14px; opacity:0.7;" title="Kapat">&times;</button>' +
+            '</div>';
+        area.style.display = 'block';
+        area.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+        setTimeout(function() { area.style.display = 'none'; }, 6000);
+    }
+})();
+</script>
+}
+<div class="row g-3 mb-3">
+    <div class="col-md-4">
+        <div class="result-card" style="border-left: 5px solid var(--kasa-primary); height: 100%;">
+            <div class="result-card-label">
+                <i class="fas fa-calendar-day" style="color: var(--kasa-primary);"></i> Dönem Başlangıcı
+            </div>
+            <div class="result-card-value" style="font-size: 22px;">
+                @FormatDate(Model.BaslangicTarihi)
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="result-card result-card-primary" style="border-left: 5px solid var(--kasa-primary); height: 100%;">
+            <div class="result-card-label">
+                <i class="fas fa-calendar-check"></i> Dönem Bitişi
+            </div>
+            <div class="result-card-value" style="font-size: 22px;">
+                @FormatDate(Model.BitisTarihi)
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="result-card" style="border-left: 5px solid var(--kasa-secondary); height: 100%;">
+            <div class="result-card-label">
+                <i class="fas fa-exchange-alt" style="color: var(--kasa-secondary);"></i> Devreden Son Tarihi
+            </div>
+            <div class="result-card-value" style="font-size: 22px;">
+                @FormatDate(Model.DevredenSonTarihi)
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- ANA METRİKLER — 4'lü Kart Satırı                                  -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="result-card" style="border-left: 4px solid var(--kasa-success); height: 100%;">
+            <div class="result-card-label">
+                <i class="fas fa-arrow-right" style="color: var(--kasa-success);"></i> Devreden
+            </div>
+            <div class="result-card-value" style="font-size: 20px; color: var(--kasa-success);">
+                @FormatMoney(Model.Devreden) <span class="money-currency">₺</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="result-card" style="border-left: 4px solid var(--kasa-info); height: 100%;">
+            <div class="result-card-label">
+                <i class="fas fa-coins" style="color: var(--kasa-info);"></i> Toplam Tahsilat
+            </div>
+            <div class="result-card-value" style="font-size: 20px;">
+                @FormatMoney(Model.ToplamTahsilat) <span class="money-currency">₺</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="result-card" style="border-left: 4px solid var(--kasa-warning); height: 100%;">
+            <div class="result-card-label">
+                <i class="fas fa-undo" style="color: var(--kasa-warning);"></i> Toplam Reddiyat
+            </div>
+            <div class="result-card-value" style="font-size: 20px;">
+                @FormatMoney(Model.ToplamReddiyat) <span class="money-currency">₺</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="result-card" style="border-left: 4px solid var(--kasa-secondary); height: 100%;">
+            <div class="result-card-label">
+                <i class="fas fa-balance-scale" style="color: var(--kasa-secondary);"></i> Tahsilat − Reddiyat Fark
+            </div>
+            <div class="result-card-value" style="font-size: 20px;">
+                @FormatMoney(Model.TahsilatReddiyatFark) <span class="money-currency">₺</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- DETAY KARTLARI — 2x3 Grid                                          -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="row g-3 mb-3">
+    <!-- Sol: Banka & Devir -->
+    <div class="col-lg-6">
+        <div class="kasa-card" style="border-radius: var(--radius-md); height: 100%;">
+            <div class="kasa-card-header" style="padding: 12px 20px; background: rgba(8,145,178,0.06);">
+                <h6 class="mb-0" style="font-weight: 700; color: var(--kasa-info);">
+                    <i class="fas fa-university me-2"></i>Banka & Devir Bilgileri
+                </h6>
+            </div>
+            <div class="kasa-card-body" style="padding: 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border-light);">
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
+                        <i class="fas fa-piggy-bank me-2" style="color: var(--kasa-info); width: 16px;"></i>Banka Bakiye
+                    </span>
+                    <span style="font-size: 16px; font-weight: 700;">@FormatMoney(Model.BankaBakiye) ₺</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border-light);">
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
+                        <i class="fas fa-file-invoice-dollar me-2" style="color: var(--kasa-info); width: 16px;"></i>Kayden Tahsilat
+                    </span>
+                    <span style="font-size: 16px; font-weight: 700;">@FormatMoney(Model.KaydenTahsilat) ₺</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px;">
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
+                        <i class="fas fa-forward me-2" style="color: var(--kasa-info); width: 16px;"></i>Sonraya Devredecek
+                    </span>
+                    <span style="font-size: 16px; font-weight: 700;">@FormatMoney(Model.SonrayaDevredecek) ₺</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Sağ: Kasa Detayları -->
+    <div class="col-lg-6">
+        <div class="kasa-card" style="border-radius: var(--radius-md); height: 100%;">
+            <div class="kasa-card-header" style="padding: 12px 20px; background: rgba(245,158,11,0.06);">
+                <h6 class="mb-0" style="font-weight: 700; color: var(--kasa-warning);">
+                    <i class="fas fa-cash-register me-2"></i>Kasa Detayları
+                </h6>
+            </div>
+            <div class="kasa-card-body" style="padding: 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border-light);">
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
+                        <i class="fas fa-money-bill-wave me-2" style="color: var(--kasa-warning); width: 16px;"></i>Kasa Nakit
+                    </span>
+                    <span style="font-size: 16px; font-weight: 700;">@FormatMoney(Model.KasaNakit) ₺</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border-light);">
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
+                        <i class="fas fa-plus-minus me-2" style="color: var(--kasa-warning); width: 16px;"></i>Eksik/Fazla Makbuz
+                    </span>
+                    <span style="font-size: 16px; font-weight: 700;">@FormatMoney(Model.EksikYadaFazla) ₺</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px;">
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
+                        <i class="fas fa-ban me-2" style="color: var(--kasa-warning); width: 16px;"></i>Gelmeyen D.
+                    </span>
+                    <span style="font-size: 16px; font-weight: 700;">@FormatMoney(Model.Gelmeyen) ₺</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SONUÇ HERO KARTLARI — Genel Kasa + Mutabakat Farkı                 -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="row g-3 mb-3">
+    <div class="col-md-6">
+        <div class="kasa-card" style="border: 2px solid @genelKasaClass; border-radius: var(--radius-md); overflow: hidden; height: 100%;">
+            <div style="padding: 20px 24px; background: linear-gradient(135deg, rgba(8,145,178,0.06) 0%, rgba(8,145,178,0.02) 100%);">
+                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 8px;">
+                    <i class="fas fa-landmark me-2"></i>Genel Kasa
+                </div>
+                <div style="font-size: 34px; font-weight: 800; color: @genelKasaClass; line-height: 1.1;">
+                    @FormatMoney(Model.GenelKasa) <span style="font-size: 18px; font-weight: 600;">₺</span>
+                </div>
+                <div style="margin-top: 8px; font-size: 12px; color: var(--text-muted);">
+                    <i class="fas fa-info-circle me-1"></i> Dönem: @FormatDate(Model.BaslangicTarihi) — @FormatDate(Model.BitisTarihi)
+                </div>
+                <div style="margin-top: 12px;">
+                    <button type="button" id="btnTransferVergide"
+                            onclick="transferVergideBiriken(@((Model.GenelKasa ?? 0).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)))"
+                            class="kasa-btn"
+                            style="font-size: 11px; padding: 6px 14px; border-radius: 8px;
+                                   background: linear-gradient(135deg, #f59e0b, #d97706);
+                                   color: white; border: none; font-weight: 600;
+                                   box-shadow: 0 2px 8px rgba(245,158,11,0.3);
+                                   transition: all 0.2s;"
+                            title="Bu değeri Sabah/Akşam kasalarda Vergide Biriken başlangıç değeri olarak kullan">
+                        <i class="fas fa-piggy-bank me-1"></i>Vergide Biriken'e Aktar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="kasa-card" style="border: 2px solid @mutabakatClass; border-radius: var(--radius-md); overflow: hidden; height: 100%;">
+            <div style="padding: 20px 24px; background: linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(16,185,129,0.02) 100%);">
+                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 8px;">
+                    <i class="fas fa-balance-scale-right me-2"></i>Mutabakat Farkı
+                    <span style="font-size: 10px; font-weight: 500; letter-spacing: 0;">(Banka − Beklenen)</span>
+                </div>
+                <div style="font-size: 34px; font-weight: 800; color: @mutabakatClass; line-height: 1.1;">
+                    @FormatMoney(Model.MutabakatFarki) <span style="font-size: 18px; font-weight: 600;">₺</span>
+                </div>
+                @if (Math.Abs(Model.MutabakatFarki ?? 0) < 0.01m)
+                {
+                    <div style="margin-top: 8px; font-size: 12px; color: var(--kasa-success);">
+                        <i class="fas fa-check-circle me-1"></i> Mutabakat tamam — fark yok
+                    </div>
+                }
+                else
+                {
+                    <div style="margin-top: 8px; font-size: 12px; color: var(--kasa-danger);">
+                        <i class="fas fa-exclamation-triangle me-1"></i> Mutabakat farkı mevcut — kontrol gerekli
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- UYARILAR (sadece gerçek sorunlar varsa)                             -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+@if (Model.Issues.Count > 0)
+{
+    <div class="kasa-alert kasa-alert-warning" style="border-radius: var(--radius-md); margin-top: 12px;">
+        <i class="fas fa-exclamation-circle" style="font-size: 18px; flex-shrink: 0;"></i>
+        <div>
+            <strong style="font-size: 13px;">Uyarılar</strong>
+            <ul style="margin: 4px 0 0 0; padding-left: 18px; font-size: 12px;">
+                @foreach (var issue in Model.Issues)
+                {
+                    <li>@issue</li>
+                }
+            </ul>
+        </div>
+    </div>
+}
+
+

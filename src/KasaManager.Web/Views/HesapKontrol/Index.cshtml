@@ -1,0 +1,1297 @@
+@using KasaManager.Application.Abstractions
+@using KasaManager.Domain.Reports.HesapKontrol
+@model KasaManager.Web.Models.HesapKontrolViewModel
+@{
+    ViewData["Title"] = "Hesap Kontrol";
+
+    var dashboard = Model.Dashboard;
+    var acikKayitlar = Model.AcikKayitlar;
+    var takipteKayitlar = Model.TakipteKayitlar;
+    var gecmisKayitlar = Model.GecmisKayitlar;
+    var takipGecmisiModel = Model.TakipGecmisi;
+    var activeTab = Model.ActiveTab;
+    var filterHesapTuru = Model.FilterHesapTuru;
+    var filterDurum = Model.FilterDurum;
+    var filterBaslangic = Model.FilterBaslangic;
+    var filterBitis = Model.FilterBitis;
+    var arama = Model.Arama;
+    var takipOzeti = Model.TakipOzeti;
+}
+
+
+<div class="container-fluid">
+
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12 d-flex align-items-start justify-content-between flex-wrap gap-3">
+            <div>
+                <h2 class="text-primary">
+                    <i class="fas fa-university me-2"></i>
+                    Banka Hesap Kontrol
+                </h2>
+                <p class="text-muted mb-0">
+                    Banka karşılaştırma raporlarından tespit edilen eksik/fazla kayıtların yönetimi ve takibi.
+                </p>
+            </div>
+
+            <!-- ═══════ Tarih Seçici (Geriye Dönük Analiz) ═══════ -->
+            @if (Model.SnapshotTarihleri.Count > 0)
+            {
+                <div class="d-flex align-items-center gap-2 p-2 rounded-3"
+                     style="background: var(--kasa-surface); border: 1px solid var(--kasa-border);">
+                    <i class="fas fa-calendar-alt text-kasa-primary"></i>
+                    <label class="small fw-semibold text-muted mb-0">Analiz Tarihi:</label>
+                    <select id="analizTarihiSelect" class="form-select form-select-sm"
+                            style="width: auto; min-width: 160px; font-weight: 600;"
+                            onchange="window.location.href='@Url.Action("Index", "HesapKontrol")?analizTarihiStr=' + this.value">
+                        @foreach (var tarih in Model.SnapshotTarihleri)
+                        {
+                            var label = tarih.ToString("dd.MM.yyyy") + (tarih == Model.LastSnapshotDate ? " (Son)" : "");
+                            if (tarih == Model.AnalizTarihi)
+                            {
+                                <option value="@tarih.ToString("yyyy-MM-dd")" selected>@label</option>
+                            }
+                            else
+                            {
+                                <option value="@tarih.ToString("yyyy-MM-dd")">@label</option>
+                            }
+                        }
+                    </select>
+                    @if (Model.AnalizTarihi != Model.LastSnapshotDate)
+                    {
+                        <span class="badge bg-warning text-dark ms-1">
+                            <i class="fas fa-history me-1"></i>Geriye Dönük
+                        </span>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+    <!-- ═══════ CrossDay Bildirim Banner'ı ═══════ -->
+    @if (TempData["CrossDay"] is string crossDayMsg)
+    {
+        <div class="alert alert-success border-0 shadow-sm mb-4" style="background: linear-gradient(135deg, #d4edda 0%, #c3f0c8 100%); border-left: 5px solid #28a745 !important;">
+            <div class="d-flex align-items-center">
+                <div style="font-size: 28px; margin-right: 12px;">🎉</div>
+                <div>
+                    <strong>Takip Motoru Bildirimi</strong>
+                    <div class="small mt-1">@crossDayMsg</div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- ═══════ Dashboard Kartları ═══════ -->
+    @if (dashboard != null)
+    {
+        <div class="row g-3 mb-4">
+            <!-- Açık Kayıt -->
+            <div class="col-md-4 col-lg-2">
+                <div class="card text-center h-100" style="border-left: 4px solid #e74c3c;">
+                    <div class="card-body py-3">
+                        <div class="text-muted small mb-1"><i class="fas fa-exclamation-circle me-1"></i>Açık Kayıt</div>
+                        <h3 class="mb-0 fw-bold" style="color: #e74c3c;">@dashboard.AcikKayitSayisi</h3>
+                    </div>
+                </div>
+            </div>
+            <!-- Beklenen -->
+            <div class="col-md-4 col-lg-2">
+                <div class="card text-center h-100" style="border-left: 4px solid #f39c12;">
+                    <div class="card-body py-3">
+                        <div class="text-muted small mb-1"><i class="fas fa-clock me-1"></i>Beklenen</div>
+                        <h3 class="mb-0 fw-bold" style="color: #f39c12;">@dashboard.BeklenenSayisi</h3>
+                    </div>
+                </div>
+            </div>
+            <!-- Bilinmeyen -->
+            <div class="col-md-4 col-lg-2">
+                <div class="card text-center h-100" style="border-left: 4px solid #9b59b6;">
+                    <div class="card-body py-3">
+                        <div class="text-muted small mb-1"><i class="fas fa-question-circle me-1"></i>Bilinmeyen</div>
+                        <h3 class="mb-0 fw-bold" style="color: #9b59b6;">@dashboard.BilinmeyenSayisi</h3>
+                    </div>
+                </div>
+            </div>
+            <!-- Eksik Toplam -->
+            <div class="col-md-4 col-lg-2">
+                <div class="card text-center h-100" style="border-left: 4px solid #e67e22;">
+                    <div class="card-body py-3">
+                        <div class="text-muted small mb-1"><i class="fas fa-arrow-down me-1"></i>Eksik Toplam</div>
+                        <h4 class="mb-0 fw-bold" style="color: #e67e22;">@dashboard.AcikEksikToplam.ToString("N2")₺</h4>
+                    </div>
+                </div>
+            </div>
+            <!-- Fazla Toplam -->
+            <div class="col-md-4 col-lg-2">
+                <div class="card text-center h-100" style="border-left: 4px solid #27ae60;">
+                    <div class="card-body py-3">
+                        <div class="text-muted small mb-1"><i class="fas fa-arrow-up me-1"></i>Fazla Toplam</div>
+                        <h4 class="mb-0 fw-bold" style="color: #27ae60;">@dashboard.AcikFazlaToplam.ToString("N2")₺</h4>
+                    </div>
+                </div>
+            </div>
+            <!-- Bugün Çözülen -->
+            <div class="col-md-4 col-lg-2">
+                <div class="card text-center h-100" style="border-left: 4px solid #2ecc71;">
+                    <div class="card-body py-3">
+                        <div class="text-muted small mb-1"><i class="fas fa-check-circle me-1"></i>Bugün Çözülen</div>
+                        <h3 class="mb-0 fw-bold" style="color: #2ecc71;">@dashboard.BugunCozulenSayisi</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* ═══════ Takipte Özet Kartı ═══════ *@
+        @if (dashboard.TakipteSayisi > 0)
+        {
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card" style="border-left: 5px solid #8e44ad; background: rgba(142,68,173,0.06);">
+                        <div class="card-body py-3">
+                            <div class="d-flex align-items-center justify-content-between">
+                                <div>
+                                    <h6 class="mb-1 fw-bold">
+                                        <i class="fas fa-binoculars me-1" style="color: #8e44ad;"></i>
+                                        📌 Takipteki Kayıtlar
+                                        <span class="badge bg-secondary ms-1">@dashboard.TakipteSayisi</span>
+                                    </h6>
+                                    <div class="d-flex flex-wrap gap-3 mt-2">
+                                        @if (dashboard.TakipteEksikToplam > 0)
+                                        {
+                                            <span class="text-danger">
+                                                <i class="fas fa-arrow-down me-1"></i>Eksik: <strong>@dashboard.TakipteEksikToplam.ToString("N2")₺</strong>
+                                            </span>
+                                        }
+                                        @if (dashboard.TakipteFazlaToplam > 0)
+                                        {
+                                            <span class="text-success">
+                                                <i class="fas fa-arrow-up me-1"></i>Fazla: <strong>@dashboard.TakipteFazlaToplam.ToString("N2")₺</strong>
+                                            </span>
+                                        }
+                                    </div>
+                                </div>
+                                <a asp-action="Index" asp-route-tab="takipte" class="btn btn-outline-secondary btn-sm">
+                                    <i class="fas fa-external-link-alt me-1"></i>Detay
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* ═══════ Stopaj/Virman Durumu ═══════ *@
+        @if (dashboard.LastStopajDurum != null)
+        {
+            var s = dashboard.LastStopajDurum;
+            var cardBorder = s.VirmanYapildiMi ? "#2ecc71" : "#e74c3c";
+            var cardBg = s.VirmanYapildiMi ? "rgba(46,204,113,0.08)" : "rgba(231,76,60,0.08)";
+            var icon = s.VirmanYapildiMi ? "fa-check-circle text-success" : "fa-exclamation-triangle text-danger";
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card" style="border-left: 5px solid @cardBorder; background: @cardBg;">
+                        <div class="card-body py-3 d-flex align-items-center gap-3">
+                            <i class="fas @icon fa-2x"></i>
+                            <div>
+                                <h6 class="mb-1 fw-bold">
+                                    <i class="fas fa-exchange-alt me-1"></i>Stopaj Virman Durumu
+                                </h6>
+                                <span class="@(s.VirmanYapildiMi ? "text-success" : "text-danger")">
+                                    @s.Mesaj
+                                </span>
+                                @if (s.BeklenenTutar > 0)
+                                {
+                                    <span class="ms-3 text-muted small">
+                                        Beklenen: <strong>@s.BeklenenTutar.ToString("N2")₺</strong>
+                                        @if (s.BulunanVirmanTutar.HasValue)
+                                        {
+                                            <span> · Bulunan: <strong>@s.BulunanVirmanTutar.Value.ToString("N2")₺</strong></span>
+                                        }
+                                    </span>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+
+    @* ═══════ İşlem Tipi Gruplu Toplam ═══════ *@
+    @{
+        var tipGruplari = acikKayitlar
+            .Where(k => !string.IsNullOrEmpty(k.TespitEdilenTip))
+            .GroupBy(k => k.TespitEdilenTip!)
+            .Select(g => new { Tip = g.Key, Adet = g.Count(), Toplam = g.Sum(x => x.Tutar) })
+            .OrderByDescending(g => g.Toplam)
+            .ToList();
+    }
+    @if (tipGruplari.Count > 0)
+    {
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card" style="border-left: 5px solid #3498db; background: rgba(52,152,219,0.04);">
+                    <div class="card-body py-3">
+                        <h6 class="mb-2 fw-bold">
+                            <i class="fas fa-layer-group me-1 text-primary"></i>İşlem Tipine Göre Açık Kayıt Toplamları
+                        </h6>
+                        <div class="d-flex flex-wrap gap-2">
+                            @foreach (var g in tipGruplari)
+                            {
+                                var tipLabel = g.Tip switch
+                                {
+                                    "EFT_OTOMATIK_IADE" => "EFT Otomatik İade",
+                                    "GELEN_HAVALE" => "Gelen Havale",
+                                    "MEVDUAT_YATIRMA" => "Mevduata Para Yatırma",
+                                    "VIRMAN" => "Virman",
+                                    "MASRAF" => "Masraf",
+                                    "REDDIYAT" => "Reddiyat",
+                                    "IADE" => "İade",
+                                    _ => g.Tip
+                                };
+                                var tipColor = g.Tip switch
+                                {
+                                    "EFT_OTOMATIK_IADE" => "#3498db",
+                                    "GELEN_HAVALE" => "#2ecc71",
+                                    "MEVDUAT_YATIRMA" => "#e67e22",
+                                    "VIRMAN" => "#9b59b6",
+                                    "MASRAF" => "#e74c3c",
+                                    "REDDIYAT" => "#f39c12",
+                                    "IADE" => "#1abc9c",
+                                    _ => "#7f8c8d"
+                                };
+                                <div style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 8px; background: rgba(0,0,0,0.15); border: 1px solid @(tipColor)33;">
+                                    <span style="width: 8px; height: 8px; border-radius: 50%; background: @tipColor; display: inline-block;"></span>
+                                    <span style="font-size: 12px; font-weight: 600; color: @tipColor;">@tipLabel</span>
+                                    <span class="badge bg-secondary" style="font-size: 10px;">@g.Adet adet</span>
+                                    <span style="font-size: 12px; font-weight: 700; font-family: 'JetBrains Mono', monospace;">@g.Toplam.ToString("N2") ₺</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- ═══════ Tab Navigation ═══════ -->
+    <ul class="nav nav-tabs mb-4">
+        <li class="nav-item">
+            <a class="nav-link @(activeTab == "ozet" ? "active" : "")"
+               asp-action="Index" asp-route-tab="ozet">
+                <i class="fas fa-th-large me-1"></i> Özet
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link @(activeTab == "acik" ? "active" : "")"
+               asp-action="Index" asp-route-tab="acik">
+                <i class="fas fa-exclamation-circle me-1"></i> Açık Kayıtlar
+                @if (acikKayitlar.Count > 0)
+                {
+                    <span class="badge bg-danger ms-1">@acikKayitlar.Count</span>
+                }
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link @(activeTab == "takipte" ? "active" : "")"
+               asp-action="Index" asp-route-tab="takipte">
+                <i class="fas fa-binoculars me-1"></i> Takipte
+                @if (takipteKayitlar.Count > 0)
+                {
+                    <span class="badge ms-1" style="background: #8e44ad;">@takipteKayitlar.Count</span>
+                }
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link @(activeTab == "gecmis" ? "active" : "")"
+               asp-action="Index" asp-route-tab="gecmis">
+                <i class="fas fa-history me-1"></i> Geçmiş
+            </a>
+        </li>
+    </ul>
+
+    <!-- ═══════ TAB: Özet ═══════ -->
+    @if (activeTab == "ozet")
+    {
+        <div class="row g-4">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="fas fa-list me-2"></i>Son Açık Kayıtlar (İlk 10)</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        @if (acikKayitlar.Count == 0)
+                        {
+                            <div class="text-center py-4 text-muted">
+                                <i class="fas fa-check-circle fa-3x mb-3" style="color: #2ecc71;"></i>
+                                <h5>Tüm kayıtlar temiz!</h5>
+                                <p>Açık eksik/fazla kaydı bulunmamaktadır.</p>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-hover table-sm mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Tarih</th>
+                                            <th>Hesap</th>
+                                            <th>Yön</th>
+                                            <th>Tutar</th>
+                                            <th>Sınıf</th>
+                                            <th>Açıklama</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                    @foreach (var k in acikKayitlar.Take(10))
+                                    {
+                                        <tr>
+                                            <td class="small">@k.AnalizTarihi.ToString("dd.MM")</td>
+                                            <td>
+                                                <span class="badge @(k.HesapTuru == BankaHesapTuru.Tahsilat ? "bg-success" : k.HesapTuru == BankaHesapTuru.Harc ? "bg-primary" : "bg-warning text-dark")">
+                                                    @k.HesapTuru
+                                                </span>
+                                            </td>
+                                            <td>
+                                                @if (k.Yon == KayitYonu.Eksik)
+                                                {
+                                                    <span class="text-danger"><i class="fas fa-arrow-down"></i> Eksik</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-success"><i class="fas fa-arrow-up"></i> Fazla</span>
+                                                }
+                                            </td>
+                                            <td class="fw-bold">@k.Tutar.ToString("N2")₺</td>
+                                            <td>
+                                                <span class="badge @(k.Sinif == FarkSinifi.Beklenen ? "bg-info" : k.Sinif == FarkSinifi.Askida ? "bg-warning text-dark" : "bg-secondary")">
+                                                    @k.Sinif
+                                                </span>
+                                            </td>
+                                            <td class="small text-truncate" style="max-width: 200px;" title="@k.Aciklama">
+                                                @(k.Aciklama ?? k.DosyaNo ?? "-")
+                                            </td>
+                                        </tr>
+                                    }
+                                    </tbody>
+                                </table>
+                            </div>
+                            @if (acikKayitlar.Count > 10)
+                            {
+                                <div class="text-center py-2">
+                                    <a asp-action="Index" asp-route-tab="acik" class="btn btn-outline-primary btn-sm">
+                                        Tümünü Gör (@acikKayitlar.Count kayıt)
+                                    </a>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <!-- Info Card -->
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="card-title"><i class="fas fa-info-circle text-primary me-2"></i>Hesap Kontrol Nedir?</h6>
+                        <p class="small text-muted mb-0">
+                            Karşılaştırma modülünde tespit edilen eşleşmeyen kayıtları (Eksik/Fazla) takip eder.
+                            Sabah Kasa hesaplamasında bu veriler otomatik olarak doldurulur. Gün arası eşleşen
+                            kayıtlar çapraz kontrol ile otomatik kapatılır.
+                        </p>
+                    </div>
+                </div>
+                <!-- Hızlı Aksiyon -->
+                <div class="card">
+                    <div class="card-body">
+                        <h6 class="card-title"><i class="fas fa-bolt text-warning me-2"></i>Hızlı İşlemler</h6>
+                        <form asp-action="RunAnalysis" method="post" class="mb-2">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="tarih" value="@Model.LastSnapshotDate.ToString("yyyy-MM-dd")" />
+                            <button type="submit" class="btn btn-success btn-sm w-100"
+                                    onclick="this.disabled=true; this.innerHTML='<i class=\'fas fa-spinner fa-spin me-1\'></i> Analiz çalışıyor...'; this.form.submit();">
+                                <i class="fas fa-sync-alt me-1"></i> Yeniden Analiz Et
+                            </button>
+                        </form>
+                        <a asp-action="Index" asp-route-tab="acik" class="btn btn-outline-danger btn-sm w-100 mb-2">
+                            <i class="fas fa-exclamation-circle me-1"></i> Açık Kayıtları Yönet
+                        </a>
+                        <a asp-action="ExportPdf"
+                           asp-route-baslangic="@filterBaslangic.ToString("yyyy-MM-dd")"
+                           asp-route-bitis="@filterBitis.ToString("yyyy-MM-dd")"
+                           class="btn btn-outline-danger btn-sm w-100 mb-2">
+                            <i class="fas fa-file-pdf me-1"></i> PDF İndir
+                        </a>
+                        <a asp-action="ExportCsv"
+                           asp-route-baslangic="@filterBaslangic.ToString("yyyy-MM-dd")"
+                           asp-route-bitis="@filterBitis.ToString("yyyy-MM-dd")"
+                           class="btn btn-outline-secondary btn-sm w-100">
+                            <i class="fas fa-file-csv me-1"></i> CSV İndir
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- ═══════ TAB: Açık Kayıtlar ═══════ -->
+    @if (activeTab == "acik")
+    {
+        <!-- Filtre -->
+        <div class="card mb-3">
+            <div class="card-body py-2">
+                <form method="get" class="row g-2 align-items-end">
+                    <input type="hidden" name="tab" value="acik" />
+                    <div class="col-auto">
+                        <label class="form-label small mb-0">Hesap Türü</label>
+                        <select name="hesapTuru" class="form-select form-select-sm">
+                            <option value="">Tümü</option>
+                            <option value="Tahsilat" selected="@(filterHesapTuru == BankaHesapTuru.Tahsilat)">Tahsilat</option>
+                            <option value="Harc" selected="@(filterHesapTuru == BankaHesapTuru.Harc)">Harç</option>
+                            <option value="Stopaj" selected="@(filterHesapTuru == BankaHesapTuru.Stopaj)">Stopaj</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small mb-0">Arama</label>
+                        <input type="text" name="arama" class="form-control form-control-sm" placeholder="Dosya, birim, açıklama..." value="@arama" />
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-filter me-1"></i>Filtrele</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        @if (acikKayitlar.Count == 0)
+        {
+            <div class="text-center py-5 text-muted">
+                <i class="fas fa-check-circle fa-4x mb-3" style="color: #2ecc71;"></i>
+                <h4>Açık kayıt yok!</h4>
+                <p>Tüm eksik/fazla kayıtları çözülmüş durumda.</p>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover table-striped">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Tarih</th>
+                            <th>Hesap</th>
+                            <th>Yön</th>
+                            <th>Tutar</th>
+                            <th>Sınıf</th>
+                            <th>Tip</th>
+                            <th>Açıklama / Dosya</th>
+                            <th>İşlem</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var k in acikKayitlar)
+                    {
+                        <tr>
+                            <td>@k.AnalizTarihi.ToString("dd.MM.yyyy")</td>
+                            <td>
+                                <span class="badge @(k.HesapTuru == BankaHesapTuru.Tahsilat ? "bg-success" : k.HesapTuru == BankaHesapTuru.Harc ? "bg-primary" : "bg-warning text-dark")">
+                                    @k.HesapTuru
+                                </span>
+                            </td>
+                            <td>
+                                @if (k.Yon == KayitYonu.Eksik)
+                                {
+                                    <span class="text-danger fw-bold"><i class="fas fa-arrow-down me-1"></i>Eksik</span>
+                                }
+                                else
+                                {
+                                    <span class="text-success fw-bold"><i class="fas fa-arrow-up me-1"></i>Fazla</span>
+                                }
+                            </td>
+                            <td class="fw-bold font-monospace">@k.Tutar.ToString("N2")₺</td>
+                            <td>
+                                <span class="badge @(k.Sinif == FarkSinifi.Beklenen ? "bg-info" : k.Sinif == FarkSinifi.Askida ? "bg-warning text-dark" : "bg-secondary")">
+                                    @k.Sinif
+                                </span>
+                            </td>
+                            <td class="small">@(k.TespitEdilenTip ?? "-")</td>
+                            <td class="small" style="max-width: 250px;">
+                                @if (!string.IsNullOrEmpty(k.DosyaNo))
+                                {
+                                    <strong>@k.DosyaNo</strong>
+                                }
+                                @if (!string.IsNullOrEmpty(k.BirimAdi))
+                                {
+                                    <span class="text-muted"> — @k.BirimAdi</span>
+                                }
+                                @if (!string.IsNullOrEmpty(k.Aciklama))
+                                {
+                                    <div class="text-truncate" title="@k.Aciklama">@k.Aciklama</div>
+                                }
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <!-- Takibe Al -->
+                                    <form method="post" asp-action="StartTracking" class="d-inline">
+                                        <input type="hidden" name="id" value="@k.Id" />
+                                        <input type="hidden" name="not" value="" />
+                                        <button type="submit" class="btn btn-outline-info btn-sm" title="Takibe Al"
+                                                onclick="return confirm('Bu kaydı takibe almak istediğinize emin misiniz?');">
+                                            <i class="fas fa-binoculars me-1"></i>Takibe Al
+                                        </button>
+                                    </form>
+                                    <!-- Yok Say -->
+                                    <form method="post" asp-action="Cancel" class="d-inline">
+                                        <input type="hidden" name="id" value="@k.Id" />
+                                        <input type="hidden" name="sebep" value="" />
+                                        <button type="submit" class="btn btn-outline-secondary btn-sm" title="Yok Say (yanlış tespit)"
+                                                onclick="return confirm('Bu kaydı yok saymak istediğinize emin misiniz?');">
+                                            <i class="fas fa-times me-1"></i>Yok Say
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+            <div class="text-muted small mt-2">
+                Toplam <strong>@acikKayitlar.Count</strong> açık kayıt.
+            </div>
+        }
+    }
+
+    <!-- ═══════ TAB: Takipte ═══════ -->
+    @if (activeTab == "takipte")
+    {
+        @* ═══════ Bölüm 1: Bugün Çözülen Takip Kayıtları ═══════ *@
+        @if (takipOzeti != null && takipOzeti.BugunCozulenler.Count > 0)
+        {
+            <div class="card mb-3" style="border-left: 5px solid #27ae60; background: linear-gradient(135deg, rgba(39,174,96,0.06) 0%, rgba(39,174,96,0.02) 100%);">
+                <div class="card-body py-3">
+                    <div class="d-flex align-items-center mb-2">
+                        <span style="font-size: 24px; margin-right: 8px;">🎉</span>
+                        <h6 class="mb-0 fw-bold" style="color: #27ae60;">
+                            Bugün Gelen Takip Kayıtları
+                            <span class="badge bg-success ms-1">@takipOzeti.BugunCozulenler.Count kayıt — @takipOzeti.BugunCozulenToplam.ToString("N2") ₺</span>
+                        </h6>
+                    </div>
+                    <p class="small text-muted mb-2">Bu kayıtlar daha önce eksikti, bugün gelerek otomatik olarak <strong>Çözüldü</strong> (sistem eşleştirdi) olarak işaretlendi.</p>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0" style="font-size: 13px;">
+                            <thead class="table-success">
+                                <tr>
+                                    <th>Analiz Tarihi</th>
+                                    <th>Hesap</th>
+                                    <th>Tutar</th>
+                                    <th>Tip</th>
+                                    <th>Takipte Kaldı</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var c in takipOzeti.BugunCozulenler)
+                            {
+                                var takipSure = c.TakipBaslangicTarihi.HasValue && c.CozulmeTarihi.HasValue
+                                    ? c.CozulmeTarihi.Value.DayNumber - c.TakipBaslangicTarihi.Value.DayNumber
+                                    : 0;
+                                <tr>
+                                    <td>@c.AnalizTarihi.ToString("dd.MM.yyyy")</td>
+                                    <td>
+                                        <span class="badge @(c.HesapTuru == BankaHesapTuru.Tahsilat ? "bg-success" : c.HesapTuru == BankaHesapTuru.Harc ? "bg-primary" : "bg-warning text-dark")">
+                                            @c.HesapTuru
+                                        </span>
+                                    </td>
+                                    <td class="fw-bold font-monospace">@c.Tutar.ToString("N2")₺</td>
+                                    <td class="small">@(c.TespitEdilenTip ?? "-")</td>
+                                    <td><span class="text-success">✅ @(takipSure > 0 ? $"{takipSure} gün sonra geldi" : "Aynı gün geldi")</span></td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* ═══════ Bölüm 2: Kümülatif Takip Toplam Kartı ═══════ *@
+        @if (takipOzeti != null && takipOzeti.AktifTakipSayisi > 0)
+        {
+            <div class="card mb-3" style="border: 2px solid #8e44ad; background: linear-gradient(135deg, rgba(142,68,173,0.08) 0%, rgba(142,68,173,0.02) 100%);">
+                <div class="card-body py-3">
+                    <div class="row align-items-center">
+                        <div class="col-md-4">
+                            <div class="text-center">
+                                <div style="font-size: 14px; color: #8e44ad; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Toplam Takip Açığı</div>
+                                <div style="font-size: 32px; font-weight: 800; color: #e74c3c; font-family: 'JetBrains Mono', monospace;">
+                                    @takipOzeti.ToplamEksik.ToString("N2") ₺
+                                </div>
+                                <div class="small text-muted">
+                                    @takipOzeti.AktifTakipSayisi kayıt · Ort. @takipOzeti.OrtalamaGun.ToString("N1") gün
+                                </div>
+                                @if (takipOzeti.ToplamFazla > 0)
+                                {
+                                    <div class="small mt-1">
+                                        <span class="text-success">
+                                            <i class="fas fa-arrow-up me-1"></i>Fazla Toplam: <strong>@takipOzeti.ToplamFazla.ToString("N2") ₺</strong>
+                                        </span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        <div class="col-md-8">
+                            <div class="small fw-bold mb-2" style="color: #8e44ad;">
+                                <i class="fas fa-layer-group me-1"></i>Gün Bazlı Kırılım
+                            </div>
+                            <div class="d-flex flex-wrap gap-2">
+                                @foreach (var g in takipOzeti.GunBazliKirilim)
+                                {
+                                    var bgColor = g.Seviye switch
+                                    {
+                                        "kritik" => "background: #e74c3c; color: white;",
+                                        "uyari" => "background: #f39c12; color: white;",
+                                        _ => "background: rgba(142,68,173,0.15); color: #8e44ad;"
+                                    };
+                                    var icon = g.Seviye switch
+                                    {
+                                        "kritik" => "🔴",
+                                        "uyari" => "⚠️",
+                                        _ => "📌"
+                                    };
+                                    <div style="padding: 8px 14px; border-radius: 10px; @bgColor font-size: 13px;">
+                                        <strong>@icon @(g.GunSayisi == 0 ? "Bugün" : $"{g.GunSayisi} gün")</strong>
+                                        <span class="ms-1">@g.KayitSayisi kayıt</span>
+                                        <span class="ms-1" style="font-family: 'JetBrains Mono', monospace; font-weight: 700;">@g.ToplamTutar.ToString("N2")₺</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* ═══════ Bölüm 2.5: Kısmi Eşleşme Onay Paneli ═══════ *@
+        @if (Model.PotansiyelEslesmeler.Count > 0)
+        {
+            <div class="card mb-3" style="border-left: 5px solid #f39c12; background: linear-gradient(135deg, rgba(243,156,18,0.08) 0%, rgba(243,156,18,0.02) 100%);">
+                <div class="card-body py-3">
+                    <div class="d-flex align-items-center mb-2">
+                        <span style="font-size: 24px; margin-right: 8px;">⚠️</span>
+                        <h6 class="mb-0 fw-bold" style="color: #f39c12;">
+                            Kısmi Eşleşmeler — Onayınızı Bekliyor
+                            <span class="badge" style="background: #f39c12;">@Model.PotansiyelEslesmeler.Count kayıt</span>
+                        </h6>
+                    </div>
+                    <p class="small text-muted mb-3">
+                        Aşağıdaki kayıtlarda <strong>tutar eşleşiyor</strong> ancak <strong>DosyaNo doğrulanamadı</strong>.
+                        Tesadüfi eşleşme riski olduğu için otomatik çözülmedi. Lütfen kontrol edin:
+                    </p>
+                    @foreach (var pot in Model.PotansiyelEslesmeler)
+                    {
+                        <div class="card mb-2" style="border: 1px solid rgba(243,156,18,0.3); background: rgba(243,156,18,0.04);">
+                            <div class="card-body py-2 px-3">
+                                <div class="row align-items-center">
+                                    <div class="col-md-8">
+                                        <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                                            <span class="badge @(pot.HesapTuru == BankaHesapTuru.Tahsilat ? "bg-success" : pot.HesapTuru == BankaHesapTuru.Harc ? "bg-primary" : "bg-warning text-dark")">
+                                                @pot.HesapTuru
+                                            </span>
+                                            <span class="fw-bold font-monospace" style="font-size: 16px; color: #e74c3c;">@pot.Tutar.ToString("N2") ₺</span>
+                                            <span class="text-muted small">Tarih: @pot.EksikTarihi.ToString("dd.MM.yyyy") → @pot.FazlaTarihi.ToString("dd.MM.yyyy")</span>
+                                        </div>
+                                        <div class="small">
+                                            @if (!string.IsNullOrEmpty(pot.EksikDosyaNo))
+                                            {
+                                                <strong class="text-primary">📋 Eksik DosyaNo:</strong> <span>@pot.EksikDosyaNo</span>
+                                                @if (!string.IsNullOrEmpty(pot.EksikBirimAdi))
+                                                {
+                                                    <span class="text-muted">— @pot.EksikBirimAdi</span>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted"><i class="fas fa-info-circle me-1"></i>DosyaNo bilgisi mevcut değil</span>
+                                            }
+                                        </div>
+                                        @if (!string.IsNullOrEmpty(pot.FazlaAciklama))
+                                        {
+                                            <div class="small text-truncate mt-1" style="max-width: 500px;" title="@pot.FazlaAciklama">
+                                                <strong class="text-success">🏦 Fazla Açıklama:</strong> @pot.FazlaAciklama
+                                            </div>
+                                        }
+                                    </div>
+                                    <div class="col-md-4 text-end">
+                                        <div class="btn-group btn-group-sm">
+                                            <form method="post" asp-action="ApprovePotentialMatch" class="d-inline">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="eksikId" value="@pot.EksikKayitId" />
+                                                <input type="hidden" name="fazlaId" value="@pot.FazlaKayitId" />
+                                                <button type="submit" class="btn btn-success btn-sm"
+                                                        onclick="return confirm('Bu eşleşmeyi onaylıyor musunuz? Kayıtlar Çözüldü olarak işaretlenecek.');">
+                                                    <i class="fas fa-check me-1"></i>Onayla
+                                                </button>
+                                            </form>
+                                            <form method="post" asp-action="RejectPotentialMatch" class="d-inline ms-1">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="eksikId" value="@pot.EksikKayitId" />
+                                                <input type="hidden" name="fazlaId" value="@pot.FazlaKayitId" />
+                                                <button type="submit" class="btn btn-outline-danger btn-sm"
+                                                        onclick="return confirm('Bu eşleşmeyi reddetmek istediğinize emin misiniz?');">
+                                                    <i class="fas fa-times me-1"></i>Reddet
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        @* ═══════ Bölüm 3: Aktif Takipte Kayıtlar ═══════ *@
+        @if (takipteKayitlar.Count == 0)
+        {
+            <div class="text-center py-4 text-muted">
+                <i class="fas fa-binoculars fa-3x mb-2" style="color: #8e44ad;"></i>
+                <h5>Şu an takipte kayıt yok</h5>
+                <p class="small">Açık Kayıtlar sekmesinden "Takibe Al" butonunu kullanabilirsiniz.</p>
+                @* Son takip durumuna kısayol *@
+                <a asp-action="Index" asp-route-tab="takipte"
+                   asp-route-baslangic="@DateOnly.FromDateTime(DateTime.Now.AddDays(-7)).ToString("yyyy-MM-dd")"
+                   asp-route-bitis="@DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd")"
+                   class="btn btn-outline-secondary btn-sm mt-2">
+                    <i class="fas fa-history me-1"></i>Son 7 Günün Takip Durumunu Göster
+                </a>
+            </div>
+        }
+        else
+        {
+            <div class="card mb-3" style="border-left: 5px solid #8e44ad; background: rgba(142,68,173,0.04);">
+                <div class="card-body py-2">
+                    <i class="fas fa-info-circle me-1" style="color: #8e44ad;"></i>
+                    <span class="small">
+                        Aşağıdaki kayıtlar aktif takipte. Sistem CrossDay eşleştirme ile bunları otomatik izler.
+                        Gelmeyen bir bedel sonraki gün geldiğinde <strong>Çözüldü</strong> (otomatik kapatıldı) olarak işaretlenir.
+                        El ile çözmek için <strong>✅ Çözüldü</strong> butonunu kulanın — bu durumda <strong>Onaylandı</strong> (kullanıcı kapattı) olarak kaydedilir.
+                    </span>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover table-striped">
+                    <thead style="background: #2c2c3e; color: white;">
+                        <tr>
+                            <th>Tarih</th>
+                            <th>Hesap</th>
+                            <th>Yön</th>
+                            <th>Tutar</th>
+                            <th>Sınıf</th>
+                            <th>Takip Süresi</th>
+                            <th>Tip</th>
+                            <th>Açıklama / Dosya</th>
+                            <th>İşlem</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var k in takipteKayitlar)
+                    {
+                        var takipGun = k.TakipteGunSayisi ?? 0;
+                        var takipClass = takipGun >= 5 ? "text-danger fw-bold" : takipGun >= 2 ? "text-warning fw-bold" : "text-muted";
+                        var takipIcon = takipGun >= 5 ? "🔴" : takipGun >= 2 ? "⚠️" : "📌";
+                        <tr>
+                            <td>@k.AnalizTarihi.ToString("dd.MM.yyyy")</td>
+                            <td>
+                                <span class="badge @(k.HesapTuru == BankaHesapTuru.Tahsilat ? "bg-success" : k.HesapTuru == BankaHesapTuru.Harc ? "bg-primary" : "bg-warning text-dark")">
+                                    @k.HesapTuru
+                                </span>
+                            </td>
+                            <td>
+                                @if (k.Yon == KayitYonu.Eksik)
+                                {
+                                    <span class="text-danger fw-bold"><i class="fas fa-arrow-down me-1"></i>Eksik</span>
+                                }
+                                else
+                                {
+                                    <span class="text-success fw-bold"><i class="fas fa-arrow-up me-1"></i>Fazla</span>
+                                }
+                            </td>
+                            <td class="fw-bold font-monospace">@k.Tutar.ToString("N2")₺</td>
+                            <td>
+                                <span class="badge @(k.Sinif == FarkSinifi.Beklenen ? "bg-info" : k.Sinif == FarkSinifi.Askida ? "bg-warning text-dark" : "bg-danger")" style="font-size: 10px;">
+                                    @(k.Sinif == FarkSinifi.Beklenen ? "Olağan" : k.Sinif == FarkSinifi.Askida ? "Askıda" : "Olağan Dışı")
+                                </span>
+                            </td>
+                            <td>
+                                <span class="@takipClass" title="Takip başlangıç: @(k.TakipBaslangicTarihi?.ToString("dd.MM.yyyy") ?? "-")">
+                                    @takipIcon @(takipGun > 0 ? $"{takipGun} gün" : "Bugün")
+                                </span>
+                            </td>
+                            <td class="small">@(k.TespitEdilenTip ?? "-")</td>
+                            <td class="small" style="max-width: 250px;">
+                                @if (!string.IsNullOrEmpty(k.DosyaNo))
+                                {
+                                    <strong>@k.DosyaNo</strong>
+                                }
+                                @if (!string.IsNullOrEmpty(k.BirimAdi))
+                                {
+                                    <span class="text-muted"> — @k.BirimAdi</span>
+                                }
+                                @if (!string.IsNullOrEmpty(k.Aciklama))
+                                {
+                                    <div class="text-truncate" title="@k.Aciklama">@k.Aciklama</div>
+                                }
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <form method="post" asp-action="Resolve" class="d-inline">
+                                        <input type="hidden" name="id" value="@k.Id" />
+                                        <input type="hidden" name="not" value="" />
+                                        <button type="submit" class="btn btn-outline-success btn-sm" title="Çözüldü olarak işaretle (Onaylandı — kullanıcı kapattı)">
+                                            <i class="fas fa-check me-1"></i>Çözüldü
+                                        </button>
+                                    </form>
+                                    <form method="post" asp-action="Revert" class="d-inline">
+                                        <input type="hidden" name="id" value="@k.Id" />
+                                        <input type="hidden" name="returnTab" value="takipte" />
+                                        <button type="submit" class="btn btn-outline-warning btn-sm" title="Geri al"
+                                                onclick="return confirm('Takibi bırakıp Açık Kayıtlara geri almak istiyor musunuz?');">
+                                            <i class="fas fa-undo me-1"></i>Geri Al
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+            <div class="text-muted small mt-2">
+                Toplam <strong>@takipteKayitlar.Count</strong> aktif takipte kayıt.
+            </div>
+        }
+
+        @* ═══════ Bölüm 4: Gelişmiş Takip Sorgu Motoru ═══════ *@
+        <hr class="my-4" />
+        <div class="card mb-3" style="border-left: 5px solid #8e44ad;">
+            <div class="card-body py-2">
+                <h6 class="mb-2 fw-bold"><i class="fas fa-search me-1" style="color: #8e44ad;"></i>Gelişmiş Takip Sorgu Motoru</h6>
+                <p class="small text-muted mb-2">
+                    İki tarih arasında takibe alınmış tüm kayıtları sorgulayın. Durum filtresiyle sadece bekleyenleri, çözülenleri veya tümünü görebilirsiniz.
+                </p>
+                <div class="small mb-3 p-2 rounded" style="background: rgba(142,68,173,0.06);">
+                    <i class="fas fa-info-circle me-1" style="color: #8e44ad;"></i>
+                    <strong>Durum açıklaması:</strong>
+                    <span class="badge" style="background: #8e44ad;">Takipte</span> Hâlâ bekleniyor ·
+                    <span class="badge bg-success">Çözüldü</span> Sistem otomatik kapattı (CrossDay geldi) ·
+                    <span class="badge bg-info">Onaylandı</span> Kullanıcı el ile kapattı
+                </div>
+                <form method="get" class="row g-2 align-items-end">
+                    <input type="hidden" name="tab" value="takipte" />
+                    <div class="col-auto">
+                        <label class="form-label small mb-0">Başlangıç</label>
+                        <input type="date" name="baslangic" class="form-control form-control-sm"
+                               value="@filterBaslangic.ToString("yyyy-MM-dd")" />
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small mb-0">Bitiş</label>
+                        <input type="date" name="bitis" class="form-control form-control-sm"
+                               value="@filterBitis.ToString("yyyy-MM-dd")" />
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small mb-0">Durum</label>
+                        <select name="takipDurum" class="form-select form-select-sm">
+                            <option value="">Hepsi</option>
+                            <option value="Takipte" selected="@(ViewContext.HttpContext.Request.Query["takipDurum"] == "Takipte")">Bekleyen</option>
+                            <option value="Cozuldu" selected="@(ViewContext.HttpContext.Request.Query["takipDurum"] == "Cozuldu")">Çözülen (otomatik)</option>
+                            <option value="Onaylandi" selected="@(ViewContext.HttpContext.Request.Query["takipDurum"] == "Onaylandi")">Onaylanan (el ile)</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small mb-0">Hesap Türü</label>
+                        <select name="hesapTuru" class="form-select form-select-sm">
+                            <option value="">Tümü</option>
+                            <option value="Tahsilat" selected="@(filterHesapTuru == BankaHesapTuru.Tahsilat)">Tahsilat</option>
+                            <option value="Harc" selected="@(filterHesapTuru == BankaHesapTuru.Harc)">Harç</option>
+                            <option value="Stopaj" selected="@(filterHesapTuru == BankaHesapTuru.Stopaj)">Stopaj</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small mb-0">Arama</label>
+                        <input type="text" name="arama" class="form-control form-control-sm" placeholder="Dosya, birim, açıklama..." value="@arama" />
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-sm" style="background: #8e44ad; color: white;"><i class="fas fa-search me-1"></i>Sorgula</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        @* Takip geçmişi: Servis katmanından gelen özel takip yaşam döngüsü verisi *@
+        @if (takipGecmisiModel.Count > 0)
+        {
+            var tgTakipte = takipGecmisiModel.Count(x => x.Durum == KayitDurumu.Takipte);
+            var tgCozuldu = takipGecmisiModel.Count(x => x.Durum == KayitDurumu.Cozuldu);
+            var tgOnaylandi = takipGecmisiModel.Count(x => x.Durum == KayitDurumu.Onaylandi);
+            var tgEksik = takipGecmisiModel.Where(x => x.Yon == KayitYonu.Eksik).Sum(x => x.Tutar);
+            var tgFazla = takipGecmisiModel.Where(x => x.Yon == KayitYonu.Fazla).Sum(x => x.Tutar);
+
+            <div class="card mb-3" style="background: rgba(142,68,173,0.04); border: 1px solid rgba(142,68,173,0.15);">
+                <div class="card-body py-3">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="fas fa-chart-pie me-2" style="color: #8e44ad;"></i>
+                        <strong>@filterBaslangic.ToString("dd.MM.yyyy") — @filterBitis.ToString("dd.MM.yyyy") Arası Takip Özeti</strong>
+                        <span class="badge ms-2" style="background: #8e44ad;">@takipGecmisiModel.Count kayıt</span>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 mb-2">
+                        @if (tgTakipte > 0) { <span class="badge" style="background: #8e44ad; font-size: 12px; padding: 6px 12px;"><i class="fas fa-binoculars me-1"></i>Hâlâ Bekleyen: @tgTakipte</span> }
+                        @if (tgCozuldu > 0) { <span class="badge" style="background: #27ae60; font-size: 12px; padding: 6px 12px;"><i class="fas fa-check-circle me-1"></i>Çözüldü (otomatik): @tgCozuldu</span> }
+                        @if (tgOnaylandi > 0) { <span class="badge" style="background: #2980b9; font-size: 12px; padding: 6px 12px;"><i class="fas fa-user-check me-1"></i>Onaylandı (el ile): @tgOnaylandi</span> }
+                    </div>
+                    <div class="d-flex flex-wrap gap-3 small">
+                        <span><i class="fas fa-arrow-down text-danger me-1"></i>Eksik: <strong>@tgEksik.ToString("N2") ₺</strong></span>
+                        <span><i class="fas fa-arrow-up text-success me-1"></i>Fazla: <strong>@tgFazla.ToString("N2") ₺</strong></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover table-striped table-sm">
+                    <thead style="background: #2c2c3e; color: white;">
+                        <tr>
+                            <th>Analiz Tarihi</th>
+                            <th>Hesap</th>
+                            <th>Yön</th>
+                            <th>Tutar</th>
+                            <th>Sınıf</th>
+                            <th>Durum</th>
+                            <th>Takip Bilgisi</th>
+                            <th>Tip</th>
+                            <th>Açıklama</th>
+                            <th>Notlar</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var k in takipGecmisiModel)
+                    {
+                        var durumClass2 = k.Durum switch
+                        {
+                            KayitDurumu.Takipte => "bg-purple",
+                            KayitDurumu.Cozuldu => "bg-success",
+                            KayitDurumu.Onaylandi => "bg-info",
+                            _ => "bg-secondary"
+                        };
+                        var durumLabel2 = k.Durum switch
+                        {
+                            KayitDurumu.Takipte => "📌 Bekleyen",
+                            KayitDurumu.Cozuldu => "✅ Çözüldü (otomatik)",
+                            KayitDurumu.Onaylandi => "✅ Onaylandı (el ile)",
+                            _ => k.Durum.ToString()
+                        };
+                        var takipInfo = "";
+                        if (k.TakipBaslangicTarihi.HasValue)
+                        {
+                            var tGun = k.TakipteGunSayisi;
+                            if (tGun.HasValue && tGun > 0) { takipInfo = $"{tGun} gün"; }
+                            else if (k.Durum == KayitDurumu.Cozuldu) { takipInfo = "Çözüldü (sistem)"; }
+                            else if (k.Durum == KayitDurumu.Onaylandi) { takipInfo = "Çözüldü (el ile)"; }
+                            else { takipInfo = "Bugün"; }
+                        }
+                        <tr class="@(k.Durum == KayitDurumu.Takipte ? "table-warning" : "")">
+                            <td>@k.AnalizTarihi.ToString("dd.MM.yyyy")</td>
+                            <td>
+                                <span class="badge @(k.HesapTuru == BankaHesapTuru.Tahsilat ? "bg-success" : k.HesapTuru == BankaHesapTuru.Harc ? "bg-primary" : "bg-warning text-dark")">
+                                    @k.HesapTuru
+                                </span>
+                            </td>
+                            <td>
+                                @if (k.Yon == KayitYonu.Eksik)
+                                { <span class="text-danger"><i class="fas fa-arrow-down"></i></span> }
+                                else
+                                { <span class="text-success"><i class="fas fa-arrow-up"></i></span> }
+                            </td>
+                            <td class="font-monospace fw-bold">@k.Tutar.ToString("N2")₺</td>
+                            <td>
+                                <span class="badge @(k.Sinif == FarkSinifi.Beklenen ? "bg-info" : k.Sinif == FarkSinifi.Askida ? "bg-warning text-dark" : "bg-danger")" style="font-size: 10px;">
+                                    @(k.Sinif == FarkSinifi.Beklenen ? "Olağan" : k.Sinif == FarkSinifi.Askida ? "Askıda" : "Olağan Dışı")
+                                </span>
+                            </td>
+                            <td><span class="badge @durumClass2">@durumLabel2</span></td>
+                            <td class="small">
+                                @if (!string.IsNullOrEmpty(takipInfo))
+                                { <span title="Takip başlangıç: @(k.TakipBaslangicTarihi?.ToString("dd.MM.yyyy") ?? "-")">@takipInfo</span> }
+                                else
+                                { <span class="text-muted">-</span> }
+                            </td>
+                            <td class="small">@(k.TespitEdilenTip ?? "-")</td>
+                            <td class="small text-truncate" style="max-width: 180px;" title="@k.Aciklama">
+                                @(k.Aciklama ?? k.DosyaNo ?? "-")
+                            </td>
+                            <td class="small text-truncate" style="max-width: 150px;" title="@k.Notlar">
+                                @(k.Notlar ?? "-")
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+            <div class="text-muted small mt-2">
+                Toplam <strong>@takipGecmisiModel.Count</strong> takip kaydı — <strong>@filterBaslangic.ToString("dd.MM.yyyy")</strong> ile <strong>@filterBitis.ToString("dd.MM.yyyy")</strong> arası.
+            </div>
+        }
+        else
+        {
+            <div class="text-center py-3 text-muted">
+                <i class="fas fa-search fa-2x mb-2"></i>
+                <p class="small">Seçili tarih aralığında takip kaydı bulunamadı. Tarih aralığını genişletin veya durum filtresini değiştirin.</p>
+            </div>
+        }
+    }
+
+    <!-- ═══════ TAB: Geçmiş ═══════ -->
+    @if (activeTab == "gecmis")
+    {
+        <!-- Filtre Paneli -->
+        <div class="card mb-3" style="border-left: 5px solid #3498db;">
+            <div class="card-body py-2">
+                <h6 class="mb-2 fw-bold"><i class="fas fa-search me-1 text-primary"></i>Gelişmiş Sorgu Motoru</h6>
+                <form method="get" class="row g-2 align-items-end">
+                    <input type="hidden" name="tab" value="gecmis" />
+                    <div class="col-auto">
+                        <label class="form-label small mb-0">Başlangıç</label>
+                        <input type="date" name="baslangic" class="form-control form-control-sm"
+                               value="@filterBaslangic.ToString("yyyy-MM-dd")" />
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small mb-0">Bitiş</label>
+                        <input type="date" name="bitis" class="form-control form-control-sm"
+                               value="@filterBitis.ToString("yyyy-MM-dd")" />
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small mb-0">Hesap Türü</label>
+                        <select name="hesapTuru" class="form-select form-select-sm">
+                            <option value="">Tümü</option>
+                            <option value="Tahsilat" selected="@(filterHesapTuru == BankaHesapTuru.Tahsilat)">Tahsilat</option>
+                            <option value="Harc" selected="@(filterHesapTuru == BankaHesapTuru.Harc)">Harç</option>
+                            <option value="Stopaj" selected="@(filterHesapTuru == BankaHesapTuru.Stopaj)">Stopaj</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small mb-0">Durum</label>
+                        <select name="durum" class="form-select form-select-sm">
+                            <option value="">Tümü</option>
+                            <option value="Acik" selected="@(filterDurum == KayitDurumu.Acik)">Açık</option>
+                            <option value="Takipte" selected="@(filterDurum == KayitDurumu.Takipte)">Takipte</option>
+                            <option value="Cozuldu" selected="@(filterDurum == KayitDurumu.Cozuldu)">Çözüldü</option>
+                            <option value="Onaylandi" selected="@(filterDurum == KayitDurumu.Onaylandi)">Onaylandı</option>
+                            <option value="Iptal" selected="@(filterDurum == KayitDurumu.Iptal)">İptal</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small mb-0">Arama</label>
+                        <input type="text" name="arama" class="form-control form-control-sm" placeholder="Dosya, birim, açıklama..." value="@arama" />
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-search me-1"></i>Sorgula</button>
+                    </div>
+                    <div class="col-auto">
+                        <a asp-action="ExportPdf"
+                           asp-route-baslangic="@filterBaslangic.ToString("yyyy-MM-dd")"
+                           asp-route-bitis="@filterBitis.ToString("yyyy-MM-dd")"
+                           asp-route-hesapTuru="@filterHesapTuru"
+                           asp-route-durum="@filterDurum"
+                           class="btn btn-outline-danger btn-sm">
+                            <i class="fas fa-file-pdf me-1"></i>PDF
+                        </a>
+                    </div>
+                    <div class="col-auto">
+                        <a asp-action="ExportCsv"
+                           asp-route-baslangic="@filterBaslangic.ToString("yyyy-MM-dd")"
+                           asp-route-bitis="@filterBitis.ToString("yyyy-MM-dd")"
+                           asp-route-hesapTuru="@filterHesapTuru"
+                           asp-route-durum="@filterDurum"
+                           class="btn btn-outline-secondary btn-sm">
+                            <i class="fas fa-file-csv me-1"></i>CSV
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        @if (gecmisKayitlar.Count == 0)
+        {
+            <div class="text-center py-5 text-muted">
+                <i class="fas fa-inbox fa-3x mb-3"></i>
+                <h5>Kayıt bulunamadı</h5>
+                <p>Seçili tarih aralığında hesap kontrol kaydı yok. Tarih aralığını genişletin veya filtreleri kaldırın.</p>
+            </div>
+        }
+        else
+        {
+            @* ═══════ Durum Özeti Mini-Kartları ═══════ *@
+            var gAcik = gecmisKayitlar.Count(x => x.Durum == KayitDurumu.Acik);
+                var gTakipte = gecmisKayitlar.Count(x => x.Durum == KayitDurumu.Takipte);
+                var gCozuldu = gecmisKayitlar.Count(x => x.Durum == KayitDurumu.Cozuldu);
+                var gOnaylandi = gecmisKayitlar.Count(x => x.Durum == KayitDurumu.Onaylandi);
+                var gIptal = gecmisKayitlar.Count(x => x.Durum == KayitDurumu.Iptal);
+                var gBeklenen = gecmisKayitlar.Count(x => x.Sinif == FarkSinifi.Beklenen);
+                var gBilinmeyen = gecmisKayitlar.Count(x => x.Sinif == FarkSinifi.Bilinmeyen);
+                var gEksikTutar = gecmisKayitlar.Where(x => x.Yon == KayitYonu.Eksik).Sum(x => x.Tutar);
+                var gFazlaTutar = gecmisKayitlar.Where(x => x.Yon == KayitYonu.Fazla).Sum(x => x.Tutar);
+
+            <div class="card mb-3" style="background: rgba(52,152,219,0.04); border: 1px solid rgba(52,152,219,0.15);">
+                <div class="card-body py-3">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="fas fa-chart-pie me-2 text-primary"></i>
+                        <strong>@filterBaslangic.ToString("dd.MM.yyyy") — @filterBitis.ToString("dd.MM.yyyy") Arası Dönem Özeti</strong>
+                        <span class="badge bg-primary ms-2">@gecmisKayitlar.Count kayıt</span>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 mb-2">
+                        @if (gAcik > 0) { <span class="badge" style="background: #e74c3c; font-size: 12px; padding: 6px 12px;"><i class="fas fa-exclamation-circle me-1"></i>Açık: @gAcik</span> }
+                        @if (gTakipte > 0) { <span class="badge" style="background: #8e44ad; font-size: 12px; padding: 6px 12px;"><i class="fas fa-binoculars me-1"></i>Takipte: @gTakipte</span> }
+                        @if (gCozuldu > 0) { <span class="badge" style="background: #27ae60; font-size: 12px; padding: 6px 12px;"><i class="fas fa-check-circle me-1"></i>Çözüldü: @gCozuldu</span> }
+                        @if (gOnaylandi > 0) { <span class="badge" style="background: #2980b9; font-size: 12px; padding: 6px 12px;"><i class="fas fa-user-check me-1"></i>Onaylandı: @gOnaylandi</span> }
+                        @if (gIptal > 0) { <span class="badge" style="background: #95a5a6; font-size: 12px; padding: 6px 12px;"><i class="fas fa-ban me-1"></i>İptal: @gIptal</span> }
+                    </div>
+                    <div class="d-flex flex-wrap gap-3 small">
+                        <span><i class="fas fa-arrow-down text-danger me-1"></i>Eksik: <strong>@gEksikTutar.ToString("N2") ₺</strong></span>
+                        <span><i class="fas fa-arrow-up text-success me-1"></i>Fazla: <strong>@gFazlaTutar.ToString("N2") ₺</strong></span>
+                        <span class="text-muted">|</span>
+                        <span><i class="fas fa-clock text-info me-1"></i>Olağan: <strong>@gBeklenen</strong></span>
+                        <span><i class="fas fa-question-circle text-warning me-1"></i>Olağan Dışı: <strong>@gBilinmeyen</strong></span>
+                    </div>
+                </div>
+            </div>
+
+            @* ═══════ Sonuç Tablosu ═══════ *@
+            <div class="table-responsive">
+                <table class="table table-hover table-striped table-sm">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Tarih</th>
+                            <th>Hesap</th>
+                            <th>Yön</th>
+                            <th>Tutar</th>
+                            <th>Sınıf</th>
+                            <th>Durum</th>
+                            <th>Takip</th>
+                            <th>Tip</th>
+                            <th>Açıklama</th>
+                            <th>Notlar</th>
+                            <th>İşlem</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var k in gecmisKayitlar)
+                    {
+                        var durumClass = k.Durum switch
+                        {
+                            KayitDurumu.Acik => "bg-danger",
+                            KayitDurumu.Takipte => "bg-purple",
+                            KayitDurumu.Cozuldu => "bg-success",
+                            KayitDurumu.Onaylandi => "bg-info",
+                            KayitDurumu.Iptal => "bg-secondary",
+                            _ => "bg-light text-dark"
+                        };
+                        var durumLabel = k.Durum switch
+                        {
+                            KayitDurumu.Acik => "Açık",
+                            KayitDurumu.Takipte => "Takipte",
+                            KayitDurumu.Cozuldu => "Çözüldü",
+                            KayitDurumu.Onaylandi => "Onaylandı",
+                            KayitDurumu.Iptal => "İptal",
+                            _ => k.Durum.ToString()
+                        };
+                        var sinifLabel = k.Sinif switch
+                        {
+                            FarkSinifi.Beklenen => "Olağan",
+                            FarkSinifi.Askida => "Askıda",
+                            FarkSinifi.Bilinmeyen => "Olağan Dışı",
+                            _ => k.Sinif.ToString()
+                        };
+                        var sinifClass = k.Sinif switch
+                        {
+                            FarkSinifi.Beklenen => "bg-info",
+                            FarkSinifi.Askida => "bg-warning text-dark",
+                            FarkSinifi.Bilinmeyen => "bg-danger",
+                            _ => "bg-secondary"
+                        };
+                        // Takip bilgisi
+                        var takipBilgi = "";
+                        if (k.TakipBaslangicTarihi.HasValue)
+                        {
+                            var takipGun = k.TakipteGunSayisi;
+                            if (takipGun.HasValue && takipGun > 0)
+                            {
+                                takipBilgi = $"{takipGun} gün";
+                            }
+                            else if (k.Durum == KayitDurumu.Cozuldu || k.Durum == KayitDurumu.Onaylandi)
+                            {
+                                takipBilgi = "✅ Çözüldü";
+                            }
+                            else
+                            {
+                                takipBilgi = "📌 Takipte";
+                            }
+                        }
+                        <tr>
+                            <td>@k.AnalizTarihi.ToString("dd.MM.yyyy")</td>
+                            <td>
+                                <span class="badge @(k.HesapTuru == BankaHesapTuru.Tahsilat ? "bg-success" : k.HesapTuru == BankaHesapTuru.Harc ? "bg-primary" : "bg-warning text-dark")">
+                                    @k.HesapTuru
+                                </span>
+                            </td>
+                            <td>
+                                @if (k.Yon == KayitYonu.Eksik)
+                                {
+                                    <span class="text-danger"><i class="fas fa-arrow-down"></i></span>
+                                }
+                                else
+                                {
+                                    <span class="text-success"><i class="fas fa-arrow-up"></i></span>
+                                }
+                            </td>
+                            <td class="font-monospace fw-bold">@k.Tutar.ToString("N2")₺</td>
+                            <td><span class="badge @sinifClass" style="font-size: 10px;">@sinifLabel</span></td>
+                            <td><span class="badge @durumClass">@durumLabel</span></td>
+                            <td class="small">
+                                @if (!string.IsNullOrEmpty(takipBilgi))
+                                {
+                                    <span title="Takip başlangıç: @(k.TakipBaslangicTarihi?.ToString("dd.MM.yyyy") ?? "-")">@takipBilgi</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">-</span>
+                                }
+                            </td>
+                            <td class="small">@(k.TespitEdilenTip ?? "-")</td>
+                            <td class="small text-truncate" style="max-width: 200px;" title="@k.Aciklama">
+                                @(k.Aciklama ?? k.DosyaNo ?? "-")
+                            </td>
+                            <td class="small text-truncate" style="max-width: 150px;" title="@k.Notlar">
+                                @(k.Notlar ?? "-")
+                            </td>
+                            <td>
+                                @if (k.Durum != KayitDurumu.Acik)
+                                {
+                                    <form method="post" asp-action="Revert" class="d-inline">
+                                        <input type="hidden" name="id" value="@k.Id" />
+                                        <input type="hidden" name="returnTab" value="gecmis" />
+                                        <button type="submit" class="btn btn-outline-warning btn-sm" title="Geri Al"
+                                                onclick="return confirm('İşlemi geri almak istiyor musunuz?');">
+                                            <i class="fas fa-undo"></i>
+                                        </button>
+                                    </form>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+            <div class="text-muted small mt-2">
+                Toplam <strong>@gecmisKayitlar.Count</strong> kayıt — <strong>@filterBaslangic.ToString("dd.MM.yyyy")</strong> ile <strong>@filterBitis.ToString("dd.MM.yyyy")</strong> arası.
+            </div>
+        }
+    }
+</div>

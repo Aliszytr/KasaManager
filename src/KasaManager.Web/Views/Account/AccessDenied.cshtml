@@ -1,0 +1,24 @@
+@{
+    Layout = "_LoginLayout";
+    ViewData["Title"] = "Erişim Reddedildi";
+}
+
+<div class="login-container">
+    <div class="login-card">
+        <div class="login-header">
+            <div class="login-logo" style="background: var(--kasa-danger, #ef4444);">
+                <i class="fas fa-ban"></i>
+            </div>
+            <h1>Erişim Reddedildi</h1>
+            <p class="login-subtitle">Bu sayfaya erişim yetkiniz bulunmamaktadır.</p>
+        </div>
+
+        <a asp-controller="Home" asp-action="Index" class="login-btn" style="text-decoration:none; text-align:center;">
+            <i class="fas fa-home"></i> Ana Sayfaya Dön
+        </a>
+
+        <div class="login-footer">
+            <small>Yetki sorunu yaşıyorsanız yöneticinize başvurun.</small>
+        </div>
+    </div>
+</div>

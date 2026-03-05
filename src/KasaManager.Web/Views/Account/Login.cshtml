@@ -1,0 +1,75 @@
+@{
+    Layout = "_LoginLayout";
+    ViewData["Title"] = "Giriş";
+}
+
+<div class="login-container">
+    <div class="login-card">
+        <div class="login-header">
+            <div class="login-logo">
+                <i class="fas fa-vault"></i>
+            </div>
+            <h1>KasaManager</h1>
+            <p class="login-subtitle">Kasa Yönetim Sistemi</p>
+        </div>
+
+        @if (ViewBag.Error != null)
+        {
+            <div class="login-alert">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span>@ViewBag.Error</span>
+            </div>
+        }
+
+        <form method="post" asp-action="Login" asp-controller="Account" class="login-form">
+            <input type="hidden" name="returnUrl" value="@ViewBag.ReturnUrl" />
+
+            <div class="login-field">
+                <label for="username">
+                    <i class="fas fa-user"></i> Kullanıcı Adı
+                </label>
+                <input type="text" id="username" name="username" 
+                       placeholder="Kullanıcı adınızı girin"
+                       autocomplete="username" autofocus required />
+            </div>
+
+            <div class="login-field">
+                <label for="password">
+                    <i class="fas fa-lock"></i> Şifre
+                </label>
+                <div class="password-wrapper">
+                    <input type="password" id="password" name="password" 
+                           placeholder="Şifrenizi girin"
+                           autocomplete="current-password" required />
+                    <button type="button" class="password-toggle" onclick="togglePassword()">
+                        <i class="fas fa-eye" id="password-icon"></i>
+                    </button>
+                </div>
+            </div>
+
+            <button type="submit" class="login-btn">
+                <i class="fas fa-sign-in-alt"></i> Giriş Yap
+            </button>
+        </form>
+
+        <div class="login-footer">
+            <small>&copy; @DateTime.Now.Year KasaManager</small>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        function togglePassword() {
+            const input = document.getElementById('password');
+            const icon = document.getElementById('password-icon');
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.classList.replace('fa-eye', 'fa-eye-slash');
+            } else {
+                input.type = 'password';
+                icon.classList.replace('fa-eye-slash', 'fa-eye');
+            }
+        }
+    </script>
+}

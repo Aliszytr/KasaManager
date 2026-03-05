@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>false</InvariantGlobalization>
+
+    <!-- Google Drive kilit sorunları -->
+    <UseAppHost>false</UseAppHost>
+
+    <!-- NOTE: BaseOutputPath/BaseIntermediateOutputPath yönlendirmeleri (VSCache) dotnet-ef design-time
+         metadata aşamasında "GetEFProjectMetadata" hatasına yol açabildiği için R10.9'da kaldırıldı.
+         Bin/obj varsayılan klasörlerde kalır. -->
+  </PropertyGroup>
+</Project>

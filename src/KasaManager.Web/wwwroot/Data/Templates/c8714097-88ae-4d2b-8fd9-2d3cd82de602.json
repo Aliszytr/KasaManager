@@ -1,0 +1,14 @@
+{
+  "Id": "c8714097-88ae-4d2b-8fd9-2d3cd82de602",
+  "Name": "Virman Yaz\u0131s\u0131",
+  "Category": "Virman",
+  "HeaderText": "T.C.\nANKARA B\u00D6LGE \u0130DARE MAHKEMES\u0130 BA\u015EKANLI\u011EI\nVEZNE \u00D6N B\u00DCRO",
+  "SayiKonuText": "Say\u0131  : {{Tarih}}/.....Muh\nKonu : Virman Yaz\u0131s\u0131",
+  "MuhatapText": "T\u00DCRK\u0130YE VAKIFLAR BANKASI\nB\u00D6LGE \u0130DARE MAHKEMES\u0130 \u015EUBES\u0130NE\nANKARA",
+  "BodyTemplate": "M\u00FCd\u00FCrl\u00FC\u011F\u00FCm\u00FCz veznesinde {{Tarih}} tarihinde tahsil edilen stopaj tutar\u0131n\u0131n {{IbanStopaj}} IBAN numaral\u0131 hesaba virman yap\u0131lmas\u0131 gerekmektedir. Toplam stopaj tutar\u0131 {{ToplamStopajVirman}} olup, ilgili hesaba aktar\u0131lmas\u0131 hususunda gere\u011Fini arz ederim.",
+  "ImzaBlokuText": "{{Hazirlayan}}\nVezne \u00D6n B\u00FCro\nVezne Yaz\u0131 \u0130\u015Fleri M\u00FCd\u00FCr\u00FC",
+  "FooterText": "Bu belge elektronik ortamda \u00FCretilmi\u015Ftir.",
+  "IsActive": true,
+  "CreatedAtUtc": "2026-02-18T13:03:34.9795527Z",
+  "UpdatedAtUtc": null
+}

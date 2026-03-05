@@ -1,0 +1,14 @@
+{
+  "Id": "def78845-184b-4100-9a88-dfbb603da551",
+  "Name": "Banka Yat\u0131r\u0131m Yaz\u0131s\u0131",
+  "Category": "OzelTalimat",
+  "HeaderText": "T.C.\nANKARA B\u00D6LGE \u0130DARE MAHKEMES\u0130 BA\u015EKANLI\u011EI\nVEZNE \u00D6N B\u00DCRO",
+  "SayiKonuText": "Say\u0131  : {{Tarih}}/.....Muh\nKonu : Banka Yat\u0131r\u0131m Yaz\u0131s\u0131",
+  "MuhatapText": "T\u00DCRK\u0130YE VAKIFLAR BANKASI\nB\u00D6LGE \u0130DARE MAHKEMES\u0130 \u015EUBES\u0130NE\nANKARA",
+  "BodyTemplate": "M\u00FCd\u00FCrl\u00FC\u011F\u00FCm\u00FCz veznesinde {{Tarih}} tarihinde tahsil edilen tutarlar\u0131n a\u015Fa\u011F\u0131da belirtilen hesaplara yat\u0131r\u0131lmas\u0131 gerekmektedir. Stopaj tutar\u0131 {{BankayaStopaj}} ({{IbanStopaj}}), tahsilat tutar\u0131 {{BankayaTahsilat}} ({{IbanTahsilat}}), har\u00E7 tutar\u0131 {{BankayaHarc}} ({{IbanHarc}}) olmak \u00FCzere toplam {{BankayaToplam}} yat\u0131r\u0131lacakt\u0131r. Gere\u011Fini arz ederim.",
+  "ImzaBlokuText": "{{Hazirlayan}}\nVezne \u00D6n B\u00FCro\nVezne Yaz\u0131 \u0130\u015Fleri M\u00FCd\u00FCr\u00FC",
+  "FooterText": "Bu belge elektronik ortamda \u00FCretilmi\u015Ftir.",
+  "IsActive": true,
+  "CreatedAtUtc": "2026-02-18T13:03:34.9795531Z",
+  "UpdatedAtUtc": null
+}
