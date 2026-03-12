@@ -191,6 +191,115 @@ public sealed class FinancialExceptionsTests
     }
 
     // ═══════════════════════════════════════
+    // Validator — Create Validasyonu
+    // ═══════════════════════════════════════
+
+    [Fact]
+    public void ValidateCreate_ValidCombination_NoErrors()
+    {
+        var errors = FinansalIstisnaValidator.ValidateCreate(
+            IstisnaTuru.BasarisizVirman, IstisnaKategorisi.BankaTransferHatasi,
+            KasaEtkiYonu.Artiran, beklenenTutar: 5000m, gerceklesenTutar: 0m, sistemeGirilenTutar: 0m);
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void ValidateCreate_InvalidTurKategori_ReturnsError()
+    {
+        var errors = FinansalIstisnaValidator.ValidateCreate(
+            IstisnaTuru.BasarisizVirman, IstisnaKategorisi.GecikmeliYansima,
+            KasaEtkiYonu.Artiran, beklenenTutar: 5000m, gerceklesenTutar: 0m, sistemeGirilenTutar: 0m);
+
+        Assert.Single(errors);
+        Assert.Contains("uyumlu değil", errors[0]);
+    }
+
+    [Fact]
+    public void ValidateCreate_NotrEtkiYonu_ReturnsError()
+    {
+        var errors = FinansalIstisnaValidator.ValidateCreate(
+            IstisnaTuru.BasarisizVirman, IstisnaKategorisi.BankaTransferHatasi,
+            KasaEtkiYonu.Notr, beklenenTutar: 5000m, gerceklesenTutar: 0m, sistemeGirilenTutar: 0m);
+
+        Assert.Contains(errors, e => e.Contains("Nötr"));
+    }
+
+    [Fact]
+    public void ValidateCreate_UndefinedEnumTur_ReturnsError()
+    {
+        var errors = FinansalIstisnaValidator.ValidateCreate(
+            (IstisnaTuru)99, IstisnaKategorisi.BankaTransferHatasi,
+            KasaEtkiYonu.Artiran, beklenenTutar: 5000m, gerceklesenTutar: 0m, sistemeGirilenTutar: 0m);
+
+        Assert.Contains(errors, e => e.Contains("Geçersiz istisna türü"));
+    }
+
+    [Fact]
+    public void ValidateCreate_NegativeBeklenenTutar_ReturnsError()
+    {
+        var errors = FinansalIstisnaValidator.ValidateCreate(
+            IstisnaTuru.BasarisizVirman, IstisnaKategorisi.BankaTransferHatasi,
+            KasaEtkiYonu.Artiran, beklenenTutar: -100m, gerceklesenTutar: 0m, sistemeGirilenTutar: 0m);
+
+        Assert.Contains(errors, e => e.Contains("negatif"));
+    }
+
+    [Fact]
+    public void ValidateCreate_BasarisizVirman_ZeroBeklenen_ReturnsError()
+    {
+        var errors = FinansalIstisnaValidator.ValidateCreate(
+            IstisnaTuru.BasarisizVirman, IstisnaKategorisi.BankaTransferHatasi,
+            KasaEtkiYonu.Artiran, beklenenTutar: 0m, gerceklesenTutar: 0m, sistemeGirilenTutar: 0m);
+
+        Assert.Contains(errors, e => e.Contains("sıfırdan büyük"));
+    }
+
+    [Fact]
+    public void ValidateCreate_SistemeGirilmeyenEft_ZeroGerceklesen_ReturnsError()
+    {
+        var errors = FinansalIstisnaValidator.ValidateCreate(
+            IstisnaTuru.SistemeGirilmeyenEft, IstisnaKategorisi.BekleyenSistemGirisi,
+            KasaEtkiYonu.Artiran, beklenenTutar: 0m, gerceklesenTutar: 0m, sistemeGirilenTutar: 0m);
+
+        Assert.Contains(errors, e => e.Contains("gerçekleşen tutar sıfırdan büyük"));
+    }
+
+    [Fact]
+    public void ValidateCreate_BankadanCikamayanTutar_ValidMultiCategory()
+    {
+        // BankadanCikamayanTutar → BekleyenSistemGirisi de kabul etmeli
+        var errors = FinansalIstisnaValidator.ValidateCreate(
+            IstisnaTuru.BankadanCikamayanTutar, IstisnaKategorisi.BekleyenSistemGirisi,
+            KasaEtkiYonu.Azaltan, beklenenTutar: 2000m, gerceklesenTutar: 0m, sistemeGirilenTutar: 0m);
+
+        Assert.Empty(errors);
+    }
+
+    // ═══════════════════════════════════════
+    // Validator — Update Validasyonu
+    // ═══════════════════════════════════════
+
+    [Fact]
+    public void ValidateUpdate_NegativeTutar_ReturnsError()
+    {
+        var errors = FinansalIstisnaValidator.ValidateUpdateAmounts(
+            beklenenTutar: -500m, gerceklesenTutar: null, sistemeGirilenTutar: null);
+
+        Assert.Single(errors);
+        Assert.Contains("negatif", errors[0]);
+    }
+
+    [Fact]
+    public void ValidateUpdate_ValidAmounts_NoErrors()
+    {
+        var errors = FinansalIstisnaValidator.ValidateUpdateAmounts(
+            beklenenTutar: 1000m, gerceklesenTutar: 500m, sistemeGirilenTutar: 200m);
+
+        Assert.Empty(errors);
+    }
+
+    // ═══════════════════════════════════════
     // Helpers
     // ═══════════════════════════════════════
 

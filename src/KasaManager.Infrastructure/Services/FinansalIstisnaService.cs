@@ -1,4 +1,5 @@
 #nullable enable
+using System.ComponentModel.DataAnnotations;
 using KasaManager.Application.Abstractions;
 using KasaManager.Domain.FinancialExceptions;
 using KasaManager.Infrastructure.Persistence;
@@ -26,6 +27,13 @@ public sealed class FinansalIstisnaService : IFinansalIstisnaService
 
     public async Task<FinansalIstisna> CreateAsync(FinansalIstisnaCreateRequest request, CancellationToken ct = default)
     {
+        // Validation guard — geçersiz veri DB'ye ulaşmadan reddedilir
+        var errors = FinansalIstisnaValidator.ValidateCreate(
+            request.Tur, request.Kategori, request.EtkiYonu,
+            request.BeklenenTutar, request.GerceklesenTutar, request.SistemeGirilenTutar);
+        if (errors.Count > 0)
+            throw new ValidationException(string.Join(" ", errors));
+
         var entity = new FinansalIstisna
         {
             IslemTarihi = request.IslemTarihi,
@@ -63,6 +71,12 @@ public sealed class FinansalIstisnaService : IFinansalIstisnaService
 
     public async Task<FinansalIstisna?> UpdateAsync(Guid id, FinansalIstisnaUpdateRequest request, CancellationToken ct = default)
     {
+        // Update tutar validation guard
+        var errors = FinansalIstisnaValidator.ValidateUpdateAmounts(
+            request.BeklenenTutar, request.GerceklesenTutar, request.SistemeGirilenTutar);
+        if (errors.Count > 0)
+            throw new ValidationException(string.Join(" ", errors));
+
         var entity = await _db.FinansalIstisnalar.FindAsync(new object[] { id }, ct);
         if (entity is null) return null;
 

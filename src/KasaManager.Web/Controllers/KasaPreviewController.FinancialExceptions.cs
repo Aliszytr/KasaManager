@@ -1,4 +1,5 @@
 #nullable enable
+using System.ComponentModel.DataAnnotations;
 using KasaManager.Application.Abstractions;
 using KasaManager.Domain.FinancialExceptions;
 using KasaManager.Web.Models;
@@ -40,7 +41,16 @@ public sealed partial class KasaPreviewController
             HedefHesapAciklama: form.HedefHesapAciklama,
             OlusturanKullanici: userName);
 
-        await _finansalIstisna.CreateAsync(request, ct);
+        try
+        {
+            await _finansalIstisna.CreateAsync(request, ct);
+        }
+        catch (ValidationException ex)
+        {
+            _log.LogWarning("Finansal istisna doğrulama hatası: {Message}", ex.Message);
+            TempData["ErrorMessage"] = $"❌ Doğrulama hatası: {ex.Message}";
+            return RedirectToAction("Index", new { kasaType = form.RedirectKasaType });
+        }
 
         TempData["SuccessMessage"] = "✅ Finansal istisna başarıyla oluşturuldu (İnceleme Bekliyor).";
         return RedirectToAction("Index", new { kasaType = form.RedirectKasaType });
