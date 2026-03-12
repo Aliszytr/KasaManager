@@ -224,6 +224,14 @@ public sealed class FinansalIstisnaService : IFinansalIstisnaService
 
     public async Task<FinansalIstisna> CreateFromDevredilmisAsync(Guid parentId, DateOnly bugun, string kullanici, CancellationToken ct = default)
     {
+        // Idempotency guard — aynı parent için aynı gün duplicate child engeli
+        var existingChild = await _db.FinansalIstisnalar
+            .AnyAsync(x => x.ParentIstisnaId == parentId
+                        && x.IslemTarihi == bugun
+                        && x.Durum != IstisnaDurumu.Iptal, ct);
+        if (existingChild)
+            throw new InvalidOperationException("Bu istisna bugün için zaten açılmış.");
+
         var parent = await _db.FinansalIstisnalar.FindAsync(new object[] { parentId }, ct)
             ?? throw new InvalidOperationException($"Parent istisna bulunamadı: {parentId}");
 

@@ -61,7 +61,8 @@
                                     @Html.AntiForgeryToken()
                                     <input type="hidden" name="parentId" value="@dev.Id" />
                                     <input type="hidden" name="redirectKasaType" value="@Model.KasaType" />
-                                    <button type="submit" class="btn btn-sm btn-primary">
+                                    <button type="submit" class="btn btn-sm btn-primary"
+                                            onclick="this.disabled=true; this.innerHTML='<i class=\'fas fa-spinner fa-spin me-1\'></i>İşleniyor...'; this.form.submit();">
                                         <i class="fas fa-plus me-1"></i>Bugün İçin Yeni İstisna Aç
                                     </button>
                                 </form>
