@@ -9,9 +9,9 @@ public interface IComparisonArchiveService
 {
     /// <summary>
     /// Karşılaştırma dosyalarını archive alt klasörüne kopyalar.
-    /// Bugünün tarihiyle bir snapshot oluşturur.
+    /// reportDate verilmişse rapor tarihi, verilmemişse bugünün tarihiyle bir snapshot oluşturur.
     /// </summary>
-    void ArchiveComparisonFiles(string uploadFolder);
+    void ArchiveComparisonFiles(string uploadFolder, DateOnly? reportDate = null);
 
     /// <summary>
     /// Mevcut arşiv tarihlerini döndürür (en yeniden eskiye).

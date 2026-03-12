@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using KasaManager.Application.Abstractions;
 using KasaManager.Application.Orchestration;
@@ -36,6 +36,8 @@ public sealed partial class KasaPreviewController : Controller
     private readonly IKasaValidationService _validation;
     private readonly IVergideBirikenLedgerService _vergiLedger;
     private readonly IDocumentTemplateService _templateService;
+    private readonly IFinansalIstisnaService _finansalIstisna;
+    private readonly IFinansalIstisnaAnomaliService _anomali;
     private readonly IDistributedCache _cache;
     private readonly ILogger<KasaPreviewController> _log;
 
@@ -54,6 +56,8 @@ public sealed partial class KasaPreviewController : Controller
         IKasaValidationService validation,
         IVergideBirikenLedgerService vergiLedger,
         IDocumentTemplateService templateService,
+        IFinansalIstisnaService finansalIstisna,
+        IFinansalIstisnaAnomaliService anomali,
         IDistributedCache cache,
         ILogger<KasaPreviewController> log)
     {
@@ -71,6 +75,8 @@ public sealed partial class KasaPreviewController : Controller
         _validation = validation;
         _vergiLedger = vergiLedger;
         _templateService = templateService;
+        _finansalIstisna = finansalIstisna;
+        _anomali = anomali;
         _cache = cache;
         _log = log;
     }
@@ -219,6 +225,7 @@ public sealed partial class KasaPreviewController : Controller
         model.HasUploadedFiles = ListUploadedFiles().Count > 0;
         await HydrateVergideBirikenSeedAsync(model, ct);
         await HydrateIbanInfoAsync(model, ct);
+        await HydrateFinansalIstisnalarAsync(model, ct);
     }
 
     /// <summary>Kritik hata sonrası minimum düzeyde sayfa yüklemesini garanti eder.</summary>
@@ -310,6 +317,9 @@ public sealed partial class KasaPreviewController : Controller
         // IBAN hydration
         await HydrateIbanInfoAsync(model, ct);
 
+        // Financial Exceptions + Anomali Önerileri (Akıllı Öneriler)
+        await HydrateFinansalIstisnalarAsync(model, ct);
+
         return View("Index", model);
     }
 
@@ -378,6 +388,7 @@ public sealed partial class KasaPreviewController : Controller
 
         await HydrateVergideBirikenSeedAsync(model, ct);
         await HydrateIbanInfoAsync(model, ct);
+        await HydrateFinansalIstisnalarAsync(model, ct);
         await HydrateValidationAsync(model, ct);
 
         // ─── Draft Auto-Save ───
@@ -453,6 +464,9 @@ public sealed partial class KasaPreviewController : Controller
 
         // IBAN hydration
         await HydrateIbanInfoAsync(model, ct);
+
+        // Financial Exceptions + Anomali Önerileri (Akıllı Öneriler)
+        await HydrateFinansalIstisnalarAsync(model, ct);
 
         // ─── Validation Uyarı Sistemi ───
         await HydrateValidationAsync(model, ct);

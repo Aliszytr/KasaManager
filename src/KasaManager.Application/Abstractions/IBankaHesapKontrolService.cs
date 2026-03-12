@@ -46,41 +46,41 @@ public interface IBankaHesapKontrolService
     /// <summary>
     /// Kullanıcı onayı ile kaydı kapatır.
     /// </summary>
-    Task<bool> ConfirmMatchAsync(Guid kayitId, string kullanici, string? not);
+    Task<bool> ConfirmMatchAsync(Guid kayitId, string kullanici, string? not, CancellationToken ct = default);
 
     /// <summary>
     /// Kaydı iptal eder.
     /// </summary>
-    Task<bool> CancelAsync(Guid kayitId, string kullanici, string? sebep);
+    Task<bool> CancelAsync(Guid kayitId, string kullanici, string? sebep, CancellationToken ct = default);
 
     /// <summary>
     /// Kaydı takibe alır: Açık → Takipte.
     /// Kullanıcı kaydın gerçek eksik/fazla olduğunu onaylar, sistem izlemeye başlar.
     /// </summary>
-    Task<bool> StartTrackingAsync(Guid kayitId, string kullanici, string? not);
+    Task<bool> StartTrackingAsync(Guid kayitId, string kullanici, string? not, CancellationToken ct = default);
 
     /// <summary>
     /// Takipteki kaydı el ile çözüldü olarak işaretler: Takipte → Onaylandı.
     /// </summary>
-    Task<bool> ResolveTrackedAsync(Guid kayitId, string kullanici, string? not);
+    Task<bool> ResolveTrackedAsync(Guid kayitId, string kullanici, string? not, CancellationToken ct = default);
 
     /// <summary>
     /// Herhangi bir kapalı/takipte kaydı geri alır.
     /// Takipte/Onaylandı/Çözüldü → Açık, İptal → Açık.
     /// </summary>
-    Task<bool> RevertAsync(Guid kayitId, string kullanici, string? sebep);
+    Task<bool> RevertAsync(Guid kayitId, string kullanici, string? sebep, CancellationToken ct = default);
 
     /// <summary>
     /// Kısmi güvenli CrossDay potansiyel eşleşmeyi kullanıcı onaylar.
     /// İki kayıt da Çözüldü olarak işaretlenir.
     /// </summary>
-    Task<bool> ApprovePotentialMatchAsync(Guid eksikKayitId, Guid fazlaKayitId, string kullanici);
+    Task<bool> ApprovePotentialMatchAsync(Guid eksikKayitId, Guid fazlaKayitId, string kullanici, CancellationToken ct = default);
 
     /// <summary>
     /// Kısmi güvenli CrossDay potansiyel eşleşmeyi kullanıcı reddeder.
     /// Eksik kayıt Takipte kalır, potansiyel eşleşme notu eklenir.
     /// </summary>
-    Task<bool> RejectPotentialMatchAsync(Guid eksikKayitId, Guid fazlaKayitId, string kullanici);
+    Task<bool> RejectPotentialMatchAsync(Guid eksikKayitId, Guid fazlaKayitId, string kullanici, CancellationToken ct = default);
 
     // ─── Sorgulama ───
 

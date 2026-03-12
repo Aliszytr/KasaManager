@@ -945,15 +945,19 @@
                 setTimeout(() => {
                     card.style.display = 'none';
                     // İstatistikleri güncelle
+                    // NOT: Backend TotalMatchedAmount = Matched + PartialMatch + MultipleMatches
+                    // Yani partial kayıtların tutarı ZATEN matchedAmt'te dahil.
+                    // Onay: sadece sayısal kategori değişir (Partial→Matched), tutar zaten dahil.
+                    // Red: tutar matchedAmt'ten çıkarılıp unmatchedAmt'e eklenir.
                     statPartial--;
                     if (decision === 'approved') {
                         statMatched++;
-                        statMatchedAmt += payload.miktar;
-                        statUnmatchedAmt -= payload.miktar;
+                        // Tutar zaten matchedAmt'te — mükerrer ekleme yapma
                     } else {
                         statNotFound++;
-                        // Rejected: miktar eşleşmeyen olarak kalır, ama zaten unmatchedAmt'te
-                        // PartialMatch -> NotFound geçişinde tutar unmatchedAmt'te kalır
+                        // Rejected: PartialMatch → NotFound — tutar matched'dan unmatched'a taşınır
+                        statMatchedAmt -= payload.miktar;
+                        statUnmatchedAmt += payload.miktar;
                     }
                     updateStatsUI();
                 }, 400);

@@ -243,6 +243,41 @@ public sealed partial class KasaPreviewController
         }
     }
 
+    /// <summary>
+    /// Financial Exceptions: Seçili tarihin istisnalarını DB'den yükler.
+    /// </summary>
+    private async Task HydrateFinansalIstisnalarAsync(KasaPreviewViewModel model, CancellationToken ct)
+    {
+        try
+        {
+            var tarih = model.SelectedDate ?? DateOnly.FromDateTime(DateTime.Today);
+            model.FinansalIstisnalar = (await _finansalIstisna.ListByDateAsync(tarih, ct)).ToList();
+
+            // Faz 2: Dünden devredilen istisnaları ViewBag'e yükle
+            var devredilmisler = await _finansalIstisna.ListDevredilmisAsync(tarih, ct);
+            if (devredilmisler.Count > 0)
+                ViewBag.DevredilmisIstisnalar = devredilmisler.ToList();
+
+            // Faz 3: Anomali analizi
+            // NOT: Anomali servisi her zaman mevcut DB durumunu okur.
+            // HesapKontrol diff analizi yalnızca HesapKontrol sayfasında çalışır.
+            try
+            {
+                var anomaliler = await _anomali.AnalyzeAsync(tarih, ct);
+                if (anomaliler.Count > 0)
+                    model.AnomaliOnerileri = anomaliler.ToList();
+            }
+            catch (Exception ex2)
+            {
+                _log.LogWarning(ex2, "Anomali analizi başarısız");
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Finansal istisna listesi yüklenemedi");
+        }
+    }
+
     private string ResolveUploadFolderAbsolute()
     {
         var sub = _cfg.GetValue<string>("Upload:SubFolder") ?? "Data\\Raporlar";

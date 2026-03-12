@@ -1,4 +1,4 @@
-﻿@model KasaManager.Web.Models.KasaPreviewViewModel
+@model KasaManager.Web.Models.KasaPreviewViewModel
 @{
     ViewData["Title"] = string.IsNullOrEmpty(Model.KasaType) ? "Kasa Preview" : $"{Model.KasaType} Kasa";
 
@@ -205,7 +205,7 @@
             @Html.AntiForgeryToken()
             <input type="hidden" asp-for="KasaType" />
             <input type="hidden" asp-for="IsAdminMode" />
-            <input type="hidden" name="AksamMesaiSonuModu" id="aksamMesaiSonuModuHidden" value="@(Model.AksamMesaiSonuModu ? "true" : "false")" />
+            <input type="hidden" asp-for="AksamMesaiSonuModu" />
 
             <div class="row g-3 align-items-end">
                 <div class="col-md-4 col-lg-3">
@@ -285,14 +285,14 @@
                             <label style="display:inline-flex; align-items:center; gap:0.35rem; cursor:pointer; font-size:0.85rem; color:var(--kasa-text, #e2e8f0);">
                                 <input type="radio" name="aksamModRadio" value="mesai"
                                        @(Model.AksamMesaiSonuModu ? "checked" : "")
-                                       onchange="document.getElementById('aksamMesaiSonuModuHidden').value='true'" />
+                                       onchange="this.form.AksamMesaiSonuModu.value='true'" />
                                 <i class="fas fa-business-time" style="color:#f59e0b;"></i> Mesai Sonu
                                 <small style="color:var(--kasa-text-muted, #64748b);">(4 dosya)</small>
                             </label>
                             <label style="display:inline-flex; align-items:center; gap:0.35rem; cursor:pointer; font-size:0.85rem; color:var(--kasa-text, #e2e8f0);">
                                 <input type="radio" name="aksamModRadio" value="tamgun"
                                        @(!Model.AksamMesaiSonuModu ? "checked" : "")
-                                       onchange="document.getElementById('aksamMesaiSonuModuHidden').value='false'" />
+                                       onchange="this.form.AksamMesaiSonuModu.value='false'" />
                                 <i class="fas fa-calendar-day" style="color:#10b981;"></i> Tam Gün
                                 <small style="color:var(--kasa-text-muted, #64748b);">(7 dosya)</small>
                             </label>
@@ -333,6 +333,7 @@
             @Html.AntiForgeryToken()
             <input type="hidden" asp-for="KasaType" />
             <input type="hidden" asp-for="IsAdminMode" />
+            <input type="hidden" asp-for="AksamMesaiSonuModu" />
             <input type="hidden" asp-for="SelectedDate" />
             <input type="hidden" asp-for="KasayiYapan" />
             <input type="hidden" asp-for="HasSnapshot" />
@@ -404,6 +405,11 @@
                                    asp-for="BankadanCekilen" />
                         </div>
                         <div class="col-md-4 col-lg-3">
+                            <label class="kasa-form-label">Ç.N. Bankadan Çıkamayan Tahsilat</label>
+                            <input type="number" step="0.01" class="kasa-form-input money-input"
+                                   asp-for="CesitliNedenlerleBankadanCikamayanTahsilat" />
+                        </div>
+                        <div class="col-md-4 col-lg-3">
                             <label class="kasa-form-label">Bankaya Yatırılacak Tahsilat (Değişiklik)</label>
                             <input type="number" step="0.01" class="kasa-form-input money-input"
                                    asp-for="BankayaYatirilacakTahsilatiDegistir" />
@@ -426,6 +432,9 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Financial Exceptions Özet Kartı (vNext Faz 1) -->
+            <partial name="_FinansalIstisnaKart" model="Model" />
 
             @if (kasaTypeClass == "sabah")
             {
@@ -739,13 +748,34 @@
             return 0m;
         }
 
-        // Stopaj kontrol
-        decimal stopajKontrolRaw = 0m;
-        if (Model.FormulaRun?.Outputs != null && Model.FormulaRun.Outputs.TryGetValue("stopaj_kontrol", out var skVal))
-        {
-            stopajKontrolRaw = skVal;
-        }
-        var stopajKontrolOk = Math.Abs(stopajKontrolRaw) < 0.01m;
+        // ════════════════════════════════════════════════════════════════
+        // STOPAJ KONTROL İŞ MANTIĞI
+        // ════════════════════════════════════════════════════════════════
+        // Fark = OnlineReddiyat − BankadanÇıkan
+        // 
+        // SABAH / AKŞAM TAM GÜN (gün bitmiş):
+        //   Fark ≈ 0        → ✅ OK
+        //   Fark ≈ Stopaj   → ❌ Stopaj Virman Yapılmamış
+        //   Fark ≠ 0/Stopaj → ❌ Bilinmeyen Uyuşmazlık
+        //
+        // AKŞAM MESAİ SONU (gün devam ediyor):
+        //   Fark ≈ 0        → ✅ OK
+        //   Fark ≈ Stopaj   → ✅ OK + bilgi notu (virman yapılacak)
+        //   Fark ≠ Stopaj   → ❌ Stopaj dışı uyuşmazlık
+        // ════════════════════════════════════════════════════════════════
+        var sk_reddiyat = ResultValRaw("online_reddiyat");
+        var sk_bankaCikan = ResultValRaw("bankadan_cikan_tahsilat");
+        var sk_toplamStopaj = ResultValRaw("toplam_stopaj");
+        decimal sk_fark = sk_reddiyat - sk_bankaCikan;          // ham fark
+        bool sk_farkSifir = Math.Abs(sk_fark) < 0.01m;          // fark ≈ 0
+        bool sk_farkStopajaDenk = !sk_farkSifir                 // fark ≈ stopaj
+                                  && sk_toplamStopaj > 0.01m
+                                  && Math.Abs(sk_fark - sk_toplamStopaj) < 0.01m;
+
+        // Eski uyumluluk — "stopajKontrolRaw" ve "stopajKontrolOk" hâlâ
+        // Sonuçlar bölümündeki tablo tarafından kullanılıyor
+        decimal stopajKontrolRaw = sk_fark;
+        var stopajKontrolOk = sk_farkSifir;
 
         // Muhasebe reconciliation hesaplamaları
         var muh_banka_giren_t = ResultValRaw("bankaya_giren_tahsilat");
@@ -1167,29 +1197,103 @@
             </div>
             <!-- Stopaj Kontrol Kartı -->
             <div class="col-md-4">
-                @if (stopajKontrolOk)
+                @{
+                    var cesitliNedenlerle = Model.CesitliNedenlerleBankadanCikamayanTahsilat ?? 0m;
+                    var isMesaiSonu = Model.AksamMesaiSonuModu;
+                    var isSabahKasa = Model.KasaType?.Equals("Sabah", StringComparison.OrdinalIgnoreCase) == true;
+                    // Gün bitmiş mi: Sabah kasa VEYA Akşam Tam Gün
+                    var gunBitmis = isSabahKasa || !isMesaiSonu;
+                    var trCulture = System.Globalization.CultureInfo.GetCultureInfo("tr-TR");
+                }
+                @if (sk_farkSifir)
                 {
+                    <!-- DURUM 1: Fark = 0 → Her senaryoda OK -->
+                    <div class="kasa-alert kasa-alert-success" style="border-radius: var(--radius-md); margin: 0; height: 100%; display: flex; align-items: center;">
+                        <i class="fas fa-check-circle" style="font-size: 22px;"></i>
+                        <div>
+                            <strong>Stopaj Kontrolü ✓</strong>
+                            <div style="font-size: 11px;">Reddiyat − Banka Çıkış = 0</div>
+                        </div>
+                    </div>
+                }
+                else if (sk_farkStopajaDenk && !gunBitmis)
+                {
+                    <!-- DURUM 2: Fark = Stopaj + Mesai Sonu → OK, virman yapılacak -->
                     <div class="kasa-alert kasa-alert-success" style="border-radius: var(--radius-md); margin: 0; height: 100%; display: flex; align-items: center;">
                         <i class="fas fa-check-circle" style="font-size: 22px;"></i>
                         <div>
                             <strong>Stopaj Kontrolü ✓</strong>
                             <div style="font-size: 11px;">Reddiyat − Banka Çıkış = Stopaj</div>
+                            <div style="font-size: 10px; color: #f59e0b; margin-top: 3px;">
+                                <i class="fas fa-info-circle me-1"></i>Fark @sk_fark.ToString("N2", trCulture) ₺ (Stopaj kadar) — virman kasa sonrası yapılacak
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (sk_farkStopajaDenk && gunBitmis)
+                {
+                    <!-- DURUM 3: Fark = Stopaj + Sabah/TamGün → Stopaj Virman Yapılmamış -->
+                    <div class="kasa-alert kasa-alert-danger" style="border-radius: var(--radius-md); margin: 0; height: 100%; display: flex; flex-direction: column; justify-content: center;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <i class="fas fa-exclamation-triangle" style="font-size: 22px;"></i>
+                            <div>
+                                <strong>Stopaj Virman Yapılmamış</strong>
+                                <div style="font-size: 11px;">
+                                    @(isSabahKasa ? "Bir önceki gün" : "Tam gün kasası: Gün") bitmiş, stopaj virmanı hâlâ bekliyor.
+                                </div>
+                            </div>
+                        </div>
+                        <div style="font-size: 12px; margin-top: 6px; padding: 4px 8px; background: rgba(239,68,68,0.08); border-radius: 4px;">
+                            <i class="fas fa-coins me-1"></i> Virman Bekleyen: <strong>@sk_fark.ToString("N2", trCulture) ₺</strong>
                         </div>
                     </div>
                 }
                 else
                 {
-                    <div class="kasa-alert kasa-alert-danger" style="border-radius: var(--radius-md); margin: 0; height: 100%; display: flex; align-items: center;">
-                        <i class="fas fa-exclamation-triangle" style="font-size: 22px;"></i>
-                        <div>
-                            <strong>Stopaj Uyuşmazlığı</strong>
-                            <div style="font-size: 11px;">Banka Çıkışı onaylanmayan kayıtlar olabilir.</div>
-                            <div style="font-size: 10px; color: var(--text-muted);">Fark: @(stopajKontrolRaw.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR"))) ₺</div>
+                    <!-- DURUM 4: Fark ≠ 0 ve ≠ Stopaj → Bilinmeyen uyuşmazlık -->
+                    <div class="kasa-alert kasa-alert-danger" style="border-radius: var(--radius-md); margin: 0; height: 100%; display: flex; flex-direction: column; justify-content: center;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <i class="fas fa-exclamation-triangle" style="font-size: 22px;"></i>
+                            <div>
+                                <strong>Stopaj Uyuşmazlığı</strong>
+                                <div style="font-size: 11px;">Reddiyat ile Banka Çıkışı arasında stopaj dışında fark var.</div>
+                            </div>
+                        </div>
+                        <div style="font-size: 12px; margin-top: 6px; padding: 4px 8px; background: rgba(239,68,68,0.08); border-radius: 4px;">
+                            Fark: <strong>@sk_fark.ToString("N2", trCulture) ₺</strong>
+                            <span style="font-size: 10px; color: var(--text-muted); margin-left: 8px;">(Stopaj: @sk_toplamStopaj.ToString("N2", trCulture) ₺)</span>
                         </div>
                     </div>
                 }
             </div>
         </div>
+
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- ROW 2.5: Çeşitli Nedenlerle Bankadan Çıkamayan Tahsilat       -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        @if (cesitliNedenlerle > 0.01m)
+        {
+            <div class="row g-3 mb-3">
+                <div class="col-12">
+                    <div class="kasa-alert" style="border-radius: var(--radius-md); margin: 0; border: 2px solid #f59e0b; background: rgba(245,158,11,0.04); display: flex; align-items: center; gap: 14px; padding: 14px 20px;">
+                        <i class="fas fa-hourglass-half" style="font-size: 24px; color: #f59e0b;"></i>
+                        <div style="flex: 1;">
+                            <strong style="color: #f59e0b;">Ç.N. Bankadan Çıkamayan Tahsilat</strong>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                                Bankaya çıkması için talimat verilmiş ancak henüz çıkamamış tutar. Sonraki günlerde çıkacaktır.
+                                Bu değer <strong>Genel Kasa</strong> hesaplamasına dahil edilmiştir.
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 22px; font-weight: 700; color: #f59e0b;">
+                                @cesitliNedenlerle.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR")) <span style="font-size: 14px;">₺</span>
+                            </div>
+                            <div style="font-size: 10px; color: var(--text-muted);">Kullanıcı girişi</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
 
         <!-- ═══════════════════════════════════════════════════════════════ -->
         <!-- ROW 3: BANKAYA GÖTÜRÜLECEK (Grup Kart)                         -->

@@ -472,30 +472,62 @@
         }
         else
         {
-            <div class="table-responsive">
-                <table class="table table-hover table-striped">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>Tarih</th>
-                            <th>Hesap</th>
-                            <th>Yön</th>
-                            <th>Tutar</th>
-                            <th>Sınıf</th>
-                            <th>Tip</th>
-                            <th>Açıklama / Dosya</th>
-                            <th>İşlem</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    @foreach (var k in acikKayitlar)
-                    {
-                        <tr>
-                            <td>@k.AnalizTarihi.ToString("dd.MM.yyyy")</td>
-                            <td>
-                                <span class="badge @(k.HesapTuru == BankaHesapTuru.Tahsilat ? "bg-success" : k.HesapTuru == BankaHesapTuru.Harc ? "bg-primary" : "bg-warning text-dark")">
-                                    @k.HesapTuru
-                                </span>
-                            </td>
+            <!-- Toplu işlem araç çubuğu -->
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="text-muted small">
+                    Toplam <strong>@acikKayitlar.Count</strong> açık kayıt.
+                </div>
+                <div class="d-flex gap-2">
+                    <form method="post" asp-action="BulkDismissStale" class="d-inline"
+                          onsubmit="return confirm('2 günden eski tüm açık kayıtları yok saymak istiyor musunuz?');">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="btn btn-outline-secondary btn-sm"
+                                title="2+ gün önce oluşmuş stale kayıtları otomatik temizle">
+                            <i class="fas fa-broom me-1"></i>Eski Kayıtları Temizle
+                        </button>
+                    </form>
+                    <button type="submit" form="bulkCancelForm" class="btn btn-outline-danger btn-sm"
+                            onclick="return confirm('Seçili kayıtları yok saymak istiyor musunuz?');"
+                            id="btnBulkCancel" disabled>
+                        <i class="fas fa-times-circle me-1"></i>Seçilenleri Yok Say
+                    </button>
+                </div>
+            </div>
+
+            <form method="post" asp-action="BulkCancel" id="bulkCancelForm">
+                @Html.AntiForgeryToken()
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped">
+                        <thead class="table-dark">
+                            <tr>
+                                <th style="width: 30px;">
+                                    <input type="checkbox" id="selectAll" class="form-check-input"
+                                           title="Tümünü Seç" />
+                                </th>
+                                <th>Tarih</th>
+                                <th>Hesap</th>
+                                <th>Yön</th>
+                                <th>Tutar</th>
+                                <th>Sınıf</th>
+                                <th>Tip</th>
+                                <th>Açıklama / Dosya</th>
+                                <th>İşlem</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var k in acikKayitlar)
+                        {
+                            <tr>
+                                <td>
+                                    <input type="checkbox" class="form-check-input row-select"
+                                           name="ids" value="@k.Id" />
+                                </td>
+                                <td>@k.AnalizTarihi.ToString("dd.MM.yyyy")</td>
+                                <td>
+                                    <span class="badge @(k.HesapTuru == BankaHesapTuru.Tahsilat ? "bg-success" : k.HesapTuru == BankaHesapTuru.Harc ? "bg-primary" : "bg-warning text-dark")">
+                                        @k.HesapTuru
+                                    </span>
+                                </td>
                             <td>
                                 @if (k.Yon == KayitYonu.Eksik)
                                 {
@@ -547,18 +579,58 @@
                                             <i class="fas fa-times me-1"></i>Yok Say
                                         </button>
                                     </form>
+                                    <!-- Faz 2→3: İstisna Olarak Ekle (aynı sayfada POST) -->
+                                    <form method="post" asp-action="CreateFinansalIstisnaFromHK" class="d-inline"
+                                          onsubmit="return confirm('Bu farkı finansal istisna olarak kaydetmek istiyor musunuz?');">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="kayitId" value="@k.Id" />
+                                        <input type="hidden" name="hesapTuru" value="@((int)k.HesapTuru)" />
+                                        <input type="hidden" name="yon" value="@((int)k.Yon)" />
+                                        <input type="hidden" name="tutar" value="@k.Tutar" />
+                                        <input type="hidden" name="aciklama" value="@(k.Aciklama ?? k.TespitEdilenTip ?? "")" />
+                                        <input type="hidden" name="analizTarihi" value="@k.AnalizTarihi.ToString("yyyy-MM-dd")" />
+                                        <button type="submit" class="btn btn-outline-warning btn-sm"
+                                                title="Bu farkı operasyonel istisna olarak kaydet">
+                                            <i class="fas fa-exclamation-triangle me-1"></i>İstisna Ekle
+                                        </button>
+                                    </form>
                                 </div>
                             </td>
                         </tr>
                     }
-                    </tbody>
-                </table>
-            </div>
-            <div class="text-muted small mt-2">
-                Toplam <strong>@acikKayitlar.Count</strong> açık kayıt.
-            </div>
+                        </tbody>
+                    </table>
+                </div>
+            </form>
         }
     }
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var selectAll = document.getElementById('selectAll');
+        var btnBulk = document.getElementById('btnBulkCancel');
+        if (!selectAll || !btnBulk) return;
+
+        function updateBulk() {
+            var checked = document.querySelectorAll('.row-select:checked').length;
+            btnBulk.disabled = checked === 0;
+            btnBulk.textContent = checked > 0
+                ? '🚫 Seçilenleri Yok Say (' + checked + ')'
+                : '🚫 Seçilenleri Yok Say';
+        }
+
+        selectAll.addEventListener('change', function() {
+            document.querySelectorAll('.row-select').forEach(function(cb) {
+                cb.checked = selectAll.checked;
+            });
+            updateBulk();
+        });
+
+        document.querySelectorAll('.row-select').forEach(function(cb) {
+            cb.addEventListener('change', updateBulk);
+        });
+    });
+    </script>
 
     <!-- ═══════ TAB: Takipte ═══════ -->
     @if (activeTab == "takipte")

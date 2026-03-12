@@ -1,4 +1,5 @@
 using KasaManager.Application.Abstractions;
+using KasaManager.Domain.FinancialExceptions;
 using KasaManager.Domain.Reports.HesapKontrol;
 using KasaManager.Web.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -14,6 +15,7 @@ public sealed class HesapKontrolController : Controller
     private readonly IBankaHesapKontrolService _service;
     private readonly IKasaRaporSnapshotService _snapshots;
     private readonly IHesapKontrolExportService _export;
+    private readonly IFinansalIstisnaService _finansalIstisna;
     private readonly ILogger<HesapKontrolController> _log;
     private readonly IWebHostEnvironment _env;
 
@@ -21,12 +23,14 @@ public sealed class HesapKontrolController : Controller
         IBankaHesapKontrolService service,
         IKasaRaporSnapshotService snapshots,
         IHesapKontrolExportService export,
+        IFinansalIstisnaService finansalIstisna,
         ILogger<HesapKontrolController> log,
         IWebHostEnvironment env)
     {
         _service = service;
         _snapshots = snapshots;
         _export = export;
+        _finansalIstisna = finansalIstisna;
         _log = log;
         _env = env;
     }
@@ -252,6 +256,52 @@ public sealed class HesapKontrolController : Controller
         return RedirectToAction("Index", new { tab = "acik" });
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> BulkCancel(List<Guid> ids)
+    {
+        var kullanici = User.Identity?.Name ?? "Anonim";
+        var count = 0;
+
+        foreach (var id in ids)
+        {
+            var result = await _service.CancelAsync(id, kullanici, "Toplu yok say");
+            if (result) count++;
+        }
+
+        TempData["Info"] = $"🚫 {count} kayıt toplu olarak yok sayıldı.";
+        return RedirectToAction("Index", new { tab = "acik" });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> BulkDismissStale(int gunSiniri = 2)
+    {
+        var kullanici = User.Identity?.Name ?? "Anonim";
+        var bugun = DateOnly.FromDateTime(DateTime.Today);
+        var sinirTarih = bugun.AddDays(-gunSiniri);
+
+        // Eski günlere ait Açık kayıtları bul (Stopaj hariç)
+        var eskiAciklar = await _service.GetOpenItemsAsync(ct: default);
+        var staleKayitlar = eskiAciklar
+            .Where(k => k.AnalizTarihi < sinirTarih
+                     && k.HesapTuru != Domain.Reports.HesapKontrol.BankaHesapTuru.Stopaj)
+            .ToList();
+
+        var count = 0;
+        foreach (var k in staleKayitlar)
+        {
+            var result = await _service.CancelAsync(k.Id, kullanici, $"Otomatik temizlik: {(bugun.DayNumber - k.AnalizTarihi.DayNumber)} günlük stale kayıt");
+            if (result) count++;
+        }
+
+        TempData["Info"] = count > 0
+            ? $"🧹 {count} eski açık kayıt temizlendi ({gunSiniri}+ gün öncesi)."
+            : "✅ Temizlenecek eski kayıt bulunamadı.";
+
+        return RedirectToAction("Index", new { tab = "acik" });
+    }
+
     // ─── Takip İşlemleri ───
 
     [HttpPost]
@@ -329,6 +379,55 @@ public sealed class HesapKontrolController : Controller
             TempData["Error"] = "❌ İşlem başarısız. Kayıt bulunamadı.";
 
         return RedirectToAction("Index", new { tab = "takipte" });
+    }
+
+    // ─── Faz 3: HesapKontrol → Finansal İstisna Oluşturma ───
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateFinansalIstisnaFromHK(
+        Guid kayitId, int hesapTuru, int yon, decimal tutar,
+        string? aciklama, string? analizTarihi, CancellationToken ct)
+    {
+        try
+        {
+            var tarih = DateOnly.TryParse(analizTarihi, out var d) ? d : DateOnly.FromDateTime(DateTime.Today);
+            var kullanici = User.Identity?.Name ?? "Anonim";
+
+            // HesapKontrol yönüne göre istisna türü ve etki yönü belirle
+            var istisnaYon = (KayitYonu)yon;
+            var istisnaTur = istisnaYon == KayitYonu.Eksik
+                ? IstisnaTuru.BankadanCikamayanTutar
+                : IstisnaTuru.SistemeGirilmeyenEft;
+            var etkiYonu = istisnaYon == KayitYonu.Eksik
+                ? KasaEtkiYonu.Azaltan
+                : KasaEtkiYonu.Artiran;
+
+            var request = new FinansalIstisnaCreateRequest(
+                IslemTarihi: tarih,
+                Tur: istisnaTur,
+                Kategori: IstisnaKategorisi.BekleyenSistemGirisi,
+                HesapTuru: (BankaHesapTuru)hesapTuru,
+                BeklenenTutar: tutar,
+                GerceklesenTutar: 0m,
+                SistemeGirilenTutar: 0m,
+                EtkiYonu: etkiYonu,
+                Neden: $"HesapKontrol kaydından oluşturuldu: {aciklama}",
+                Aciklama: $"Kaynak HK ID: {kayitId}",
+                HedefHesapAciklama: null,
+                OlusturanKullanici: kullanici
+            );
+
+            await _finansalIstisna.CreateAsync(request, ct);
+            TempData["Info"] = $"✅ Finansal istisna oluşturuldu: {tutar:N2} ₺ ({istisnaTur}) — İnceleme bekliyor.";
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "HK → Finansal İstisna oluşturma hatası");
+            TempData["Error"] = $"❌ İstisna oluşturulamadı: {ex.Message}";
+        }
+
+        return RedirectToAction("Index", new { tab = "acik" });
     }
 
     // ─── D1: Geriye Dönük Analiz ───

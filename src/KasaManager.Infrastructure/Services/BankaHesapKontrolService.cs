@@ -154,12 +154,13 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
             .ToListAsync(ct);
 
         // ─ Tüm kullanıcı etkileşimli kayıtlar (duplicate kontrolü) ─
-        // Takipte, Onaylandi, Cozuldu → kullanıcı bunları işlemiş, aynısı tekrar eklenmemeli.
+        // Takipte, Onaylandi, Cozuldu, Iptal → kullanıcı bunları işlemiş, aynısı tekrar eklenmemeli.
+        // Özellikle Iptal (Yok Say): kullanıcı bilinçli olarak reddetmiş,
+        // analiz tekrar çalıştığında aynı kayıt yeniden oluşturulmamalı.
         // AnalizTarihi filtresi: sadece aynı güne ait işlenmiş kayıtları kontrol et
         var kullaniciIslemliKayitlar = await _db.HesapKontrolKayitlari
             .Where(x => x.AnalizTarihi == analizTarihi
                       && x.Durum != KayitDurumu.Acik
-                      && x.Durum != KayitDurumu.Iptal
                       && x.HesapTuru != BankaHesapTuru.Stopaj)
             .ToListAsync(ct);
 
@@ -214,24 +215,31 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
         eklenecek.AddRange(adayStopaj);
 
         // ═══════════════════════════════════════════════════════════
-        // ADIM 3: DB Güncelleme
+        // ADIM 3: DB Güncelleme (Transaction ile atomik)
         // ═══════════════════════════════════════════════════════════
-
-        if (silinecek.Count > 0)
-        {
-            _logger.LogInformation("Diff analiz: {Count} eski/stale kayıt siliniyor", silinecek.Count);
-            _db.HesapKontrolKayitlari.RemoveRange(silinecek);
-        }
-
-        if (eklenecek.Count > 0)
-        {
-            _logger.LogInformation("Diff analiz: {Count} yeni kayıt ekleniyor", eklenecek.Count);
-            _db.HesapKontrolKayitlari.AddRange(eklenecek);
-        }
 
         if (silinecek.Count > 0 || eklenecek.Count > 0)
         {
-            await _db.SaveChangesAsync(ct);
+            var strategy = _db.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(async () =>
+            {
+                await using var tx = await _db.Database.BeginTransactionAsync(ct);
+
+                if (silinecek.Count > 0)
+                {
+                    _logger.LogInformation("Diff analiz: {Count} eski/stale kayıt siliniyor", silinecek.Count);
+                    _db.HesapKontrolKayitlari.RemoveRange(silinecek);
+                }
+
+                if (eklenecek.Count > 0)
+                {
+                    _logger.LogInformation("Diff analiz: {Count} yeni kayıt ekleniyor", eklenecek.Count);
+                    _db.HesapKontrolKayitlari.AddRange(eklenecek);
+                }
+
+                await _db.SaveChangesAsync(ct);
+                await tx.CommitAsync(ct);
+            });
         }
         else
         {
@@ -360,11 +368,13 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
         // Takipte kayıtlar: kullanıcı tarafından onaylanmış gerçek eksikler → tarih kısıtı YOK
         // Açık kayıtlar: yalnızca önceki günlerin (bugunTarihi'nden önceki) kayıtları
         // ÖNCELİK: Takipte (4) → Acik (0) sıralaması — kullanıcı onaylı kayıtlar önce eşleşir
+        // EN ESKİ İLK: Aynı Durum grubunda en eski kayıt önce eşleşir (FIFO)
         var acikEksikler = await _db.HesapKontrolKayitlari
             .Where(x => (x.Durum == KayitDurumu.Acik || x.Durum == KayitDurumu.Takipte)
                      && x.Yon == KayitYonu.Eksik
                      && (x.Durum == KayitDurumu.Takipte || x.AnalizTarihi < bugunTarihi))
             .OrderByDescending(x => x.Durum) // Takipte=4 önce, Acik=0 sonra
+            .ThenBy(x => x.AnalizTarihi)     // ← En eski kayıt önce eşleşir (FIFO)
             .ToListAsync(ct);
 
         // ─── Adım 2: Eşleştirilecek Fazla kayıtları bul ───
@@ -381,13 +391,25 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
 
         foreach (var eksik in acikEksikler)
         {
-            // BİREBİR tutar eşleşmesi (toleranslı)
-            var eslesenFazla = bugunFazlalar
-                .FirstOrDefault(f => f.HesapTuru == eksik.HesapTuru
-                                  && Math.Abs(f.Tutar - eksik.Tutar) <= tutarTolerans
-                                  && (f.Durum == KayitDurumu.Acik || f.Durum == KayitDurumu.Takipte));
+            // BİREBİR tutar eşleşmesi — DosyaNo/BirimAdi ile doğrulanmış Fazla öncelikli
+            var tutarEslesenler = bugunFazlalar
+                .Where(f => f.HesapTuru == eksik.HesapTuru
+                         && Math.Abs(f.Tutar - eksik.Tutar) <= tutarTolerans
+                         && (f.Durum == KayitDurumu.Acik || f.Durum == KayitDurumu.Takipte))
+                .ToList();
 
-            if (eslesenFazla == null) continue;
+            if (tutarEslesenler.Count == 0) continue;
+
+            // Fazla seçim önceliği: DosyaNo eşleşmesi > BirimAdi eşleşmesi > sadece tutar
+            var eslesenFazla = tutarEslesenler
+                .OrderByDescending(f =>
+                    !string.IsNullOrEmpty(eksik.DosyaNo)
+                    && !string.IsNullOrEmpty(f.Aciklama)
+                    && f.Aciklama.Contains(eksik.DosyaNo, StringComparison.OrdinalIgnoreCase) ? 2 :
+                    !string.IsNullOrEmpty(eksik.BirimAdi)
+                    && !string.IsNullOrEmpty(f.Aciklama)
+                    && f.Aciklama.Contains(eksik.BirimAdi, StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+                .First();
 
             // ─── Güven seviyesi belirleme ───
             // DosyaNo varsa → Fazla'nın Aciklama metninde geçiyor mu kontrol et
@@ -450,9 +472,56 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
             }
         }
 
+        // ─── Adım 4: Dedup Cleanup — Çözülen DosyaNo'ların eski kayıtlarını da çöz ───
+        // Aynı DosyaNo+HesapTuru+Tutar'a sahip eski Acik kayıtlar,
+        // çözülen yeni kayıtla aynı gerçek dünya işlemini temsil eder.
         if (kesinEslesmeler.Count > 0)
         {
-            await _db.SaveChangesAsync(ct);
+            var cozulenDosyaNolar = kesinEslesmeler
+                .Where(m => !string.IsNullOrEmpty(m.EksikDosyaNo))
+                .Select(m => new { m.EksikDosyaNo, m.HesapTuru, m.Tutar })
+                .ToList();
+
+            if (cozulenDosyaNolar.Count > 0)
+            {
+                var kalanAciklar = await _db.HesapKontrolKayitlari
+                    .Where(x => x.Durum == KayitDurumu.Acik
+                             && x.Yon == KayitYonu.Eksik
+                             && x.AnalizTarihi < bugunTarihi)
+                    .ToListAsync(ct);
+
+                var dedupSayisi = 0;
+                foreach (var kalan in kalanAciklar)
+                {
+                    var eslesen = cozulenDosyaNolar
+                        .FirstOrDefault(c => c.EksikDosyaNo == kalan.DosyaNo
+                                          && c.HesapTuru == kalan.HesapTuru
+                                          && Math.Abs(c.Tutar - kalan.Tutar) <= tutarTolerans);
+                    if (eslesen != null)
+                    {
+                        kalan.Durum = KayitDurumu.Cozuldu;
+                        kalan.CozulmeTarihi = bugunTarihi;
+                        kalan.Notlar = (kalan.Notlar ?? "") +
+                            $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] ✅ Aynı DosyaNo ({kalan.DosyaNo}) için " +
+                            $"daha yeni kayıt çözüldü — bu eski kayıt da otomatik kapatıldı.";
+                        dedupSayisi++;
+                    }
+                }
+
+                if (dedupSayisi > 0)
+                    _logger.LogInformation("CrossDay dedup: {Count} eski duplicate kayıt otomatik kapatıldı", dedupSayisi);
+            }
+        }
+
+        if (kesinEslesmeler.Count > 0)
+        {
+            var strategy = _db.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(async () =>
+            {
+                await using var tx = await _db.Database.BeginTransactionAsync(ct);
+                await _db.SaveChangesAsync(ct);
+                await tx.CommitAsync(ct);
+            });
             _logger.LogInformation("CrossDay: {Kesin} kesin, {Potansiyel} potansiyel eşleşme",
                 kesinEslesmeler.Count, potansiyelEslesmeler.Count);
         }

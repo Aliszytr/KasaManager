@@ -262,4 +262,11 @@ public sealed class KasaPreviewViewModel
     public string? HesapAdiHarc { get; set; }
     public string? IbanHarc { get; set; }
     public string? IbanPostaPulu { get; set; }
+
+    // ===== Financial Exceptions (vNext Faz 1) =====
+    /// <summary>Seçili tarihteki tüm finansal istisnalar.</summary>
+    public List<Domain.FinancialExceptions.FinansalIstisna> FinansalIstisnalar { get; set; } = new();
+
+    /// <summary>Faz 3: Anomali önerileri.</summary>
+    public List<Application.Abstractions.AnomaliOnerisi> AnomaliOnerileri { get; set; } = new();
 }

@@ -13,9 +13,9 @@ public sealed partial class BankaHesapKontrolService
     // Kullanıcı Etkileşimi
     // ═════════════════════════════════════════════════════════════
 
-    public async Task<bool> ConfirmMatchAsync(Guid kayitId, string kullanici, string? not)
+    public async Task<bool> ConfirmMatchAsync(Guid kayitId, string kullanici, string? not, CancellationToken ct = default)
     {
-        var kayit = await _db.HesapKontrolKayitlari.FindAsync(kayitId);
+        var kayit = await _db.HesapKontrolKayitlari.FindAsync(new object[] { kayitId }, ct);
         if (kayit == null || kayit.Durum != KayitDurumu.Acik) return false;
 
         kayit.Durum = KayitDurumu.Onaylandi;
@@ -27,13 +27,13 @@ public sealed partial class BankaHesapKontrolService
             $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] Kullanıcı onayı: {kullanici}" +
             (not != null ? $" — {not}" : "");
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(ct);
         return true;
     }
 
-    public async Task<bool> CancelAsync(Guid kayitId, string kullanici, string? sebep)
+    public async Task<bool> CancelAsync(Guid kayitId, string kullanici, string? sebep, CancellationToken ct = default)
     {
-        var kayit = await _db.HesapKontrolKayitlari.FindAsync(kayitId);
+        var kayit = await _db.HesapKontrolKayitlari.FindAsync(new object[] { kayitId }, ct);
         if (kayit == null || kayit.Durum != KayitDurumu.Acik) return false;
 
         kayit.Durum = KayitDurumu.Iptal;
@@ -42,7 +42,7 @@ public sealed partial class BankaHesapKontrolService
             $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] İptal eden: {kullanici}" +
             (sebep != null ? $" — Sebep: {sebep}" : "");
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(ct);
         return true;
     }
 
@@ -50,9 +50,9 @@ public sealed partial class BankaHesapKontrolService
     // Takip İşlemleri
     // ═════════════════════════════════════════════════════════════════
 
-    public async Task<bool> StartTrackingAsync(Guid kayitId, string kullanici, string? not)
+    public async Task<bool> StartTrackingAsync(Guid kayitId, string kullanici, string? not, CancellationToken ct = default)
     {
-        var kayit = await _db.HesapKontrolKayitlari.FindAsync(kayitId);
+        var kayit = await _db.HesapKontrolKayitlari.FindAsync(new object[] { kayitId }, ct);
         if (kayit == null || kayit.Durum != KayitDurumu.Acik) return false;
 
         kayit.Durum = KayitDurumu.Takipte;
@@ -63,14 +63,14 @@ public sealed partial class BankaHesapKontrolService
             $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] Takibe alan: {kullanici}" +
             (not != null ? $" — {not}" : "");
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(ct);
         _logger.LogInformation("HesapKontrol takibe alındı: {Id} by {User}", kayitId, kullanici);
         return true;
     }
 
-    public async Task<bool> ResolveTrackedAsync(Guid kayitId, string kullanici, string? not)
+    public async Task<bool> ResolveTrackedAsync(Guid kayitId, string kullanici, string? not, CancellationToken ct = default)
     {
-        var kayit = await _db.HesapKontrolKayitlari.FindAsync(kayitId);
+        var kayit = await _db.HesapKontrolKayitlari.FindAsync(new object[] { kayitId }, ct);
         if (kayit == null || kayit.Durum != KayitDurumu.Takipte) return false;
 
         kayit.Durum = KayitDurumu.Onaylandi;
@@ -80,7 +80,7 @@ public sealed partial class BankaHesapKontrolService
             $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] Çözüldü: {kullanici}" +
             (not != null ? $" — {not}" : "");
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(ct);
         _logger.LogInformation("HesapKontrol takipte kayit çözüldü: {Id} by {User}", kayitId, kullanici);
         return true;
     }
@@ -89,10 +89,10 @@ public sealed partial class BankaHesapKontrolService
     // CrossDay Potansiyel Eşleşme Onay/Red
     // ═════════════════════════════════════════════════════════════════
 
-    public async Task<bool> ApprovePotentialMatchAsync(Guid eksikKayitId, Guid fazlaKayitId, string kullanici)
+    public async Task<bool> ApprovePotentialMatchAsync(Guid eksikKayitId, Guid fazlaKayitId, string kullanici, CancellationToken ct = default)
     {
-        var eksik = await _db.HesapKontrolKayitlari.FindAsync(eksikKayitId);
-        var fazla = await _db.HesapKontrolKayitlari.FindAsync(fazlaKayitId);
+        var eksik = await _db.HesapKontrolKayitlari.FindAsync(new object[] { eksikKayitId }, ct);
+        var fazla = await _db.HesapKontrolKayitlari.FindAsync(new object[] { fazlaKayitId }, ct);
         if (eksik == null || fazla == null) return false;
         if (eksik.Durum != KayitDurumu.Takipte && eksik.Durum != KayitDurumu.Acik) return false;
 
@@ -116,29 +116,29 @@ public sealed partial class BankaHesapKontrolService
         fazla.Notlar = (fazla.Notlar ?? "") +
             $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] {bildirim} — Eşleşen eksik: {eksikKayitId:N}";
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(ct);
         _logger.LogInformation("CrossDay kısmi eşleşme onaylandı: Eksik {EksikId} ↔ Fazla {FazlaId} by {User}",
             eksikKayitId, fazlaKayitId, kullanici);
         return true;
     }
 
-    public async Task<bool> RejectPotentialMatchAsync(Guid eksikKayitId, Guid fazlaKayitId, string kullanici)
+    public async Task<bool> RejectPotentialMatchAsync(Guid eksikKayitId, Guid fazlaKayitId, string kullanici, CancellationToken ct = default)
     {
-        var eksik = await _db.HesapKontrolKayitlari.FindAsync(eksikKayitId);
+        var eksik = await _db.HesapKontrolKayitlari.FindAsync(new object[] { eksikKayitId }, ct);
         if (eksik == null) return false;
 
         eksik.Notlar = (eksik.Notlar ?? "") +
             $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] ❌ Kısmi eşleşme reddedildi (Fazla: {fazlaKayitId:N}) — {kullanici}: Bu eşleşme geçerli değil.";
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(ct);
         _logger.LogInformation("CrossDay kısmi eşleşme reddedildi: Eksik {EksikId} ↛ Fazla {FazlaId} by {User}",
             eksikKayitId, fazlaKayitId, kullanici);
         return true;
     }
 
-    public async Task<bool> RevertAsync(Guid kayitId, string kullanici, string? sebep)
+    public async Task<bool> RevertAsync(Guid kayitId, string kullanici, string? sebep, CancellationToken ct = default)
     {
-        var kayit = await _db.HesapKontrolKayitlari.FindAsync(kayitId);
+        var kayit = await _db.HesapKontrolKayitlari.FindAsync(new object[] { kayitId }, ct);
         if (kayit == null) return false;
 
         // Sadece kapalı durumlardan geri alınabilir
@@ -156,7 +156,7 @@ public sealed partial class BankaHesapKontrolService
             $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] ↩ Geri alan: {kullanici} (önceki durum: {oncekiDurum})" +
             (sebep != null ? $" — {sebep}" : "");
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(ct);
         _logger.LogInformation("HesapKontrol geri alındı: {Id} ({OncekiDurum} → Acik) by {User}",
             kayitId, oncekiDurum, kullanici);
         return true;

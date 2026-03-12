@@ -24,13 +24,13 @@ public sealed class ComparisonArchiveService : IComparisonArchiveService
     }
 
     /// <inheritdoc />
-    public void ArchiveComparisonFiles(string uploadFolder)
+    public void ArchiveComparisonFiles(string uploadFolder, DateOnly? reportDate = null)
     {
         if (string.IsNullOrWhiteSpace(uploadFolder) || !Directory.Exists(uploadFolder))
             return;
 
-        var today = DateOnly.FromDateTime(DateTime.Now);
-        var archiveDir = Path.Combine(uploadFolder, ArchiveSubFolder, today.ToString("yyyy-MM-dd"));
+        var archiveDate = reportDate ?? DateOnly.FromDateTime(DateTime.Now);
+        var archiveDir = Path.Combine(uploadFolder, ArchiveSubFolder, archiveDate.ToString("yyyy-MM-dd"));
         Directory.CreateDirectory(archiveDir);
 
         int copied = 0;
@@ -52,7 +52,7 @@ public sealed class ComparisonArchiveService : IComparisonArchiveService
         }
 
         if (copied > 0)
-            _logger.LogInformation("Karşılaştırma arşivi oluşturuldu: {Date} ({Count} dosya)", today, copied);
+            _logger.LogInformation("Karşılaştırma arşivi oluşturuldu: {Date} ({Count} dosya)", archiveDate, copied);
     }
 
     /// <inheritdoc />
