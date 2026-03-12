@@ -80,6 +80,21 @@ public sealed partial class KasaPreviewController
             if (!string.IsNullOrEmpty(model.DbFormulaSetId) && Guid.TryParse(model.DbFormulaSetId, out var fsGuid))
                 snapshot.FormulaSetId = fsGuid;
 
+            // Faz 3: Snapshot'a Financial Exceptions özet verisi enjekte et
+            try
+            {
+                var istisnalar = await _finansalIstisna.ListByDateAsync(tarih, ct);
+                if (istisnalar.Count > 0)
+                {
+                    var feSummary = FinancialExceptionsSummary.Build(istisnalar);
+                    snapshot.FinancialExceptionsSummaryJson = feSummary.ToJson();
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Snapshot'a Financial Exceptions summary eklenemedi");
+            }
+
             await _calcSnapshots.SaveAsync(snapshot, ct);
 
             // Draft cache temizle — veriler artık DB'de
@@ -88,7 +103,7 @@ public sealed partial class KasaPreviewController
                 var saveUserName = User.Identity?.Name ?? "anonymous";
                 await KasaDraftCacheHelper.ClearDraftAsync(saveUserName, effectiveKasaType);
             }
-            catch { /* critical değil */ }
+            catch (Exception ex) { _log.LogDebug(ex, "Draft cache temizleme başarısız (rapor kaydı etkilenmedi)"); }
 
             var isUpdate = existingActive != null;
             var actionWord = isUpdate ? "güncellendi" : "kaydedildi";

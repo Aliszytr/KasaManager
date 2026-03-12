@@ -7,6 +7,8 @@ using KasaManager.Domain.Abstractions;
 using KasaManager.Domain.Constants;
 using KasaManager.Domain.FormulaEngine;
 using KasaManager.Domain.Reports;
+using KasaManager.Domain.Reports.HesapKontrol;
+using Microsoft.Extensions.Logging;
 
 namespace KasaManager.Application.Services;
 
@@ -442,6 +444,7 @@ private sealed record EksikFazlaChain(
 /// - Bugün için guneAit = Excel formülü ile hesaplanır.
 /// - Dünden = bir önceki günün guneAit
 /// - Önceki gün = (bir önceki günün onceki + dünden)
+/// - Çözülen (Çözüldü/Onaylandı) takip kayıtları ilgili Dünden/Önceki'den düşülür.
 /// </summary>
 private async Task<EksikFazlaChain> ComputeEksikFazlaChainAsync(
     DateOnly date,
@@ -514,7 +517,71 @@ private async Task<EksikFazlaChain> ComputeEksikFazlaChainAsync(
             GuneHarc: guneHarc);
     }
 
-    return await RecurseAsync(date, 0);
+    var rawChain = await RecurseAsync(date, 0);
+
+    // ═══════════════════════════════════════════════════════════════
+    // R14G+: Çözülen takip kayıtlarını zincirden düş.
+    // Takip sisteminde Çözüldü/Onaylandı durumuna geçmiş kayıtlar,
+    // ilgili Dünden/Önceki değerlerinden düşürülür.
+    // ═══════════════════════════════════════════════════════════════
+    try
+    {
+        var lookbackStart = date.AddDays(-MaxDepthDays);
+        var yesterday = date.AddDays(-1);
+
+        // Çözüldü + Onaylandı kayıtları — bugünden önceki analiz tarihli
+        var resolved = await _hesapKontrol.GetHistoryAsync(
+            lookbackStart, yesterday,
+            hesapTuru: null,
+            durum: KayitDurumu.Cozuldu, ct);
+
+        var approved = await _hesapKontrol.GetHistoryAsync(
+            lookbackStart, yesterday,
+            hesapTuru: null,
+            durum: KayitDurumu.Onaylandi, ct);
+
+        var allResolved = resolved.Concat(approved).ToList();
+
+        if (allResolved.Count > 0)
+        {
+            // Toplam çözülen tutarları hesapla (AnalizTarihi'ne bakmadan)
+            // Zincir carry-forward ile değerleri gün gün taşıdığı için,
+            // eski tarihlerdeki değerler Dünden/Önceki'ye dağılmış olabilir.
+            var totalResolvedTahsilat = allResolved
+                .Where(k => k.HesapTuru == BankaHesapTuru.Tahsilat && k.Yon == KayitYonu.Eksik)
+                .Sum(k => k.Tutar);
+
+            var totalResolvedHarc = allResolved
+                .Where(k => k.HesapTuru == BankaHesapTuru.Harc && k.Yon == KayitYonu.Eksik)
+                .Sum(k => k.Tutar);
+
+            // Önce Dünden'den düş, kalan varsa Önceki'den düş
+            var remainT = totalResolvedTahsilat;
+            var adjDundenT = Math.Max(0m, rawChain.DundenTahsilat - remainT);
+            remainT = Math.Max(0m, remainT - rawChain.DundenTahsilat);
+            var adjOncekiT = Math.Max(0m, rawChain.OncekiTahsilat - remainT);
+
+            var remainH = totalResolvedHarc;
+            var adjDundenH = Math.Max(0m, rawChain.DundenHarc - remainH);
+            remainH = Math.Max(0m, remainH - rawChain.DundenHarc);
+            var adjOncekiH = Math.Max(0m, rawChain.OncekiHarc - remainH);
+
+            return new EksikFazlaChain(
+                OncekiTahsilat: adjOncekiT,
+                DundenTahsilat: adjDundenT,
+                GuneTahsilat: rawChain.GuneTahsilat,
+                OncekiHarc: adjOncekiH,
+                DundenHarc: adjDundenH,
+                GuneHarc: rawChain.GuneHarc);
+        }
+    }
+    catch (Exception ex)
+    {
+        // KB-3 FIX: Sessiz hata yutma kaldırıldı — kontrollü degrade + loglama
+        _log.LogWarning(ex, "EksikFazla zinciri: HesapKontrol servisinden çözülen kayıtlar alınamadı — ham zincir kullanılacak");
+    }
+
+    return rawChain;
 }
 
     // ==============================

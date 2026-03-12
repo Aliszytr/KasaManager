@@ -99,6 +99,12 @@ builder.Services.AddScoped<IHesapKontrolExportService, KasaManager.Infrastructur
 // ✅ Kasa Validation (Uyarı) Service
 builder.Services.AddScoped<IKasaValidationService, KasaManager.Infrastructure.Services.KasaValidationService>();
 
+// ✅ Financial Exceptions (vNext Faz 1)
+builder.Services.AddScoped<IFinansalIstisnaService, KasaManager.Infrastructure.Services.FinansalIstisnaService>();
+
+// ✅ Financial Exceptions Anomaly Suggestion (vNext Faz 3)
+builder.Services.AddScoped<IFinansalIstisnaAnomaliService, KasaManager.Infrastructure.Services.FinansalIstisnaAnomaliService>();
+
 // ✅ Legacy Kasa DB (Eski Veritabanı — Read-Only)
 if (builder.Configuration.GetValue<bool>("LegacyDatabase:Enabled"))
 {

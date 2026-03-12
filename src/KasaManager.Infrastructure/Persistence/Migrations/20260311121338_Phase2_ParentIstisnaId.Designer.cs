@@ -4,16 +4,19 @@ using KasaManager.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace KasaManager.Infrastructure.Migrations
+namespace KasaManager.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(KasaManagerDbContext))]
-    partial class KasaManagerDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260311121338_Phase2_ParentIstisnaId")]
+    partial class Phase2_ParentIstisnaId
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -168,76 +171,6 @@ namespace KasaManager.Infrastructure.Migrations
                         .HasDatabaseName("IX_FinansalIstisnalar_Tarih_Durum_Karar");
 
                     b.ToTable("FinansalIstisnalar", (string)null);
-                });
-
-            modelBuilder.Entity("KasaManager.Domain.FinancialExceptions.FinansalIstisnaHistory", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Aciklama")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<string>("EventKullanici")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<DateTime>("EventTarihiUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("EventType")
-                        .HasColumnType("int");
-
-                    b.Property<Guid>("FinansalIstisnaId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal?>("NewBeklenenTutar")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<int?>("NewDurum")
-                        .HasColumnType("int");
-
-                    b.Property<decimal?>("NewGerceklesenTutar")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<int?>("NewKararDurumu")
-                        .HasColumnType("int");
-
-                    b.Property<decimal?>("NewSistemeGirilenTutar")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal?>("OldBeklenenTutar")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<int?>("OldDurum")
-                        .HasColumnType("int");
-
-                    b.Property<decimal?>("OldGerceklesenTutar")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<int?>("OldKararDurumu")
-                        .HasColumnType("int");
-
-                    b.Property<decimal?>("OldSistemeGirilenTutar")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("EventTarihiUtc")
-                        .HasDatabaseName("IX_FinExHistory_EventTarihi");
-
-                    b.HasIndex("FinansalIstisnaId")
-                        .HasDatabaseName("IX_FinExHistory_IstisnaId");
-
-                    b.ToTable("FinansalIstisnaHistory", (string)null);
                 });
 
             modelBuilder.Entity("KasaManager.Domain.FormulaEngine.Authoring.PersistedFormulaLine", b =>
@@ -551,9 +484,6 @@ namespace KasaManager.Infrastructure.Migrations
                     b.Property<string>("Description")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
-
-                    b.Property<string>("FinancialExceptionsSummaryJson")
-                        .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid?>("FormulaSetId")
                         .HasColumnType("uniqueidentifier");

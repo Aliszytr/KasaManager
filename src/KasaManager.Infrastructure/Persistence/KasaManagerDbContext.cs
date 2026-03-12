@@ -8,6 +8,7 @@ using KasaManager.Domain.FormulaEngine.Authoring;
 using KasaManager.Domain.Validation;
 using KasaManager.Domain.Identity;
 using KasaManager.Domain.Entities;
+using KasaManager.Domain.FinancialExceptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
@@ -52,6 +53,10 @@ namespace KasaManager.Infrastructure.Persistence
 
     // Karşılaştırma kararları
     public DbSet<ComparisonDecision> ComparisonDecisions => Set<ComparisonDecision>();
+
+    // Financial Exceptions (vNext)
+    public DbSet<FinansalIstisna> FinansalIstisnalar => Set<FinansalIstisna>();
+    public DbSet<FinansalIstisnaHistory> FinansalIstisnaHistory => Set<FinansalIstisnaHistory>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -328,6 +333,74 @@ b.Property(x => x.ColumnsJson)
             b.HasIndex(x => x.Username)
                 .IsUnique()
                 .HasDatabaseName("IX_KasaUsers_Username");
+        });
+
+        // ===== Financial Exceptions (vNext) =====
+        modelBuilder.Entity<FinansalIstisna>(b =>
+        {
+            b.ToTable("FinansalIstisnalar");
+            b.HasKey(x => x.Id);
+
+            b.Property(x => x.IslemTarihi).HasConversion(dateOnlyConverter);
+            b.Property(x => x.SistemGirisTarihi).HasConversion(dateOnlyConverter);
+            b.Property(x => x.CozulmeTarihi).HasConversion(dateOnlyConverter);
+
+            b.Property(x => x.Tur).HasConversion<int>();
+            b.Property(x => x.Kategori).HasConversion<int>();
+            b.Property(x => x.HesapTuru).HasConversion<int>();
+            b.Property(x => x.EtkiYonu).HasConversion<int>();
+            b.Property(x => x.KararDurumu).HasConversion<int>();
+            b.Property(x => x.Durum).HasConversion<int>();
+
+            b.Property(x => x.BeklenenTutar).HasPrecision(18, 2);
+            b.Property(x => x.GerceklesenTutar).HasPrecision(18, 2);
+            b.Property(x => x.SistemeGirilenTutar).HasPrecision(18, 2);
+
+            b.Property(x => x.HedefHesapAciklama).HasMaxLength(500);
+            b.Property(x => x.Neden).HasMaxLength(1000);
+            b.Property(x => x.Aciklama).HasMaxLength(2000);
+            b.Property(x => x.OlusturanKullanici).HasMaxLength(256);
+            b.Property(x => x.GuncelleyenKullanici).HasMaxLength(256);
+            b.Property(x => x.KararVerenKullanici).HasMaxLength(256);
+
+            b.HasIndex(x => new { x.IslemTarihi, x.Durum, x.KararDurumu })
+                .HasDatabaseName("IX_FinansalIstisnalar_Tarih_Durum_Karar");
+        });
+
+        // ===== Financial Exceptions History (vNext Faz 3.1) =====
+        modelBuilder.Entity<FinansalIstisnaHistory>(b =>
+        {
+            b.ToTable("FinansalIstisnaHistory");
+            b.HasKey(x => x.Id);
+
+            b.Property(x => x.EventType).HasConversion<int>();
+            b.Property(x => x.OldKararDurumu).HasConversion<int?>();
+            b.Property(x => x.NewKararDurumu).HasConversion<int?>();
+            b.Property(x => x.OldDurum).HasConversion<int?>();
+            b.Property(x => x.NewDurum).HasConversion<int?>();
+
+            b.Property(x => x.OldBeklenenTutar).HasPrecision(18, 2);
+            b.Property(x => x.NewBeklenenTutar).HasPrecision(18, 2);
+            b.Property(x => x.OldGerceklesenTutar).HasPrecision(18, 2);
+            b.Property(x => x.NewGerceklesenTutar).HasPrecision(18, 2);
+            b.Property(x => x.OldSistemeGirilenTutar).HasPrecision(18, 2);
+            b.Property(x => x.NewSistemeGirilenTutar).HasPrecision(18, 2);
+
+            b.Property(x => x.EventKullanici).HasMaxLength(256);
+            b.Property(x => x.Aciklama).HasMaxLength(2000);
+
+            // DB-4 FIX: Explicit FK — audit log korunması için Restrict.
+            // İstisna silindiğinde history kayıtları korunmalı (audit ihtiyacı).
+            // Domain kuralı: İstisna entity silinmez, ama FK konfigürasyonu explicit olmalı.
+            b.HasOne<FinansalIstisna>()
+                .WithMany()
+                .HasForeignKey(x => x.FinansalIstisnaId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            b.HasIndex(x => x.FinansalIstisnaId)
+                .HasDatabaseName("IX_FinExHistory_IstisnaId");
+            b.HasIndex(x => x.EventTarihiUtc)
+                .HasDatabaseName("IX_FinExHistory_EventTarihi");
         });
         }
     }

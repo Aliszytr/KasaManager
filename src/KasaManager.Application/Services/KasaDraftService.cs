@@ -7,6 +7,7 @@ using KasaManager.Domain.Abstractions;
 using KasaManager.Domain.Constants;
 using KasaManager.Domain.FormulaEngine;
 using KasaManager.Domain.Reports;
+using Microsoft.Extensions.Logging;
 
 namespace KasaManager.Application.Services;
 
@@ -19,15 +20,21 @@ public sealed partial class KasaDraftService : IKasaDraftService
     private readonly IKasaRaporSnapshotService _snapshots;
     private readonly IImportOrchestrator _import;
     private readonly IKasaGlobalDefaultsService _globalDefaults;
+    private readonly IBankaHesapKontrolService _hesapKontrol;
+    private readonly ILogger<KasaDraftService> _log;
 
     public KasaDraftService(
         IKasaRaporSnapshotService snapshots,
         IImportOrchestrator import,
-        IKasaGlobalDefaultsService globalDefaults)
+        IKasaGlobalDefaultsService globalDefaults,
+        IBankaHesapKontrolService hesapKontrol,
+        ILogger<KasaDraftService> log)
     {
         _snapshots = snapshots;
         _import = import;
         _globalDefaults = globalDefaults;
+        _hesapKontrol = hesapKontrol;
+        _log = log;
     }
 
     public async Task<Result<KasaDraftBundle>> BuildAsync(

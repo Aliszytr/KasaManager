@@ -37,7 +37,7 @@ public sealed class CachingImportOrchestrator : IImportOrchestrator
         var key = BuildKey(absoluteFilePath, kind, trueSource: false);
         if (key != null)
         {
-            var cached = _cache.GetAsync<Result<ImportedTable>>(key).GetAwaiter().GetResult();
+            var cached = CacheGet<Result<ImportedTable>>(key);
             if (cached != null)
             {
                 _log.LogDebug("ExcelCache HIT: {Key}", key);
@@ -49,11 +49,11 @@ public sealed class CachingImportOrchestrator : IImportOrchestrator
 
         if (key != null && result.Ok)
         {
-            _cache.SetAsync(key, result, DefaultCacheTtl).GetAwaiter().GetResult();
+            CacheSet(key, result, DefaultCacheTtl);
             _log.LogDebug("ExcelCache STORED: {Key}", key);
         }
 
-        _cache.EvictExpiredAsync().GetAwaiter().GetResult();
+        CacheEvict();
         return result;
     }
 
@@ -62,7 +62,7 @@ public sealed class CachingImportOrchestrator : IImportOrchestrator
         var key = BuildKey(absoluteFilePath, kind, trueSource: true);
         if (key != null)
         {
-            var cached = _cache.GetAsync<Result<ImportedTable>>(key).GetAwaiter().GetResult();
+            var cached = CacheGet<Result<ImportedTable>>(key);
             if (cached != null)
             {
                 _log.LogDebug("ExcelCache HIT (TrueSource): {Key}", key);
@@ -74,11 +74,11 @@ public sealed class CachingImportOrchestrator : IImportOrchestrator
 
         if (key != null && result.Ok)
         {
-            _cache.SetAsync(key, result, DefaultCacheTtl).GetAwaiter().GetResult();
+            CacheSet(key, result, DefaultCacheTtl);
             _log.LogDebug("ExcelCache STORED (TrueSource): {Key}", key);
         }
 
-        _cache.EvictExpiredAsync().GetAwaiter().GetResult();
+        CacheEvict();
         return result;
     }
 
@@ -103,4 +103,18 @@ public sealed class CachingImportOrchestrator : IImportOrchestrator
             return null; // Dosya erişim hatası — cache'siz devam et
         }
     }
+
+    // ─── OB-1 FIX: Native sync cache erişim ───
+    // IAppCache.Get/Set/EvictExpired kullanılıyor — .GetAwaiter().GetResult() yok.
+    // MemoryAppCache native sync, farklı provider da interface default ile çalışır.
+
+    private T? CacheGet<T>(string key)
+        => _cache.Get<T>(key);
+
+    private void CacheSet<T>(string key, T value, TimeSpan ttl)
+        => _cache.Set(key, value, ttl);
+
+    private void CacheEvict()
+        => _cache.EvictExpired();
 }
+

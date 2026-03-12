@@ -14,22 +14,16 @@ public sealed class MemoryAppCache : IAppCache
     private DateTime _lastEviction = DateTime.UtcNow;
     private static readonly TimeSpan EvictionInterval = TimeSpan.FromMinutes(15);
 
+    // ─── Async API (interface uyumu) ───
+
     public Task SetAsync<T>(string key, T value, TimeSpan ttl, CancellationToken ct = default)
     {
-        _store[key] = new CacheEntry(value, DateTime.UtcNow, ttl);
+        Set(key, value, ttl);
         return Task.CompletedTask;
     }
 
     public Task<T?> GetAsync<T>(string key, CancellationToken ct = default)
-    {
-        if (_store.TryGetValue(key, out var entry) && !entry.IsExpired)
-            return Task.FromResult((T?)entry.Value);
-
-        if (entry != null && entry.IsExpired)
-            _store.TryRemove(key, out _);
-
-        return Task.FromResult(default(T?));
-    }
+        => Task.FromResult(Get<T>(key));
 
     public Task RemoveAsync(string key, CancellationToken ct = default)
     {
@@ -39,8 +33,33 @@ public sealed class MemoryAppCache : IAppCache
 
     public Task EvictExpiredAsync(CancellationToken ct = default)
     {
+        EvictExpired();
+        return Task.CompletedTask;
+    }
+
+    // ─── OB-1 FIX: Native sync API ───
+    // ConcurrentDictionary zaten senkron — gereksiz async wrapping yok.
+
+    public T? Get<T>(string key)
+    {
+        if (_store.TryGetValue(key, out var entry) && !entry.IsExpired)
+            return (T?)entry.Value;
+
+        if (entry != null && entry.IsExpired)
+            _store.TryRemove(key, out _);
+
+        return default;
+    }
+
+    public void Set<T>(string key, T value, TimeSpan ttl)
+    {
+        _store[key] = new CacheEntry(value, DateTime.UtcNow, ttl);
+    }
+
+    public void EvictExpired()
+    {
         if (DateTime.UtcNow - _lastEviction < EvictionInterval)
-            return Task.CompletedTask;
+            return;
 
         _lastEviction = DateTime.UtcNow;
 
@@ -51,8 +70,6 @@ public sealed class MemoryAppCache : IAppCache
 
         foreach (var key in keysToRemove)
             _store.TryRemove(key, out _);
-
-        return Task.CompletedTask;
     }
 
     private sealed class CacheEntry

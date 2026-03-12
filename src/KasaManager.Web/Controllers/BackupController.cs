@@ -63,8 +63,9 @@ public sealed class BackupController : Controller
                 ViewBag.DatabaseName = builder.InitialCatalog;
                 ViewBag.DbPath = $"{builder.DataSource} → {builder.InitialCatalog}";
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogDebug(ex, "SQL Server connection string parse edilemedi");
                 ViewBag.ServerName = "?";
                 ViewBag.DatabaseName = "?";
                 ViewBag.DbPath = connStr.Length > 50 ? connStr[..50] + "..." : connStr;
@@ -81,8 +82,9 @@ public sealed class BackupController : Controller
                 var result = cmd.ExecuteScalar();
                 ViewBag.DbSize = result is not null ? $"{result} MB" : "—";
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogDebug(ex, "SQL Server DB boyutu sorgulanamadı");
                 ViewBag.DbSize = "—";
             }
         }
@@ -113,8 +115,9 @@ public sealed class BackupController : Controller
             var builder = new SqlConnectionStringBuilder(connStr);
             dbName = builder.InitialCatalog;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "SQL Server connection string parse edilemedi");
             TempData["Error"] = "Connection string parse edilemedi.";
             return RedirectToAction(nameof(Index));
         }
@@ -163,7 +166,8 @@ public sealed class BackupController : Controller
 
             // Dosyayı oku ve indir
             var bytes = await System.IO.File.ReadAllBytesAsync(backupPath, ct);
-            try { System.IO.File.Delete(backupPath); } catch { }
+            try { System.IO.File.Delete(backupPath); }
+            catch (IOException ex) { _logger.LogDebug(ex, "Geçici backup dosyası silinemedi: {Path}", backupPath); }
 
             // İndirme tamamlandı — JS tarafında butonu sıfırlamak için cookie set et
             Response.Cookies.Append("KasaBackupComplete", "1", new CookieOptions
@@ -222,7 +226,7 @@ public sealed class BackupController : Controller
         {
             await _db.Database.ExecuteSqlRawAsync("PRAGMA wal_checkpoint(TRUNCATE);", ct);
         }
-        catch { }
+        catch (Exception ex) { _logger.LogDebug(ex, "SQLite WAL checkpoint başarısız"); }
 
         var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
         var tempPath = Path.Combine(Path.GetTempPath(), $"KasaManager_Backup_{timestamp}.db");
@@ -233,7 +237,8 @@ public sealed class BackupController : Controller
             _logger.LogInformation("SQLite yedek oluşturuldu: {Path} ({Size} bytes)", tempPath, new FileInfo(tempPath).Length);
 
             var bytes = await System.IO.File.ReadAllBytesAsync(tempPath, ct);
-            try { System.IO.File.Delete(tempPath); } catch { }
+            try { System.IO.File.Delete(tempPath); }
+            catch (IOException ex) { _logger.LogDebug(ex, "Geçici SQLite backup dosyası silinemedi: {Path}", tempPath); }
 
             // İndirme tamamlandı — JS tarafında butonu sıfırlamak için cookie set et
             Response.Cookies.Append("KasaBackupComplete", "1", new CookieOptions

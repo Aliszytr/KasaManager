@@ -66,6 +66,12 @@ public sealed class CalculatedKasaSnapshot
     /// Ekrandaki TÜM verilerin birebir kaydı — re-hydration için.
     /// </summary>
     public string? KasaRaporDataJson { get; set; }
+
+    /// <summary>
+    /// Faz 3: Snapshot anındaki Financial Exceptions özet verisi (JSON).
+    /// Bilgi amaçlıdır — hesap motorunun yerine geçmez.
+    /// </summary>
+    public string? FinancialExceptionsSummaryJson { get; set; }
     
     // ══════════════════════════════════════════════════════
     // Helper Methods
@@ -74,6 +80,7 @@ public sealed class CalculatedKasaSnapshot
     /// <summary>
     /// Input'ları dictionary olarak getir.
     /// R19: Eksik alanlar otomatik olarak varsayılan değerle doldurulur.
+    /// OB-5 FIX: Bare catch → JsonException. Kritik hatalar (OutOfMemory vb.) yutulmuyor.
     /// </summary>
     public Dictionary<string, decimal> GetInputs()
     {
@@ -85,9 +92,10 @@ public sealed class CalculatedKasaSnapshot
             {
                 parsed = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, decimal>>(InputsJson);
             }
-            catch
+            catch (System.Text.Json.JsonException)
             {
-                // Parse başarısız - null olarak devam
+                // Bozuk JSON — varsayılanlara düş. Kritik hatalar (OutOfMemory vb.) propagate olur.
+                System.Diagnostics.Debug.WriteLine($"[CalculatedKasaSnapshot] InputsJson parse başarısız: {InputsJson?[..Math.Min(100, InputsJson?.Length ?? 0)]}");
             }
         }
         
@@ -98,6 +106,7 @@ public sealed class CalculatedKasaSnapshot
     /// <summary>
     /// Output'ları dictionary olarak getir.
     /// R19: Eksik alanlar otomatik olarak varsayılan değerle doldurulur.
+    /// OB-5 FIX: Bare catch → JsonException. Kritik hatalar (OutOfMemory vb.) yutulmuyor.
     /// </summary>
     public Dictionary<string, decimal> GetOutputs()
     {
@@ -109,9 +118,10 @@ public sealed class CalculatedKasaSnapshot
             {
                 parsed = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, decimal>>(OutputsJson);
             }
-            catch
+            catch (System.Text.Json.JsonException)
             {
-                // Parse başarısız - null olarak devam
+                // Bozuk JSON — varsayılanlara düş. Kritik hatalar (OutOfMemory vb.) propagate olur.
+                System.Diagnostics.Debug.WriteLine($"[CalculatedKasaSnapshot] OutputsJson parse başarısız: {OutputsJson?[..Math.Min(100, OutputsJson?.Length ?? 0)]}");
             }
         }
         

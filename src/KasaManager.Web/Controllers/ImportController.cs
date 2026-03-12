@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -125,7 +126,8 @@ public sealed class ImportController : Controller
             try
             {
                 var folder = GetUploadFolderAbsolute(sub);
-                _archiveService.ArchiveComparisonFiles(folder);
+                var reportDate = DetectReportDateFromFiles(folder);
+                _archiveService.ArchiveComparisonFiles(folder, reportDate);
                 // Eski arşivleri temizle (varsayılan 60 gün)
                 var retentionDays = _cfg.GetValue<int>("Comparison:ArchiveRetentionDays", 60);
                 _archiveService.CleanupOldArchives(folder, retentionDays);
@@ -450,6 +452,137 @@ public sealed class ImportController : Controller
         Directory.CreateDirectory(folder);
 
         return folder;
+    }
+
+    /// <summary>
+    /// Yüklenen Excel dosyalarından rapor tarihini otomatik tespit eder.
+    /// Dosyalardaki tarih sütunlarından en sık geçen tarihi döndürür.
+    /// </summary>
+    private DateOnly? DetectReportDateFromFiles(string uploadFolder)
+    {
+        // Öncelik sırasıyla tarihli dosyalardan rapor tarihini oku
+        var candidates = new[]
+        {
+            ("BankaHarc.xlsx", ImportFileKind.BankaHarcama),
+            ("BankaTahsilat.xlsx", ImportFileKind.BankaTahsilat),
+            ("onlineHarc.xlsx", ImportFileKind.OnlineHarcama),
+            ("onlineMasraf.xlsx", ImportFileKind.OnlineMasraf)
+        };
+
+        foreach (var (fileName, kind) in candidates)
+        {
+            var path = Path.Combine(uploadFolder, fileName);
+            if (!System.IO.File.Exists(path)) continue;
+
+            try
+            {
+                var result = _orchestrator.Import(path, kind);
+                if (!result.Ok || result.Value == null) continue;
+
+                var date = ExtractMostFrequentDate(result.Value);
+                if (date.HasValue)
+                {
+                    _log.LogInformation("Arşiv rapor tarihi tespit edildi: {Date} (kaynak: {File})", date.Value, fileName);
+                    return date;
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.LogDebug(ex, "Rapor tarihi tespiti başarısız: {File}", fileName);
+            }
+        }
+
+        _log.LogWarning("Rapor tarihi Excel dosyalarından tespit edilemedi, DateTime.Now kullanılacak.");
+        return null;
+    }
+
+    /// <summary>
+    /// ImportedTable'dan en sık geçen tarihi döndürür.
+    /// </summary>
+    private static DateOnly? ExtractMostFrequentDate(ImportedTable table)
+    {
+        if (table.ColumnMetas == null || table.ColumnMetas.Count == 0)
+            return null;
+
+        // Tarih sütununu bul
+        string? dateCol = null;
+        var dateKeywords = new[] { "islem_tarihi", "tarih" };
+        foreach (var kw in dateKeywords)
+        {
+            var hit = table.ColumnMetas.FirstOrDefault(m =>
+                string.Equals(m.CanonicalName, kw, StringComparison.OrdinalIgnoreCase));
+            if (hit != null) { dateCol = hit.CanonicalName; break; }
+        }
+
+        // Canonical adında "tarih" geçen herhangi bir sütun (fallback)
+        dateCol ??= table.ColumnMetas.FirstOrDefault(m =>
+            !string.IsNullOrWhiteSpace(m.CanonicalName) &&
+            m.CanonicalName.Contains("tarih", StringComparison.OrdinalIgnoreCase))?.CanonicalName;
+
+        if (string.IsNullOrWhiteSpace(dateCol))
+            return null;
+
+        // Tarihleri say
+        var counts = new Dictionary<DateOnly, int>();
+        foreach (var row in table.Rows)
+        {
+            if (row == null) continue;
+            if (!row.TryGetValue(dateCol, out var raw) || string.IsNullOrWhiteSpace(raw)) continue;
+
+            if (TryParseDateOnlyForArchive(raw, out var d))
+            {
+                counts.TryGetValue(d, out var c);
+                counts[d] = c + 1;
+            }
+        }
+
+        if (counts.Count == 0) return null;
+
+        // En sık geçen tarih (eşitlikte en yeni tarih)
+        return counts.OrderByDescending(kv => kv.Value).ThenByDescending(kv => kv.Key).First().Key;
+    }
+
+    private static bool TryParseDateOnlyForArchive(string? raw, out DateOnly date)
+    {
+        date = default;
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+        var s = raw.Trim();
+
+        // Excel OADate
+        if (double.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var dbl))
+        {
+            try
+            {
+                var dt = DateTime.FromOADate(dbl);
+                date = DateOnly.FromDateTime(dt);
+                return true;
+            }
+            catch (ArgumentException) { }
+        }
+
+        // Standard formats
+        var formats = new[] { "dd.MM.yyyy", "d.MM.yyyy", "dd/MM/yyyy", "d/M/yyyy", "yyyy-MM-dd" };
+        foreach (var f in formats)
+        {
+            if (DateOnly.TryParseExact(s, f, CultureInfo.GetCultureInfo("tr-TR"), DateTimeStyles.None, out date))
+                return true;
+            if (DateOnly.TryParseExact(s, f, CultureInfo.InvariantCulture, DateTimeStyles.None, out date))
+                return true;
+        }
+
+        // DateTime parse (handles "2026-03-04 00:18:22" format)
+        if (DateTime.TryParse(s, CultureInfo.GetCultureInfo("tr-TR"), DateTimeStyles.None, out var dt2))
+        {
+            date = DateOnly.FromDateTime(dt2);
+            return true;
+        }
+        if (DateTime.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt3))
+        {
+            date = DateOnly.FromDateTime(dt3);
+            return true;
+        }
+
+        return false;
     }
 
     // ─── KasaÜstRapor Panel Hydration (Import Sayfası) ───

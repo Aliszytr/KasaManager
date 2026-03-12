@@ -2,8 +2,10 @@ using KasaManager.Application.Abstractions;
 using KasaManager.Application.Services;
 using KasaManager.Domain.Abstractions;
 using KasaManager.Domain.Reports;
+using KasaManager.Domain.Reports.HesapKontrol;
 using KasaManager.Domain.Reports.Snapshots;
 using KasaManager.Domain.Settings;
+using Microsoft.Extensions.Logging;
 using Moq;
 
 namespace KasaManager.Tests.Application;
@@ -17,11 +19,25 @@ public sealed class KasaDraftServiceTests
     private readonly Mock<IKasaRaporSnapshotService> _snapshotsMock = new();
     private readonly Mock<IImportOrchestrator> _importMock = new();
     private readonly Mock<IKasaGlobalDefaultsService> _globalDefaultsMock = new();
+    private readonly Mock<IBankaHesapKontrolService> _hesapKontrolMock = new();
 
-    private KasaDraftService CreateSut() => new(
-        _snapshotsMock.Object,
-        _importMock.Object,
-        _globalDefaultsMock.Object);
+    private KasaDraftService CreateSut()
+    {
+        // Default: GetHistoryAsync boş liste dönsün (çözülen kayıt yok)
+        _hesapKontrolMock
+            .Setup(h => h.GetHistoryAsync(
+                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(),
+                It.IsAny<BankaHesapTuru?>(), It.IsAny<KayitDurumu?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<HesapKontrolKaydi>());
+
+        return new KasaDraftService(
+            _snapshotsMock.Object,
+            _importMock.Object,
+            _globalDefaultsMock.Object,
+            _hesapKontrolMock.Object,
+            Mock.Of<ILogger<KasaDraftService>>());
+    }
 
     // ───────────────────────────────────────────
     // BuildAsync

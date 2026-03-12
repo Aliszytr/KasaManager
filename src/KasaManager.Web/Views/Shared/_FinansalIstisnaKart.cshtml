@@ -1,0 +1,455 @@
+@* Financial Exceptions — İstisna Özet Kartı (vNext Faz 2)
+   KasaPreview'da tüm kasa türlerinde gösterilir.
+   Faz 2: Kısmi çözüm, explainability, devredilmiş istisnalar *@
+
+@using KasaManager.Domain.FinancialExceptions
+@model KasaManager.Web.Models.KasaPreviewViewModel
+
+@{
+    var istisnalar = Model.FinansalIstisnalar ?? new List<FinansalIstisna>();
+    var aktifler = istisnalar.Where(x => x.Durum != IstisnaDurumu.Cozuldu && x.Durum != IstisnaDurumu.Iptal).ToList();
+    var onaylilar = aktifler.Where(x => x.KararDurumu == KararDurumu.Onaylandi).ToList();
+    var bekleyenler = aktifler.Where(x => x.KararDurumu == KararDurumu.IncelemeBekliyor).ToList();
+
+    decimal toplamOnayli = onaylilar.Sum(x => {
+        var bekleyen = BekleyenTutarCalculator.Hesapla(x);
+        return x.EtkiYonu == KasaEtkiYonu.Azaltan ? -bekleyen : bekleyen;
+    });
+    decimal toplamBekleyen = bekleyenler.Sum(x => {
+        var bekleyen = BekleyenTutarCalculator.Hesapla(x);
+        return x.EtkiYonu == KasaEtkiYonu.Azaltan ? -bekleyen : bekleyen;
+    });
+    // Devredilmiş istisnalar (dünden)
+    var devredilmisler = istisnalar.Where(x => x.Durum == IstisnaDurumu.ErtesiGuneDevredildi).ToList();
+}
+
+@* ─── Devredilmiş İstisnalar Uyarısı (Faz 2) ─── *@
+@if (ViewBag.DevredilmisIstisnalar is List<FinansalIstisna> devList && devList.Count > 0)
+{
+<div class="card shadow-sm mt-3 border-info">
+    <div class="card-header bg-info bg-opacity-10">
+        <i class="fas fa-forward text-info me-2"></i>
+        <strong>Devredilmiş İstisnalar</strong>
+        <span class="badge bg-info text-dark ms-2">@devList.Count kayıt</span>
+        <span class="text-muted small ms-2">— Dünden devredilmiş, operatör kararı bekliyor</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Kaynak Tarih</th>
+                        <th>Tür</th>
+                        <th>Hesap</th>
+                        <th class="text-end">Kalan Tutar</th>
+                        <th>Neden</th>
+                        <th class="text-center">Aksiyon</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var dev in devList)
+                    {
+                        var devBekleyen = BekleyenTutarCalculator.Hesapla(dev);
+                        <tr>
+                            <td class="small">@dev.IslemTarihi.ToString("dd.MM.yyyy")</td>
+                            <td class="small">@dev.Tur</td>
+                            <td class="small">@dev.HesapTuru</td>
+                            <td class="text-end fw-bold">@devBekleyen.ToString("N2") ₺</td>
+                            <td class="small text-muted">@(dev.Neden ?? "—")</td>
+                            <td class="text-center">
+                                <form asp-action="CreateFromDevredilmis" asp-controller="KasaPreview" method="post" class="d-inline">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="parentId" value="@dev.Id" />
+                                    <input type="hidden" name="redirectKasaType" value="@Model.KasaType" />
+                                    <button type="submit" class="btn btn-sm btn-primary">
+                                        <i class="fas fa-plus me-1"></i>Bugün İçin Yeni İstisna Aç
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+}
+
+@if (istisnalar.Count > 0)
+{
+<div class="card shadow-sm mt-3 border-warning">
+    <div class="card-header bg-warning bg-opacity-10 d-flex align-items-center justify-content-between">
+        <span>
+            <i class="fas fa-exclamation-triangle text-warning me-2"></i>
+            <strong>Finansal İstisnalar</strong>
+            <span class="badge bg-warning text-dark ms-2">@aktifler.Count aktif</span>
+        </span>
+        <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFinExCreate">
+            <i class="fas fa-plus me-1"></i>Yeni İstisna
+        </button>
+    </div>
+    <div class="card-body p-0">
+        @* ─── Yeni İstisna Oluşturma Formu ─── *@
+        <div class="collapse p-3 bg-light border-bottom" id="collapseFinExCreate">
+            <form asp-action="CreateFinansalIstisna" method="post">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="IslemTarihi" value="@(Model.SelectedDate?.ToString("yyyy-MM-dd") ?? DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd"))" />
+                <input type="hidden" name="RedirectKasaType" value="@Model.KasaType" />
+                <div class="row g-2 mb-2">
+                    <div class="col-md-3">
+                        <label class="form-label form-label-sm fw-bold">Tür</label>
+                        <select name="Tur" class="form-select form-select-sm">
+                            <option value="0">Başarısız Virman</option>
+                            <option value="1">Sisteme Girilmeyen EFT</option>
+                            <option value="2">Gecikmeli Banka Hareketi</option>
+                            <option value="3">Kısmi İşlem</option>
+                            <option value="4">Bankadan Çıkamayan Tutar</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label form-label-sm fw-bold">Kategori</label>
+                        <select name="Kategori" class="form-select form-select-sm">
+                            <option value="0">Banka Transfer Hatası</option>
+                            <option value="1">Bekleyen Sistem Girişi</option>
+                            <option value="2">Kısmi İşlenmiş</option>
+                            <option value="3">Gecikmeli Yansıma</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label form-label-sm fw-bold">Hesap Türü</label>
+                        <select name="HesapTuru" class="form-select form-select-sm">
+                            <option value="0">Tahsilat</option>
+                            <option value="1">Harç</option>
+                            <option value="2">Stopaj</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label form-label-sm fw-bold">Etki Yönü</label>
+                        <select name="EtkiYonu" class="form-select form-select-sm">
+                            <option value="0">Artıran (+)</option>
+                            <option value="1">Azaltan (−)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="row g-2 mb-2">
+                    <div class="col-md-3">
+                        <label class="form-label form-label-sm fw-bold">Beklenen Tutar</label>
+                        <input type="number" step="0.01" name="BeklenenTutar" class="form-control form-control-sm" required />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label form-label-sm fw-bold">Gerçekleşen Tutar</label>
+                        <input type="number" step="0.01" name="GerceklesenTutar" class="form-control form-control-sm" value="0" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label form-label-sm fw-bold">Sisteme Girilen Tutar</label>
+                        <input type="number" step="0.01" name="SistemeGirilenTutar" class="form-control form-control-sm" value="0" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label form-label-sm fw-bold">Hedef Hesap Açıklama</label>
+                        <input type="text" name="HedefHesapAciklama" class="form-control form-control-sm" placeholder="Ör: Stopaj hesabı" />
+                    </div>
+                </div>
+                <div class="row g-2 mb-2">
+                    <div class="col-md-6">
+                        <label class="form-label form-label-sm fw-bold">Neden</label>
+                        <input type="text" name="Neden" class="form-control form-control-sm" placeholder="İstisna nedeni" required />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label form-label-sm fw-bold">Açıklama</label>
+                        <input type="text" name="Aciklama" class="form-control form-control-sm" placeholder="Ek açıklama (opsiyonel)" />
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-sm btn-primary">
+                    <i class="fas fa-save me-1"></i>Oluştur (İnceleme Bekliyor)
+                </button>
+            </form>
+        </div>
+
+        @* ─── İstisna Listesi ─── *@
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Tür</th>
+                        <th>Hesap</th>
+                        <th class="text-end">Bekleyen</th>
+                        <th>Etki</th>
+                        <th>Durum</th>
+                        <th>Karar</th>
+                        <th>Neden</th>
+                        <th class="text-center">Aksiyonlar</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var ex in aktifler)
+                    {
+                        var bekleyenTutar = BekleyenTutarCalculator.Hesapla(ex);
+                        var isEffective = BekleyenTutarCalculator.IsRuntimeEffective(ex);
+                        var etkiClass = ex.EtkiYonu == KasaEtkiYonu.Artiran ? "text-success" : "text-danger";
+                        var etkiSign = ex.EtkiYonu == KasaEtkiYonu.Artiran ? "+" : "−";
+                        var kararBadge = ex.KararDurumu switch
+                        {
+                            KararDurumu.IncelemeBekliyor => "bg-secondary",
+                            KararDurumu.Onaylandi => "bg-success",
+                            KararDurumu.Reddedildi => "bg-danger",
+                            _ => "bg-secondary"
+                        };
+                        var kararLabel = ex.KararDurumu switch
+                        {
+                            KararDurumu.IncelemeBekliyor => "İnceleniyor",
+                            KararDurumu.Onaylandi => "Onaylı ✅",
+                            KararDurumu.Reddedildi => "Reddedildi",
+                            _ => "—"
+                        };
+                        var turLabel = ex.Tur switch
+                        {
+                            IstisnaTuru.BasarisizVirman => "🏦 Başarısız Virman",
+                            IstisnaTuru.SistemeGirilmeyenEft => "📨 Sisteme Girilmeyen EFT",
+                            IstisnaTuru.GecikmeliBankaHareketi => "⏳ Gecikmeli Banka",
+                            IstisnaTuru.KismiIslem => "📋 Kısmi İşlem",
+                            IstisnaTuru.BankadanCikamayanTutar => "🔒 Bankadan Çıkamayan",
+                            _ => "❓ Bilinmiyor"
+                        };
+                        var hesapLabel = ex.HesapTuru switch
+                        {
+                            KasaManager.Domain.Reports.HesapKontrol.BankaHesapTuru.Tahsilat => "Tahsilat",
+                            KasaManager.Domain.Reports.HesapKontrol.BankaHesapTuru.Harc => "Harç",
+                            KasaManager.Domain.Reports.HesapKontrol.BankaHesapTuru.Stopaj => "Stopaj",
+                            _ => "—"
+                        };
+                        var durumLabel = ex.Durum switch
+                        {
+                            IstisnaDurumu.Acik => "Açık",
+                            IstisnaDurumu.KismiCozuldu => "Kısmen Çözüldü",
+                            IstisnaDurumu.ErtesiGuneDevredildi => "Devredildi",
+                            _ => "—"
+                        };
+                        // Faz 2: Explainability — formül açıklaması
+                        var formulaExplain = BekleyenTutarCalculator.ExplainFormula(ex);
+
+                        <tr class="@(ex.KararDurumu == KararDurumu.Reddedildi ? "table-secondary" : "") @(isEffective ? "" : "opacity-75")">
+                            <td class="small">@turLabel</td>
+                            <td class="small">@hesapLabel</td>
+                            <td class="text-end fw-bold @etkiClass">
+                                @etkiSign@bekleyenTutar.ToString("N2") ₺
+                                @if (isEffective)
+                                {
+                                    <i class="fas fa-bolt text-success ms-1" title="Hesaplamada aktif"></i>
+                                }
+                            </td>
+                            <td class="small">@(ex.EtkiYonu == KasaEtkiYonu.Artiran ? "Artıran" : "Azaltan")</td>
+                            <td class="small">@durumLabel</td>
+                            <td><span class="badge @kararBadge">@kararLabel</span></td>
+                            <td class="small">
+                                <span class="text-muted" title="@formulaExplain">
+                                    @(ex.Neden ?? "—")
+                                    <a href="#" class="text-info ms-1" data-bs-toggle="tooltip"
+                                       title="@formulaExplain" onclick="return false;">
+                                        <i class="fas fa-question-circle"></i>
+                                    </a>
+                                </span>
+                                @if (ex.ParentIstisnaId.HasValue)
+                                {
+                                    <br/><span class="badge bg-info bg-opacity-25 text-info small">devredildi</span>
+                                }
+                            </td>
+                            <td class="text-center text-nowrap">
+                                @if (ex.KararDurumu == KararDurumu.IncelemeBekliyor)
+                                {
+                                    <form asp-action="SetFinansalIstisnaKarar" method="post" class="d-inline">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@ex.Id" />
+                                        <input type="hidden" name="karar" value="1" />
+                                        <input type="hidden" name="redirectKasaType" value="@Model.KasaType" />
+                                        <button type="submit" class="btn btn-sm btn-outline-success" title="Onayla">✅</button>
+                                    </form>
+                                    <form asp-action="SetFinansalIstisnaKarar" method="post" class="d-inline">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@ex.Id" />
+                                        <input type="hidden" name="karar" value="2" />
+                                        <input type="hidden" name="redirectKasaType" value="@Model.KasaType" />
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Reddet">❌</button>
+                                    </form>
+                                }
+                                @if (ex.KararDurumu == KararDurumu.Onaylandi && (ex.Durum == IstisnaDurumu.Acik || ex.Durum == IstisnaDurumu.KismiCozuldu))
+                                {
+                                    @* Faz 2: Kısmi Çözüm *@
+                                    <button type="button" class="btn btn-sm btn-outline-info" title="Kısmen Girildi"
+                                            data-bs-toggle="collapse" data-bs-target="#kismiCozum-@ex.Id.ToString("N")">
+                                        📝
+                                    </button>
+                                    <form asp-action="SetFinansalIstisnaDurum" method="post" class="d-inline">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@ex.Id" />
+                                        <input type="hidden" name="durum" value="2" />
+                                        <input type="hidden" name="redirectKasaType" value="@Model.KasaType" />
+                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Çözüldü">🔧</button>
+                                    </form>
+                                    <form asp-action="SetFinansalIstisnaDurum" method="post" class="d-inline">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@ex.Id" />
+                                        <input type="hidden" name="durum" value="3" />
+                                        <input type="hidden" name="redirectKasaType" value="@Model.KasaType" />
+                                        <button type="submit" class="btn btn-sm btn-outline-secondary" title="Ertesi Güne Devret">📅</button>
+                                    </form>
+                                }
+                                <form asp-action="SetFinansalIstisnaDurum" method="post" class="d-inline">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@ex.Id" />
+                                    <input type="hidden" name="durum" value="4" />
+                                    <input type="hidden" name="redirectKasaType" value="@Model.KasaType" />
+                                    <button type="submit" class="btn btn-sm btn-outline-dark" title="İptal">🗑️</button>
+                                </form>
+                            </td>
+                        </tr>
+                        @* Faz 2: Kısmi Çözüm Inline Form *@
+                        @if (ex.KararDurumu == KararDurumu.Onaylandi && (ex.Durum == IstisnaDurumu.Acik || ex.Durum == IstisnaDurumu.KismiCozuldu))
+                        {
+                            <tr class="collapse" id="kismiCozum-@ex.Id.ToString("N")">
+                                <td colspan="8" class="bg-light p-2">
+                                    <form asp-action="SetFinansalIstisnaDurum" method="post" class="d-flex align-items-center gap-2">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@ex.Id" />
+                                        <input type="hidden" name="durum" value="1" />
+                                        <input type="hidden" name="redirectKasaType" value="@Model.KasaType" />
+                                        <span class="small fw-bold">Sisteme Girilen Tutar:</span>
+                                        <input type="number" step="0.01" name="sistemeGirilenTutar"
+                                               class="form-control form-control-sm" style="width: 140px;"
+                                               value="@ex.SistemeGirilenTutar" required />
+                                        <button type="submit" class="btn btn-sm btn-info">
+                                            <i class="fas fa-check me-1"></i>Kısmen Çözüldü
+                                        </button>
+                                        <span class="small text-muted">Mevcut: @ex.SistemeGirilenTutar.ToString("N2") ₺</span>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @* ─── Toplam Etki Özeti ─── *@
+        <div class="card-footer bg-light d-flex justify-content-between small">
+            <span>
+                <strong>Onaylı Kasa Etkisi:</strong>
+                <span class="fw-bold @(toplamOnayli >= 0 ? "text-success" : "text-danger")">
+                    @(toplamOnayli >= 0 ? "+" : "")@toplamOnayli.ToString("N2") ₺
+                </span>
+                <span class="text-muted ms-2">(@onaylilar.Count kayıt → Pool'a injection)</span>
+            </span>
+            @if (bekleyenler.Count > 0)
+            {
+                <span class="text-muted">
+                    İncelemede: @(toplamBekleyen >= 0 ? "+" : "")@toplamBekleyen.ToString("N2") ₺ (bekliyor)
+                </span>
+            }
+        </div>
+    </div>
+</div>
+}
+
+@* ─── Faz 3: Anomali Önerileri (default gizli, kullanıcı denetiminde) ─── *@
+@if (Model.AnomaliOnerileri?.Count > 0)
+{
+<div class="card shadow-sm mt-3" style="border-color: #7c3aed30 !important; border-width: 1px;">
+    <div class="card-header bg-transparent py-2 d-flex align-items-center justify-content-between"
+         style="cursor: pointer;"
+         data-bs-toggle="collapse" data-bs-target="#collapseAnomaliOnerileri"
+         aria-expanded="false" aria-controls="collapseAnomaliOnerileri">
+        <span class="d-flex align-items-center">
+            <i class="fas fa-lightbulb text-warning me-2" style="opacity: 0.7;"></i>
+            <span class="small text-muted">Akıllı Öneriler</span>
+            <span class="badge bg-secondary bg-opacity-50 ms-2 small">@Model.AnomaliOnerileri.Count</span>
+        </span>
+        <i class="fas fa-chevron-down text-muted small" id="anomaliChevron"></i>
+    </div>
+    <div class="collapse" id="collapseAnomaliOnerileri">
+        <div class="card-body p-0">
+            <div class="list-group list-group-flush">
+                @foreach (var oneri in Model.AnomaliOnerileri)
+                {
+                    var guvenClass = oneri.GuvenSeviyesi >= 0.7 ? "bg-success" : oneri.GuvenSeviyesi >= 0.5 ? "bg-warning text-dark" : "bg-secondary";
+                    <div class="list-group-item list-group-item-action py-2">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <strong class="small">@oneri.Baslik</strong>
+                                <p class="small text-muted mb-1">@oneri.Aciklama</p>
+                                <span class="badge bg-light text-dark small">@oneri.Kaynak</span>
+                                <span class="badge @guvenClass small">Güven: %@((oneri.GuvenSeviyesi * 100).ToString("F0"))</span>
+                            </div>
+                            <div class="d-flex gap-1 flex-nowrap align-items-center">
+                                @if (oneri.KaynakKayitId.HasValue)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-success text-nowrap anomali-aksiyon"
+                                            data-url="@Url.Action("Confirm", "HesapKontrol")"
+                                            data-kayitid="@oneri.KaynakKayitId"
+                                            title="Bu kaydı çözüldü olarak işaretle">
+                                        <i class="fas fa-check me-1"></i>Çözüldü
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-info text-nowrap anomali-aksiyon"
+                                            data-url="@Url.Action("StartTracking", "HesapKontrol")"
+                                            data-kayitid="@oneri.KaynakKayitId"
+                                            title="Bu kaydı takibe al">
+                                        <i class="fas fa-thumbtack me-1"></i>Takibe Al
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap anomali-aksiyon"
+                                            data-url="@Url.Action("Cancel", "HesapKontrol")"
+                                            data-kayitid="@oneri.KaynakKayitId"
+                                            data-sebep="KasaPreview anomali kartından yok sayıldı"
+                                            title="Bu kaydı yok say">
+                                        <i class="fas fa-times me-1"></i>Yok Say
+                                    </button>
+                                }
+                                <a href="@Url.Action("Index", "KasaPreview", new { kasaType = Model.KasaType })#collapseFinExCreate"
+                                   class="btn btn-sm btn-outline-warning text-nowrap"
+                                   title="Bu öneriyi istisna olarak ekle">
+                                    <i class="fas fa-plus me-1"></i>İstisna Ekle
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+}
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var token = document.querySelector('input[name="__RequestVerificationToken"]');
+    if (!token) return;
+
+    document.querySelectorAll('.anomali-aksiyon').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var url = btn.dataset.url;
+            var kayitId = btn.dataset.kayitid;
+            var sebep = btn.dataset.sebep || '';
+            var row = btn.closest('.list-group-item');
+
+            var body = new FormData();
+            body.append('__RequestVerificationToken', token.value);
+            body.append('id', kayitId);
+            if (sebep) body.append('sebep', sebep);
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>İşleniyor...';
+
+            fetch(url, { method: 'POST', body: body })
+                .then(function () {
+                    if (row) {
+                        row.style.transition = 'opacity 0.4s';
+                        row.style.opacity = '0';
+                        setTimeout(function () { row.remove(); }, 400);
+                    }
+                })
+                .catch(function () {
+                    btn.disabled = false;
+                    btn.innerHTML = '❌ Hata';
+                    alert('İşlem başarısız oldu. Lütfen sayfayı yenileyip tekrar deneyin.');
+                });
+        });
+    });
+});
+</script>
