@@ -486,16 +486,18 @@
                             <i class="fas fa-broom me-1"></i>Eski Kayıtları Temizle
                         </button>
                     </form>
-                    <button type="submit" form="bulkCancelForm" class="btn btn-outline-danger btn-sm"
-                            onclick="return confirm('Seçili kayıtları yok saymak istiyor musunuz?');"
+                    <button type="button" class="btn btn-outline-danger btn-sm"
                             id="btnBulkCancel" disabled>
                         <i class="fas fa-times-circle me-1"></i>Seçilenleri Yok Say
                     </button>
                 </div>
             </div>
 
-            <form method="post" asp-action="BulkCancel" id="bulkCancelForm">
+            @* BulkCancel formu — tablo dışında, nested form sorununu önler *@
+            <form method="post" asp-action="BulkCancel" id="bulkCancelForm" style="display:none;">
                 @Html.AntiForgeryToken()
+            </form>
+
                 <div class="table-responsive">
                     <table class="table table-hover table-striped">
                         <thead class="table-dark">
@@ -520,7 +522,7 @@
                             <tr>
                                 <td>
                                     <input type="checkbox" class="form-check-input row-select"
-                                           name="ids" value="@k.Id" />
+                                           data-id="@k.Id" />
                                 </td>
                                 <td>@k.AnalizTarihi.ToString("dd.MM.yyyy")</td>
                                 <td>
@@ -563,6 +565,7 @@
                                 <div class="btn-group btn-group-sm">
                                     <!-- Takibe Al -->
                                     <form method="post" asp-action="StartTracking" class="d-inline">
+                                        @Html.AntiForgeryToken()
                                         <input type="hidden" name="id" value="@k.Id" />
                                         <input type="hidden" name="not" value="" />
                                         <button type="submit" class="btn btn-outline-info btn-sm" title="Takibe Al"
@@ -572,6 +575,7 @@
                                     </form>
                                     <!-- Yok Say -->
                                     <form method="post" asp-action="Cancel" class="d-inline">
+                                        @Html.AntiForgeryToken()
                                         <input type="hidden" name="id" value="@k.Id" />
                                         <input type="hidden" name="sebep" value="" />
                                         <button type="submit" class="btn btn-outline-secondary btn-sm" title="Yok Say (yanlış tespit)"
@@ -601,7 +605,6 @@
                         </tbody>
                     </table>
                 </div>
-            </form>
         }
     }
 
@@ -614,10 +617,29 @@
         function updateBulk() {
             var checked = document.querySelectorAll('.row-select:checked').length;
             btnBulk.disabled = checked === 0;
-            btnBulk.textContent = checked > 0
-                ? '🚫 Seçilenleri Yok Say (' + checked + ')'
-                : '🚫 Seçilenleri Yok Say';
+            btnBulk.innerHTML = checked > 0
+                ? '<i class="fas fa-times-circle me-1"></i>Seçilenleri Yok Say (' + checked + ')'
+                : '<i class="fas fa-times-circle me-1"></i>Seçilenleri Yok Say';
         }
+
+        btnBulk.addEventListener('click', function() {
+            var checked = document.querySelectorAll('.row-select:checked');
+            if (checked.length === 0) return;
+            if (!confirm('Seçili ' + checked.length + ' kaydı yok saymak istiyor musunuz?')) return;
+
+            var form = document.getElementById('bulkCancelForm');
+            // Önceki dinamik input'ları temizle
+            form.querySelectorAll('input[name="ids"]').forEach(function(el) { el.remove(); });
+            // Seçili ID'leri hidden input olarak ekle
+            checked.forEach(function(cb) {
+                var input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'ids';
+                input.value = cb.getAttribute('data-id');
+                form.appendChild(input);
+            });
+            form.submit();
+        });
 
         selectAll.addEventListener('change', function() {
             document.querySelectorAll('.row-select').forEach(function(cb) {
