@@ -164,6 +164,9 @@ public sealed class KasaValidationService : IKasaValidationService
             {
                 mesaj += " Fark tamamen beklenen girişlerden kaynaklanmaktadır.";
             }
+            // Akıllı Takip Korelasyonu: fazla değer takipten çözülen kaydın karşılığı mı?
+            if (!string.IsNullOrEmpty(data.TakipCozumBildirim))
+                mesaj += $" 📌 {data.TakipCozumBildirim}";
 
             results.Add(new KasaValidationResult(
                 sev,
@@ -196,6 +199,9 @@ public sealed class KasaValidationService : IKasaValidationService
             {
                 mesajH += " Fark tamamen beklenen girişlerden kaynaklanmaktadır.";
             }
+            // Akıllı Takip Korelasyonu: fazla değer takipten çözülen kaydın karşılığı mı?
+            if (!string.IsNullOrEmpty(data.TakipCozumBildirim))
+                mesajH += $" 📌 {data.TakipCozumBildirim}";
 
             results.Add(new KasaValidationResult(
                 sev,

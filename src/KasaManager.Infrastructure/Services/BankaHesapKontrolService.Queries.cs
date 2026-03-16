@@ -403,12 +403,38 @@ public sealed partial class BankaHesapKontrolService
             mesaj = "\u2705 Beklenen d\u0131\u015f\u0131nda fark tespit edilmedi.";
 
         if (takipteKayitlar.Count > 0)
-            mesaj += $" \ud83d\udccc {takipteKayitlar.Count} kay\u0131t takipte.";
+            mesaj += $" 📌 {takipteKayitlar.Count} kayıt takipte.";
 
         var beklenenTahsilat = BeklenenNet(BankaHesapTuru.Tahsilat);
         var olaganDisiTahsilat = OlaganDisiNet(BankaHesapTuru.Tahsilat);
         var beklenenHarc = BeklenenNet(BankaHesapTuru.Harc);
         var olaganDisiHarc = OlaganDisiNet(BankaHesapTuru.Harc);
+
+        // ─── Akıllı Takip Korelasyonu ───
+        // Bugün takipten çözülen kayıtları getir (CrossDay gelen + el ile çözülen)
+        var bugunTakipCozulenler = await _db.HesapKontrolKayitlari
+            .Where(x => x.CozulmeTarihi == analizTarihi
+                     && x.TakipBaslangicTarihi.HasValue
+                     && x.HesapTuru != BankaHesapTuru.Stopaj
+                     && (x.Durum == KayitDurumu.Cozuldu || x.Durum == KayitDurumu.Onaylandi))
+            .ToListAsync(ct);
+
+        var takipDetaylar = new List<TakipCozumDetay>();
+        foreach (var k in bugunTakipCozulenler)
+            takipDetaylar.Add(new TakipCozumDetay(k.HesapTuru, k.Tutar, "Geldi", k.AnalizTarihi, k.DosyaNo, k.Aciklama));
+        foreach (var k in takipteKayitlar)
+            takipDetaylar.Add(new TakipCozumDetay(k.HesapTuru, k.Tutar, "TakipteDevam", k.AnalizTarihi, k.DosyaNo, k.Aciklama));
+
+        string? takipCozumBildirim = null;
+        if (bugunTakipCozulenler.Count > 0)
+        {
+            var toplam = bugunTakipCozulenler.Sum(x => x.Tutar);
+            var hesapTipleri = bugunTakipCozulenler
+                .GroupBy(x => x.HesapTuru)
+                .Select(g => $"{g.Key}: {g.Sum(x => x.Tutar):N2} ₺")
+                .ToList();
+            takipCozumBildirim = $"✅ Takipten {bugunTakipCozulenler.Count} kayıt geldi ({string.Join(", ", hesapTipleri)}) — toplam {toplam:N2} ₺ çözüldü.";
+        }
 
         return new EksikFazlaAutoFill(
             guneAitTahsilat,
@@ -431,6 +457,8 @@ public sealed partial class BankaHesapKontrolService
             ToplamFarkTahsilat: toplamFarkTahsilat,
             ToplamFarkHarc: toplamFarkHarc,
             BreakdownMesajTahsilat: BuildBreakdown(BankaHesapTuru.Tahsilat),
-            BreakdownMesajHarc: BuildBreakdown(BankaHesapTuru.Harc));
+            BreakdownMesajHarc: BuildBreakdown(BankaHesapTuru.Harc),
+            TakipCozumleri: takipDetaylar.Count > 0 ? takipDetaylar : null,
+            TakipCozumBildirim: takipCozumBildirim);
     }
 }

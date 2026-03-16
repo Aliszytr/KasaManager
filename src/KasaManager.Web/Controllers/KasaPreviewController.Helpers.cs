@@ -138,6 +138,9 @@ public sealed partial class KasaPreviewController
             model.OlaganDisiHarc = fill.OlaganDisiHarc;
             model.BreakdownMesajTahsilat = fill.BreakdownMesajTahsilat;
             model.BreakdownMesajHarc = fill.BreakdownMesajHarc;
+            // Akıllı Takip Korelasyonu
+            model.TakipCozumleri = fill.TakipCozumleri;
+            model.TakipCozumBildirim = fill.TakipCozumBildirim;
 
             // ─── CrossDay otomatik eşleştirme (kasa hesaplama sırasında tetiklenir) ───
             try
@@ -451,7 +454,8 @@ public sealed partial class KasaPreviewController
                 data.BankaVirmanTahsilat = PoolDecimal("banka_virman_tahsilat");
                 data.BankaMevduatHarc = PoolDecimal("banka_mevduat_harc");
             }
-
+            // Akıllı Takip Korelasyonu: Validation kurallarına takip bilgisini aktar
+            data.TakipCozumBildirim = model.TakipCozumBildirim;
             model.ValidationResults = _validation.Validate(data);
 
             var raporTarihi = model.SelectedDate ?? DateOnly.FromDateTime(DateTime.Today);

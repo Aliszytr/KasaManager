@@ -156,6 +156,12 @@ public sealed class KasaPreviewViewModel
     /// <summary>Kısmi güvenli eşleşme sayısı (kullanıcı onayı bekleyen)</summary>
     public int CrossDayPotansiyelSayisi { get; set; }
 
+    // ===== Akıllı Takip Korelasyonu =====
+    /// <summary>Bugün çözülen + hâlâ takipte olan kayıtların detayları (UI durum etiketleri için)</summary>
+    public List<TakipCozumDetay>? TakipCozumleri { get; set; }
+    /// <summary>Proaktif bildirim mesajı (null ise bildirim yok)</summary>
+    public string? TakipCozumBildirim { get; set; }
+
     // ── Loaded Snapshot (In-Context CRUD) ──
     /// <summary>Yüklü rapor ID'si (null = yeni/boş)</summary>
     public Guid? LoadedSnapshotId { get; set; }

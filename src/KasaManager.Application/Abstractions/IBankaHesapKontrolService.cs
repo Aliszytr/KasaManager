@@ -279,7 +279,25 @@ public sealed record EksikFazlaAutoFill(
     /// <summary>Kırılım açıklaması — Tahsilat. Ör: "EFT iade 1.317,50 ₺, Olağan dışı 300 ₺"</summary>
     string? BreakdownMesajTahsilat = null,
     /// <summary>Kırılım açıklaması — Harç</summary>
-    string? BreakdownMesajHarc = null);
+    string? BreakdownMesajHarc = null,
+    // ─── Akıllı Takip Korelasyonu ───
+    /// <summary>Bugün çözülen + hâlâ takipte olan kayıtların detayları (KasaPreview UI durum etiketleri için)</summary>
+    List<TakipCozumDetay>? TakipCozumleri = null,
+    /// <summary>Proaktif bildirim mesajı: hangi takip kayıtları çözüldü</summary>
+    string? TakipCozumBildirim = null);
+
+/// <summary>
+/// Kasa hesaplama sırasında çözülen/mevcut takip kaydının detayı.
+/// KasaPreview UI'da "Geldi ✅" / "Takipte 📌" etiketi göstermek için kullanılır.
+/// </summary>
+public sealed record TakipCozumDetay(
+    BankaHesapTuru HesapTuru,
+    decimal Tutar,
+    /// <summary>"Geldi" = bugün CrossDay ile çözüldü, "TakipteDevam" = hâlâ takipte</summary>
+    string Durum,
+    DateOnly AnalizTarihi,
+    string? DosyaNo,
+    string? Aciklama);
 
 /// <summary>
 /// Takip motoru kümülatif özet bilgisi.

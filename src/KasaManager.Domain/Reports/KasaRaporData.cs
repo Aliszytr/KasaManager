@@ -114,6 +114,12 @@ public sealed class KasaRaporData
     public decimal BankaMevduatTahsilat { get; set; }   // BankaTahsilat.xlsx: İşlem Adı = "Mevduata Para Yatırma"
     public decimal BankaVirmanTahsilat { get; set; }    // BankaTahsilat.xlsx: İşlem Adı = "Virman"
     public decimal BankaMevduatHarc { get; set; }       // BankaHarc.xlsx: İşlem Adı = "Mevduata Para Yatırma"
+
+    // ══════════════════════════════════════════════════════
+    // Akıllı Takip Korelasyonu (Validation mesajları için)
+    // ══════════════════════════════════════════════════════
+    /// <summary>Bugün takipten çözülen kayıtların bildirim mesajı. Validation kuralları korelasyon için kullanır.</summary>
+    public string? TakipCozumBildirim { get; set; }
 }
 
 /// <summary>

@@ -1807,6 +1807,48 @@
         </div>
         }
 
+        @* ═══ Akıllı Takip Korelasyonu — Takipten Çözülen Kayıtlar Bildirimi ═══ *@
+        @if (!string.IsNullOrEmpty(Model.TakipCozumBildirim))
+        {
+        <div class="row g-3 mb-3">
+            <div class="col-12">
+                <div style="background: linear-gradient(135deg, rgba(8,145,178,0.12), rgba(59,130,246,0.08));
+                            border: 1px solid rgba(8,145,178,0.35); border-radius: 12px; padding: 16px 20px;
+                            display: flex; align-items: center; gap: 14px; animation: slideDown 0.4s ease-out;">
+                    <div style="width: 44px; height: 44px; border-radius: 50%; background: rgba(8,145,178,0.2);
+                                display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <i class="fas fa-sync-alt" style="font-size: 18px; color: #0891b2;"></i>
+                    </div>
+                    <div style="flex: 1;">
+                        <div style="font-size: 14px; font-weight: 700; color: #0891b2; margin-bottom: 2px;">
+                            <i class="fas fa-bell me-1"></i> Takip Çözüm Bildirimi
+                        </div>
+                        <div style="font-size: 13px; color: var(--text-secondary);">
+                            @Model.TakipCozumBildirim
+                        </div>
+                        @if (Model.TakipCozumleri?.Any(x => x.Durum == "Geldi") == true)
+                        {
+                            <div style="margin-top: 6px; font-size: 11px; color: var(--text-muted);">
+                                @foreach (var d in Model.TakipCozumleri.Where(x => x.Durum == "Geldi"))
+                                {
+                                    <span style="display: inline-block; margin-right: 8px; padding: 2px 8px; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); border-radius: 6px; font-size: 10px; color: #22c55e; font-weight: 600;">
+                                        @d.AnalizTarihi.ToString("dd.MM") @d.HesapTuru @d.Tutar.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR")) ₺ ✅
+                                    </span>
+                                }
+                            </div>
+                        }
+                    </div>
+                    <a href="/HesapKontrol?tab=takipte" class="kasa-btn"
+                       style="font-size: 11px; padding: 6px 14px; border-radius: 8px;
+                              background: rgba(8,145,178,0.1); color: #0891b2;
+                              border: 1px solid rgba(8,145,178,0.3); white-space: nowrap; text-decoration: none;">
+                        <i class="fas fa-external-link-alt me-1"></i> Takip Detayları
+                    </a>
+                </div>
+            </div>
+        </div>
+        }
+
         @if (kasaTypeClass == "sabah")
         {
         <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -1856,6 +1898,17 @@
                                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px;">
                                     <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
                                         <i class="fas fa-arrow-left me-2" style="color: var(--kasa-warning); width: 16px;"></i>Önceki Günden Gelen
+                                        @{
+                                            var takipDurumTahsilat = Model.TakipCozumleri?.FirstOrDefault(x => x.HesapTuru == KasaManager.Domain.Reports.HesapKontrol.BankaHesapTuru.Tahsilat);
+                                        }
+                                        @if (takipDurumTahsilat?.Durum == "Geldi")
+                                        {
+                                            <span style="font-size: 9px; padding: 1px 6px; background: rgba(34,197,94,0.15); color: #22c55e; border-radius: 4px; font-weight: 700; margin-left: 6px;">Geldi ✅</span>
+                                        }
+                                        else if (takipDurumTahsilat?.Durum == "TakipteDevam")
+                                        {
+                                            <span style="font-size: 9px; padding: 1px 6px; background: rgba(245,158,11,0.15); color: #f59e0b; border-radius: 4px; font-weight: 700; margin-left: 6px;">Takipte 📌</span>
+                                        }
                                     </span>
                                     <span style="font-size: 16px; font-weight: 700;">@ResultVal("dunden_eksik_fazla_gelen_tahsilat") ₺</span>
                                 </div>
@@ -1894,6 +1947,17 @@
                                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px;">
                                     <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
                                         <i class="fas fa-arrow-left me-2" style="color: var(--kasa-warning); width: 16px;"></i>Önceki Günden Gelen
+                                        @{
+                                            var takipDurumHarc = Model.TakipCozumleri?.FirstOrDefault(x => x.HesapTuru == KasaManager.Domain.Reports.HesapKontrol.BankaHesapTuru.Harc);
+                                        }
+                                        @if (takipDurumHarc?.Durum == "Geldi")
+                                        {
+                                            <span style="font-size: 9px; padding: 1px 6px; background: rgba(34,197,94,0.15); color: #22c55e; border-radius: 4px; font-weight: 700; margin-left: 6px;">Geldi ✅</span>
+                                        }
+                                        else if (takipDurumHarc?.Durum == "TakipteDevam")
+                                        {
+                                            <span style="font-size: 9px; padding: 1px 6px; background: rgba(245,158,11,0.15); color: #f59e0b; border-radius: 4px; font-weight: 700; margin-left: 6px;">Takipte 📌</span>
+                                        }
                                     </span>
                                     <span style="font-size: 16px; font-weight: 700;">@ResultVal("dunden_eksik_fazla_gelen_harc") ₺</span>
                                 </div>
