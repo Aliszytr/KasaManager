@@ -108,9 +108,10 @@ public sealed class FormulaContextFactory : IFormulaContextFactory
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Parse hatası - sessizce atla
+                // P1-EXC-01: SelectedInputs JSON parse hatası — alan seçimi atlanacak
+                System.Diagnostics.Debug.WriteLine($"[FormulaContextFactory] SelectedInputsJson parse hatası: {ex.Message}");
             }
         }
         

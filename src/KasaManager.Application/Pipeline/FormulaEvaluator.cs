@@ -5,10 +5,14 @@ using System.Text.RegularExpressions;
 namespace KasaManager.Application.Pipeline;
 
 /// <summary>
-/// R20 Wave 2: Formula Evaluator - formül hesaplama motoru.
-/// System.Data.DataTable.Compute kullanarak expression evaluation yapar.
-/// Harici bağımlılık gerektirmez.
+/// R20 Wave 2: Formula Evaluator - DataTable.Compute tabanlı formül hesaplama motoru.
+/// 
+/// ⚠️ P1-ARC-01: Bu sınıf R20 pipeline prototipidir ve PRODUCTION hesaplama yolunda KULLANILMAZ.
+/// Production formül motoru: <see cref="KasaManager.Application.Services.FormulaEngineService"/> (NCalc tabanlı).
+/// Bu sınıf yalnızca FormulaContext tarafından dahili olarak çağrılır; hiçbir Web controller'dan erişilmez.
+/// Yeni formül hesaplama ihtiyaçları için FormulaEngineService kullanılmalıdır.
 /// </summary>
+[Obsolete("R20 prototype. Production hesaplama motoru FormulaEngineService (NCalc) kullanır. Bu sınıf production path'te çağrılmaz.")]
 public sealed partial class FormulaEvaluator
 {
     private readonly CellRegistry _cells;

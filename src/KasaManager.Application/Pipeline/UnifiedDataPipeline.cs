@@ -310,9 +310,11 @@ public sealed class UnifiedDataPipeline : IDataPipeline
                 count++;
             }
         }
-        catch
+        catch (Exception ex)
         {
-            debugLog.Add($"[Carryover] Results.ValuesJson parse edilemedi");
+            // P1-EXC-01: Carryover JSON parse hatası — dünden devreden değer 0 olacak
+            debugLog.Add($"[Carryover] Results.ValuesJson parse edilemedi: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[UnifiedDataPipeline] Carryover parse hatası (önceki gün: {previousDate:yyyy-MM-dd}): {ex.Message}");
         }
 
         return count;

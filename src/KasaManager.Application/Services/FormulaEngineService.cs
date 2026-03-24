@@ -290,6 +290,11 @@ public sealed class FormulaEngineService : IFormulaEngineService
                 else if (rawResult is int i) resultDecimal = (decimal)i;
                 else if (rawResult is long l) resultDecimal = (decimal)l;
 
+                // P1-FIN-01: IEEE 754 precision kaybını finansal yuvarlama ile düzelt.
+                // NCalc çoğu aritmetikte double döner; (decimal)dbl cast'i
+                // kuruş altı artıklar bırakabilir (ör: 300.00000000000003).
+                // FinancialMath.Round: 2 basamak, MidpointRounding.AwayFromZero.
+                resultDecimal = Domain.Helpers.FinancialMath.Round(resultDecimal);
                 outputs[t.TargetKey] = resultDecimal;
                 run.Outputs[t.TargetKey] = resultDecimal;
                 

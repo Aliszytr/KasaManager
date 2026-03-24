@@ -4,10 +4,13 @@ using KasaManager.Domain.Abstractions;
 namespace KasaManager.Application.Pipeline;
 
 /// <summary>
-/// R20 Wave 2: Formula Context - merkezi koordinatör.
-/// Excel benzeri formül motoru için tek veri kaynağı ve hesaplama merkezi.
-/// CellRegistry + FormulaRegistry + Evaluator birleşimini yönetir.
+/// R20 Wave 2: Formula Context - merkezi koordinatör (R20 pipeline prototipi).
+/// 
+/// ⚠️ P1-ARC-01: Bu sınıf R20 pipeline prototipidir ve PRODUCTION hesaplama yolunda KULLANILMAZ.
+/// Production formül motoru: <see cref="KasaManager.Application.Services.FormulaEngineService"/> (NCalc tabanlı).
+/// Hiçbir Web controller bu sınıfın Evaluate() metodunu çağırmaz.
 /// </summary>
+[Obsolete("R20 prototype. Production hesaplama motoru FormulaEngineService (NCalc) kullanır. Bu sınıf production path'te çağrılmaz.")]
 public sealed class FormulaContext
 {
     /// <summary>Tüm veri hücreleri.</summary>

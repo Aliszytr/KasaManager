@@ -137,9 +137,10 @@ public sealed class KasaRaporSnapshotService : IKasaRaporSnapshotService
                 var normalizedInputs = KasaManager.Domain.FormulaEngine.MissingFieldHandler.EnsureAllDecimalFields(inputsDict);
                 snapshot.Inputs.ValuesJson = System.Text.Json.JsonSerializer.Serialize(normalizedInputs);
             }
-            catch
+            catch (Exception ex)
             {
-                // JSON parse hatası - orijinal değeri koru
+                // P1-EXC-01: JSON parse hatası — orijinal değeri koru, ama sessiz kalma
+                System.Diagnostics.Debug.WriteLine($"[KasaRaporSnapshotService] Inputs JSON normalize hatası (SnapshotId={snapshot.Id}): {ex.Message}");
             }
         }
         
@@ -152,9 +153,10 @@ public sealed class KasaRaporSnapshotService : IKasaRaporSnapshotService
                 var normalizedResults = KasaManager.Domain.FormulaEngine.MissingFieldHandler.EnsureAllDecimalFields(resultsDict);
                 snapshot.Results.ValuesJson = System.Text.Json.JsonSerializer.Serialize(normalizedResults);
             }
-            catch
+            catch (Exception ex)
             {
-                // JSON parse hatası - orijinal değeri koru
+                // P1-EXC-01: JSON parse hatası — orijinal değeri koru, ama sessiz kalma
+                System.Diagnostics.Debug.WriteLine($"[KasaRaporSnapshotService] Results JSON normalize hatası (SnapshotId={snapshot.Id}): {ex.Message}");
             }
         }
         
@@ -179,9 +181,10 @@ public sealed class KasaRaporSnapshotService : IKasaRaporSnapshotService
                 return new Dictionary<string, decimal>(decimalDict, StringComparer.OrdinalIgnoreCase);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Decimal parse başarısız - string olarak dene
+            // P1-EXC-01: Decimal parse başarısız — string fallback'e düşecek
+            System.Diagnostics.Debug.WriteLine($"[KasaRaporSnapshotService] ValuesJson decimal parse fallback: {ex.Message}");
         }
         
         try
@@ -204,9 +207,10 @@ public sealed class KasaRaporSnapshotService : IKasaRaporSnapshotService
                 return result;
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Parse başarısız
+            // P1-EXC-01: String→decimal parse de başarısız — boş dictionary dönecek
+            System.Diagnostics.Debug.WriteLine($"[KasaRaporSnapshotService] ValuesJson string parse de başarısız: {ex.Message}");
         }
         
         return new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
