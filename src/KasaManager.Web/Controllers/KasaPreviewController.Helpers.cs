@@ -63,6 +63,20 @@ public sealed partial class KasaPreviewController
             // ROW 4D: Bankaya Yatırılacak Doğrulama (Sabah Kasa)
             BankaMevduatTahsilat = PF("RptBankaMevduatTahsilat"),
             BankaVirmanTahsilat = PF("RptBankaVirmanTahsilat"), BankaMevduatHarc = PF("RptBankaMevduatHarc"),
+            // Kullanıcı Girişleri (Ek Girdiler — Opsiyonel)
+            KaydenTahsilat = PF("RptKaydenTahsilat"),
+            KaydenHarc = PF("RptKaydenHarc"),
+            CesitliNedenlerleBankadanCikamayanTahsilat = PF("RptCNBCikamayan"),
+            BankayaYatirilacakTahsilatiDegistir = PF("RptBankayaYatirilacakTahsilatiDegistir"),
+            BankayaYatirilacakHarciDegistir = PF("RptBankayaYatirilacakHarciDegistir"),
+            BankayaGonderilmisDeger = PF("RptBankayaGonderilmisDeger"),
+            KasadaKalacakHedef = PF("RptKasadaKalacakHedef"),
+            // Manuel Girdiler
+            BozukPara = PF("RptBozukPara"),
+            NakitPara = PF("RptNakitPara"),
+            GelmeyenD = PF("RptGelmeyenD"),
+            // Validation İletileri
+            ValidationMessagesJson = Request.Form["RptValidationMessagesJson"].ToString(),
         };
 
         // BankayaToplam backend'de hesaplanır
@@ -142,52 +156,9 @@ public sealed partial class KasaPreviewController
             model.TakipCozumleri = fill.TakipCozumleri;
             model.TakipCozumBildirim = fill.TakipCozumBildirim;
 
-            // ─── CrossDay otomatik eşleştirme (kasa hesaplama sırasında tetiklenir) ───
-            try
-            {
-                var crossDay = await _hesapKontrol.CrossDayReconcileAsync(analizTarihi, ct);
-                var kesinCount = crossDay.KesirEslesmeler.Count;
-                var potansiyelCount = crossDay.PotansiyelEslesmeler.Count;
-
-                if (kesinCount > 0 || potansiyelCount > 0)
-                {
-                    model.CrossDayEslesmeSayisi = kesinCount;
-                    model.CrossDayToplamTutar = crossDay.KesirEslesmeler.Sum(x => x.Tutar);
-
-                    var parts = new List<string>();
-                    if (kesinCount > 0)
-                        parts.Add($"✅ {kesinCount} kayıt DosyaNo doğrulandı — otomatik çözüldü ({model.CrossDayToplamTutar:N2} ₺).");
-                    if (potansiyelCount > 0)
-                    {
-                        var potTutar = crossDay.PotansiyelEslesmeler.Sum(x => x.Tutar);
-                        parts.Add($"⚠️ {potansiyelCount} kısmi eşleşme onayınızı bekliyor ({potTutar:N2} ₺).");
-                        model.CrossDayPotansiyelSayisi = potansiyelCount;
-                    }
-                    model.CrossDayBildirim = string.Join(" ", parts);
-                    _log.LogInformation("CrossDay: {Kesin} kesin, {Potansiyel} potansiyel eşleşme",
-                        kesinCount, potansiyelCount);
-
-                    // CrossDay çözüldükten sonra auto-fill verilerini güncelle
-                    if (kesinCount > 0)
-                    {
-                        var updatedFill = await _hesapKontrol.GetAutoFillDataAsync(analizTarihi, ct);
-                        if (updatedFill.HasData)
-                        {
-                            model.DundenEksikFazlaGelenTahsilat = updatedFill.BugunCozulenTahsilat;
-                            model.DundenEksikFazlaGelenHarc = updatedFill.BugunCozulenHarc;
-                            model.ToplamFarkTahsilat = updatedFill.ToplamFarkTahsilat;
-                            model.ToplamFarkHarc = updatedFill.ToplamFarkHarc;
-                            model.TakipteSayisi = updatedFill.TakipteSayisi;
-                            model.TakipteEksikTahsilat = updatedFill.TakipteEksikTahsilat;
-                            model.TakipteEksikHarc = updatedFill.TakipteEksikHarc;
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _log.LogWarning(ex, "CrossDay eşleştirme başarısız, kasa hesaplama etkilenmez");
-            }
+            // BUG-2 FIX: CrossDay burada tekrar çağrılmıyor.
+            // AnalyzeFromComparisonAsync zaten CrossDayReconcileAsync'i çalıştırır.
+            // Çift çalıştırma gereksiz DB yükü ve potansiyel orphan sorunu yaratıyordu.
         }
         catch (Exception ex)
         {

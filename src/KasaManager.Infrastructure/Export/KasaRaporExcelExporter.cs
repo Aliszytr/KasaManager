@@ -72,15 +72,15 @@ public static class KasaRaporExcelExporter
 
         row++;
         AddSection(ws, ref row, "BANKAYA GÖTÜRÜLECEK");
-        AddMoneyRow(ws, ref row, "Stopaj", data.BankayaStopaj);
-        if (!string.IsNullOrWhiteSpace(data.IbanStopaj))
-            AddRow(ws, ref row, "  IBAN Stopaj", data.IbanStopaj);
         AddMoneyRow(ws, ref row, "Tahsilat (Masraf)", data.BankayaTahsilat);
         if (!string.IsNullOrWhiteSpace(data.IbanTahsilat))
             AddRow(ws, ref row, "  IBAN Tahsilat", data.IbanTahsilat);
         AddMoneyRow(ws, ref row, "Harç", data.BankayaHarc);
         if (!string.IsNullOrWhiteSpace(data.IbanHarc))
             AddRow(ws, ref row, "  IBAN Harç", data.IbanHarc);
+        AddMoneyRow(ws, ref row, "Stopaj", data.BankayaStopaj);
+        if (!string.IsNullOrWhiteSpace(data.IbanStopaj))
+            AddRow(ws, ref row, "  IBAN Stopaj", data.IbanStopaj);
         AddMoneyRow(ws, ref row, "BANKAYA TOPLAM", data.BankayaToplam);
         AddMoneyRow(ws, ref row, "NAKİT TOPLAMI", data.NakitToplam);
 
@@ -234,10 +234,10 @@ public static class KasaRaporExcelExporter
         new("Genel Kasa", data.GenelKasa),
         new("Online Reddiyat", data.OnlineReddiyat),
         new("Bankadan Çıkan", data.BankadanCikan),
-        new("Toplam Stopaj", data.ToplamStopaj),
-        new("Bankaya Stopaj", data.BankayaStopaj),
         new("Bankaya Tahsilat", data.BankayaTahsilat),
         new("Bankaya Harç", data.BankayaHarc),
+        new("Toplam Stopaj", data.ToplamStopaj),
+        new("Bankaya Stopaj", data.BankayaStopaj),
         new("Bankaya Toplam", data.BankayaToplam),
         new("Nakit Toplam", data.NakitToplam),
         new("Kasadaki Nakit", data.KasadakiNakit),

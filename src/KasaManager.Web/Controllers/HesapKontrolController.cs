@@ -12,6 +12,11 @@ namespace KasaManager.Web.Controllers;
 [Authorize]
 public sealed class HesapKontrolController : Controller
 {
+    // ─── BUG-1 FIX: Akıllı File-Change Detection Cache ───
+    // Aynı dosyalar değişmeden sayfa yeniden yüklendiğinde analiz tekrar çalışmaz.
+    private static string? _lastAnalysisFileHash;
+    private static DateOnly? _lastAnalysisTarih;
+    private static readonly object _analysisLock = new();
     private readonly IBankaHesapKontrolService _service;
     private readonly IKasaRaporSnapshotService _snapshots;
     private readonly IHesapKontrolExportService _export;
@@ -73,26 +78,48 @@ public sealed class HesapKontrolController : Controller
             _log.LogWarning(ex, "Snapshot tarihleri alınamadı");
         }
 
-        // ── Otomatik Analiz: Seçilen tarihe göre verileri getir ──
+        // ── Otomatik Analiz: Akıllı File-Change Detection ──
+        // Dosyalar değişmediyse aynı tarih için analiz tekrar çalışmaz.
         try
         {
             var uploadFolder = Path.Combine(_env.WebRootPath, "Data", "Raporlar");
-            var rapor = await _service.AnalyzeFromComparisonAsync(analizTarihi, uploadFolder, ct);
-            _log.LogInformation("HesapKontrol otomatik analiz tamamlandı: {Tarih}", analizTarihi);
+            var currentHash = ComputeUploadFolderHash(uploadFolder);
+            bool shouldAnalyze;
 
-            // CrossDay eşleşme sonuçlarını kullanıcıya bildir
-            if (rapor.CrossDayEslesmeler.Count > 0)
+            lock (_analysisLock)
             {
-                var toplamTutar = rapor.CrossDayEslesmeler.Sum(x => x.Tutar);
-                TempData["CrossDay"] = $"✅ Takipteki {rapor.CrossDayEslesmeler.Count} kayıt DosyaNo doğrulanarak çözüldü! " +
-                    $"(Toplam: {toplamTutar:N2} ₺)";
+                shouldAnalyze = _lastAnalysisFileHash != currentHash
+                             || _lastAnalysisTarih != analizTarihi;
             }
-            if (rapor.PotansiyelEslesmeler.Count > 0)
+
+            if (shouldAnalyze)
             {
-                var potTutar = rapor.PotansiyelEslesmeler.Sum(x => x.Tutar);
-                TempData["CrossDayPotansiyel"] = $"⚠️ {rapor.PotansiyelEslesmeler.Count} kısmi eşleşme onayınızı bekliyor ({potTutar:N2} ₺)";
-                // Potansiyel eşleşmeleri JSON olarak TempData'ya kaydet (Takipte sekmesinde göstermek için)
-                TempData["PotansiyelEslesmelerJson"] = System.Text.Json.JsonSerializer.Serialize(rapor.PotansiyelEslesmeler);
+                var rapor = await _service.AnalyzeFromComparisonAsync(analizTarihi, uploadFolder, ct);
+                _log.LogInformation("HesapKontrol otomatik analiz tamamlandı: {Tarih}", analizTarihi);
+
+                lock (_analysisLock)
+                {
+                    _lastAnalysisFileHash = currentHash;
+                    _lastAnalysisTarih = analizTarihi;
+                }
+
+                // CrossDay eşleşme sonuçlarını kullanıcıya bildir
+                if (rapor.CrossDayEslesmeler.Count > 0)
+                {
+                    var toplamTutar = rapor.CrossDayEslesmeler.Sum(x => x.Tutar);
+                    TempData["CrossDay"] = $"✅ Takipteki {rapor.CrossDayEslesmeler.Count} kayıt DosyaNo doğrulanarak çözüldü! " +
+                        $"(Toplam: {toplamTutar:N2} ₺)";
+                }
+                if (rapor.PotansiyelEslesmeler.Count > 0)
+                {
+                    var potTutar = rapor.PotansiyelEslesmeler.Sum(x => x.Tutar);
+                    TempData["CrossDayPotansiyel"] = $"⚠️ {rapor.PotansiyelEslesmeler.Count} kısmi eşleşme onayınızı bekliyor ({potTutar:N2} ₺)";
+                    TempData["PotansiyelEslesmelerJson"] = System.Text.Json.JsonSerializer.Serialize(rapor.PotansiyelEslesmeler);
+                }
+            }
+            else
+            {
+                _log.LogDebug("HesapKontrol: Dosyalar değişmedi, analiz atlandı (tarih={Tarih})", analizTarihi);
             }
         }
         catch (Exception ex)
@@ -275,14 +302,14 @@ public sealed class HesapKontrolController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> BulkDismissStale(int gunSiniri = 2)
+    public async Task<IActionResult> BulkDismissStale(int gunSiniri = 2, CancellationToken ct = default)
     {
         var kullanici = User.Identity?.Name ?? "Anonim";
         var bugun = DateOnly.FromDateTime(DateTime.Today);
         var sinirTarih = bugun.AddDays(-gunSiniri);
 
         // Eski günlere ait Açık kayıtları bul (Stopaj hariç)
-        var eskiAciklar = await _service.GetOpenItemsAsync(ct: default);
+        var eskiAciklar = await _service.GetOpenItemsAsync(ct: ct);
         var staleKayitlar = eskiAciklar
             .Where(k => k.AnalizTarihi < sinirTarih
                      && k.HesapTuru != Domain.Reports.HesapKontrol.BankaHesapTuru.Stopaj)
@@ -479,6 +506,15 @@ public sealed class HesapKontrolController : Controller
         {
             var snapshot = await _service.GetDashboardForDateAsync(queryDate, ct);
 
+            // BUG-7 FIX: SnapshotTarihleri ve AnalizTarihi alanlarını doldur
+            List<DateOnly> snapshotTarihleri = new();
+            try
+            {
+                snapshotTarihleri = await _snapshots.GetAllSnapshotDatesAsync(
+                    KasaManager.Domain.Reports.KasaRaporTuru.Genel, ct);
+            }
+            catch (Exception ex2) { _log.LogDebug(ex2, "QueryDate: Snapshot tarihleri alınamadı"); }
+
             var vm = new HesapKontrolViewModel
             {
                 Dashboard = snapshot.Dashboard,
@@ -493,6 +529,8 @@ public sealed class HesapKontrolController : Controller
                 FilterBaslangic = queryDate,
                 FilterBitis = queryDate,
                 LastSnapshotDate = queryDate,
+                AnalizTarihi = queryDate,
+                SnapshotTarihleri = snapshotTarihleri,
                 Arama = ""
             };
 
@@ -581,5 +619,45 @@ public sealed class HesapKontrolController : Controller
             s = "\"" + s.Replace("\"", "\"\"") + "\"";
         }
         return s;
+    }
+
+    // ─── BUG-1 FIX: Upload klasörü dosya değişiklik hash'i ───
+    /// <summary>
+    /// Upload klasöründeki dosyaların LastWriteTime değerlerinden
+    /// bileşik bir hash üretir. Dosya değişikliği yoksa aynı hash döner.
+    /// </summary>
+    private static string ComputeUploadFolderHash(string uploadFolder)
+    {
+        if (!System.IO.Directory.Exists(uploadFolder))
+            return "EMPTY";
+
+        var files = System.IO.Directory.GetFiles(uploadFolder, "*.xls*")
+            .OrderBy(f => f)
+            .ToList();
+
+        if (files.Count == 0)
+            return "EMPTY";
+
+        var sb = new System.Text.StringBuilder();
+        foreach (var f in files)
+        {
+            var info = new System.IO.FileInfo(f);
+            sb.Append(info.Name).Append('|')
+              .Append(info.LastWriteTimeUtc.Ticks).Append('|')
+              .Append(info.Length).Append(';');
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Analiz cache'ini geçersiz kılar (dosya yükleme veya RunAnalysis sonrası).
+    /// </summary>
+    internal static void InvalidateAnalysisCache()
+    {
+        lock (_analysisLock)
+        {
+            _lastAnalysisFileHash = null;
+            _lastAnalysisTarih = null;
+        }
     }
 }

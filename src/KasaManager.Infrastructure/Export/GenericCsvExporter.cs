@@ -36,9 +36,9 @@ public static class GenericCsvExporter
         sb.AppendLine($"Stopaj Kontrolü{Sep}{(data.StopajKontrolOk ? "OK" : $"FARK: {data.StopajKontrolFark.ToString("N2", TR)}")}");
         sb.AppendLine();
 
-        AppendField(sb, "Bankaya Stopaj", data.BankayaStopaj);
         AppendField(sb, "Bankaya Tahsilat", data.BankayaTahsilat);
         AppendField(sb, "Bankaya Harç", data.BankayaHarc);
+        AppendField(sb, "Bankaya Stopaj", data.BankayaStopaj);
         AppendField(sb, "BANKAYA TOPLAM", data.BankayaToplam);
         AppendField(sb, "NAKİT TOPLAMI", data.NakitToplam);
         sb.AppendLine();

@@ -133,10 +133,10 @@ public sealed class KasaOzetRaporDocument : IDocument
             col.Item().Background("#E8F5E9").Padding(5)
                 .Text("BANKAYA GÖTÜRÜLECEK").FontSize(9).Bold().FontColor(Colors.Green.Darken3);
 
-            // Kalem satırları
-            col.Item().Element(c => BankaKalem(c, "Stopaj", _d.BankayaStopaj));
+            // Kalem satırları (Tahsilat → Harç → Stopaj)
             col.Item().Element(c => BankaKalem(c, "Tahsilat", _d.BankayaTahsilat));
             col.Item().Element(c => BankaKalem(c, "Harç", _d.BankayaHarc));
+            col.Item().Element(c => BankaKalem(c, "Stopaj", _d.BankayaStopaj));
 
             // TOPLAM
             col.Item().Background(Colors.Amber.Lighten5).BorderTop(1.5f).BorderColor(Colors.Amber.Darken1)

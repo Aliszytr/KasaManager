@@ -156,7 +156,8 @@ public sealed partial class BankaHesapKontrolService
             .Where(x => x.Durum == KayitDurumu.Takipte)
             .ToListAsync(ct);
 
-        var bugun = DateOnly.FromDateTime(DateTime.UtcNow);
+        // BUG-3 FIX: Local time kullan (TR UTC+3, gece 00-03 arası yanlış sonuç veriyordu)
+        var bugun = DateOnly.FromDateTime(DateTime.Now);
         var bugunCozulen = await _db.HesapKontrolKayitlari
             .CountAsync(x => x.CozulmeTarihi == bugun
                           && (x.Durum == KayitDurumu.Cozuldu || x.Durum == KayitDurumu.Onaylandi), ct);

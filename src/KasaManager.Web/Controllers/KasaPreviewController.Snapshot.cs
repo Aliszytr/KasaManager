@@ -290,6 +290,25 @@ public sealed partial class KasaPreviewController
             model.VergiKasaBakiyeToplam = raporData.VergiKasa;
             model.VergideBirikenKasa = raporData.VergideBirikenKasa;
             model.VergiKasaVeznedarlar = raporData.VergiCalisanlari;
+
+            // Kullanıcı Girişleri (Ek Girdiler — Opsiyonel) re-hydration
+            model.KaydenTahsilat = raporData.KaydenTahsilat;
+            model.KaydenHarc = raporData.KaydenHarc;
+            model.BankadanCekilen = raporData.BankadanCekilen;
+            model.CesitliNedenlerleBankadanCikamayanTahsilat = raporData.CesitliNedenlerleBankadanCikamayanTahsilat;
+            model.BankayaYatirilacakTahsilatiDegistir = raporData.BankayaYatirilacakTahsilatiDegistir;
+            model.BankayaYatirilacakHarciDegistir = raporData.BankayaYatirilacakHarciDegistir;
+            model.BankayaGonderilmisDeger = raporData.BankayaGonderilmisDeger;
+            model.KasadaKalacakHedef = raporData.KasadaKalacakHedef;
+
+            // Manuel Girdiler re-hydration
+            model.BozukPara = raporData.BozukPara;
+            model.NakitPara = raporData.NakitPara;
+            model.GelmeyenD = raporData.GelmeyenD;
+
+            // Günlük Not re-hydration
+            if (!string.IsNullOrEmpty(raporData.GunlukNot))
+                model.GunlukKasaNotu = raporData.GunlukNot;
         }
 
         // Panel + IBAN  hydration

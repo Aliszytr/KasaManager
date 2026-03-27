@@ -19,9 +19,6 @@ public static class PipelineServiceCollectionExtensions
         // Core Pipeline
         services.AddScoped<IDataPipeline, UnifiedDataPipeline>();
         
-        // Context Factory
-        services.AddScoped<IFormulaContextFactory, FormulaContextFactory>();
-        
         return services;
     }
 }

@@ -275,7 +275,7 @@ public sealed class BankaYazisiDocument : IDocument
     }
 
     // ═══════════════════════════════════════════════════════
-    // YATIRIM TABLOSU (Stopaj, Tahsilat, Harç) — opsiyonel
+    // YATIRIM TABLOSU (Tahsilat, Harç, Stopaj) — opsiyonel
     // ═══════════════════════════════════════════════════════
     private void ComposeYatirimTable(IContainer container)
     {
@@ -299,10 +299,10 @@ public sealed class BankaYazisiDocument : IDocument
                     .Text("Tutar (₺)").Bold().FontSize(9).FontColor(Colors.White);
             });
 
-            // Stopaj
+            // Tahsilat → Harç → Stopaj (stopaj virman ile yapıldığı için en sonda)
+            DataRow(table, "Tahsilat (Masraf)", _data.IbanTahsilat, _data.BankayaTahsilat, false);
+            DataRow(table, "Harç", _data.IbanHarc, _data.BankayaHarc, true);
             DataRow(table, "Stopaj", _data.IbanStopaj, _data.BankayaStopaj, false);
-            DataRow(table, "Tahsilat (Masraf)", _data.IbanTahsilat, _data.BankayaTahsilat, true);
-            DataRow(table, "Harç", _data.IbanHarc, _data.BankayaHarc, false);
 
             // Toplam
             table.Cell()

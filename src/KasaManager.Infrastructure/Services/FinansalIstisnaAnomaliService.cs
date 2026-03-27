@@ -88,6 +88,7 @@ public sealed class FinansalIstisnaAnomaliService : IFinansalIstisnaAnomaliServi
                 Tekrar = g.Count(),
                 SonTarih = g.Max(x => x.AnalizTarihi)
             })
+            .OrderByDescending(g => g.Tekrar)
             .Take(3)
             .ToListAsync(ct);
 

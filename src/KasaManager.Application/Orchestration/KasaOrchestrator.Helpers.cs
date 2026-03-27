@@ -282,6 +282,8 @@ public partial class KasaOrchestrator
          Add("vergiden_gelen", dto.VergidenGelen, "Manual");
          Add("gelmeyen_d", dto.GelmeyenD, "Manual");
          Add("bankaya_yatirilacak_tahsilati_degistir", dto.BankayaYatirilacakTahsilatiDegistir, "Manual");
+         // BUG-6 FIX: Aksam embedded formülü kullanıyor — pool'da yoksa formül patlar
+         Add("bankaya_yatirilacak_harci_degistir", dto.BankayaYatirilacakHarciDegistir, "Manual");
     }
 
     private void EnsureSelectedKeysInPool(KasaPreviewDto dto)

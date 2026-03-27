@@ -2920,6 +2920,21 @@
             <input type="hidden" name="RptBankaMevduatTahsilat" class="save-rpt-field" value="" />
             <input type="hidden" name="RptBankaVirmanTahsilat" class="save-rpt-field" value="" />
             <input type="hidden" name="RptBankaMevduatHarc" class="save-rpt-field" value="" />
+            @* Kullanıcı Girişleri (Ek Girdiler — Opsiyonel) *@
+            <input type="hidden" name="RptKaydenTahsilat" class="save-rpt-user-input" value="" />
+            <input type="hidden" name="RptKaydenHarc" class="save-rpt-user-input" value="" />
+            <input type="hidden" name="RptBankadanCekilen" class="save-rpt-user-input" value="" />
+            <input type="hidden" name="RptCNBCikamayan" class="save-rpt-user-input" value="" />
+            <input type="hidden" name="RptBankayaYatirilacakTahsilatiDegistir" class="save-rpt-user-input" value="" />
+            <input type="hidden" name="RptBankayaYatirilacakHarciDegistir" class="save-rpt-user-input" value="" />
+            <input type="hidden" name="RptBankayaGonderilmisDeger" class="save-rpt-user-input" value="" />
+            <input type="hidden" name="RptKasadaKalacakHedef" class="save-rpt-user-input" value="" />
+            @* Manuel Girdiler *@
+            <input type="hidden" name="RptBozukPara" class="save-rpt-user-input" value="" />
+            <input type="hidden" name="RptNakitPara" class="save-rpt-user-input" value="" />
+            <input type="hidden" name="RptGelmeyenD" class="save-rpt-user-input" value="" />
+            @* Validation İletileri *@
+            <input type="hidden" name="RptValidationMessagesJson" id="rptValidationMessagesJson" value="" />
             <div style="padding:20px 24px;">
                 <div style="margin-bottom:16px;">
                     <label style="display:block; font-size:13px; font-weight:600; color:var(--text-primary, #374151); margin-bottom:6px;">Rapor Adı</label>
@@ -3030,6 +3045,45 @@
                 var source = genelForm.querySelector('input[name="' + field.name + '"]');
                 if (source) field.value = source.value;
             });
+        }
+
+        // ── Kullanıcı Girişleri (Ek Girdiler + Manuel Girdiler) ──
+        // Orijinal hesapla formundaki input'lardan save formuna kopyala
+        var userInputMappings = [
+            ['RptKaydenTahsilat', 'KaydenTahsilat'],
+            ['RptKaydenHarc', 'KaydenHarc'],
+            ['RptBankadanCekilen', 'BankadanCekilen'],
+            ['RptCNBCikamayan', 'CesitliNedenlerleBankadanCikamayanTahsilat'],
+            ['RptBankayaYatirilacakTahsilatiDegistir', 'BankayaYatirilacakTahsilatiDegistir'],
+            ['RptBankayaYatirilacakHarciDegistir', 'BankayaYatirilacakHarciDegistir'],
+            ['RptBankayaGonderilmisDeger', 'BankayaGonderilmisDeger'],
+            ['RptKasadaKalacakHedef', 'KasadaKalacakHedef'],
+            ['RptBozukPara', 'BozukPara'],
+            ['RptNakitPara', 'NakitPara'],
+            ['RptGelmeyenD', 'GelmeyenD']
+        ];
+        userInputMappings.forEach(function(pair) {
+            var saveField = form.querySelector('input[name="' + pair[0] + '"]');
+            var srcInput = document.querySelector('input[name="' + pair[1] + '"]');
+            if (saveField) {
+                saveField.value = (srcInput && srcInput.value) ? srcInput.value : '0';
+            }
+        });
+
+        // ── Validation İletileri (JSON serialize) ──
+        var validationEl = document.getElementById('rptValidationMessagesJson');
+        if (validationEl) {
+            try {
+                var msgs = [];
+                document.querySelectorAll('[data-validation-code]').forEach(function(el) {
+                    msgs.push({
+                        severity: el.getAttribute('data-validation-severity') || 'Info',
+                        code: el.getAttribute('data-validation-code') || '',
+                        message: el.getAttribute('data-validation-message') || el.textContent.trim()
+                    });
+                });
+                validationEl.value = msgs.length > 0 ? JSON.stringify(msgs) : '';
+            } catch(e) { validationEl.value = ''; }
         }
 
         var inputsEl = document.getElementById('saveInputsJson');

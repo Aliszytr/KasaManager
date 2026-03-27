@@ -116,6 +116,40 @@ public sealed class KasaRaporData
     public decimal BankaMevduatHarc { get; set; }       // BankaHarc.xlsx: İşlem Adı = "Mevduata Para Yatırma"
 
     // ══════════════════════════════════════════════════════
+    // KULLANICI GİRİŞLERİ (Ek Girdiler — Opsiyonel)
+    // ══════════════════════════════════════════════════════
+    /// <summary>Kayden Tahsilat (kullanıcı girişi)</summary>
+    public decimal KaydenTahsilat { get; set; }
+    /// <summary>Kayden Harç (kullanıcı girişi)</summary>
+    public decimal KaydenHarc { get; set; }
+    /// <summary>Ç.N. Bankadan Çıkamayan Tahsilat (kullanıcı girişi)</summary>
+    public decimal CesitliNedenlerleBankadanCikamayanTahsilat { get; set; }
+    /// <summary>Bankaya Yatırılacak Tahsilat Değişikliği (kullanıcı girişi)</summary>
+    public decimal BankayaYatirilacakTahsilatiDegistir { get; set; }
+    /// <summary>Bankaya Yatırılacak Harç Değişikliği (kullanıcı girişi)</summary>
+    public decimal BankayaYatirilacakHarciDegistir { get; set; }
+    /// <summary>Bankaya Gönderilmiş Değer (kullanıcı girişi)</summary>
+    public decimal BankayaGonderilmisDeger { get; set; }
+    /// <summary>Kasada Kalacak Hedef (kullanıcı girişi)</summary>
+    public decimal KasadaKalacakHedef { get; set; }
+
+    // ══════════════════════════════════════════════════════
+    // MANUEL GİRDİLER (Nakit Sayım)
+    // ══════════════════════════════════════════════════════
+    /// <summary>Bozuk Para (kullanıcı girişi)</summary>
+    public decimal BozukPara { get; set; }
+    /// <summary>Nakit Para (kullanıcı girişi)</summary>
+    public decimal NakitPara { get; set; }
+    /// <summary>Gelmeyen D (kullanıcı girişi)</summary>
+    public decimal GelmeyenD { get; set; }
+
+    // ══════════════════════════════════════════════════════
+    // VALİDASYON İLETİLERİ
+    // ══════════════════════════════════════════════════════
+    /// <summary>Hesaplama sonrası validation iletileri (JSON). Geriye dönük denetim için kaydedilir.</summary>
+    public string? ValidationMessagesJson { get; set; }
+
+    // ══════════════════════════════════════════════════════
     // Akıllı Takip Korelasyonu (Validation mesajları için)
     // ══════════════════════════════════════════════════════
     /// <summary>Bugün takipten çözülen kayıtların bildirim mesajı. Validation kuralları korelasyon için kullanır.</summary>

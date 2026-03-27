@@ -73,7 +73,7 @@ public sealed class DocumentTemplateService : IDocumentTemplateService
                 HeaderText = "T.C.\nANKARA BÖLGE İDARE MAHKEMESİ BAŞKANLIĞI\nVEZNE ÖN BÜRO",
                 SayiKonuText = "Sayı  : {{Tarih}}/.....Muh\nKonu : Banka Yatırım Yazısı",
                 MuhatapText = "TÜRKİYE VAKIFLAR BANKASI\nBÖLGE İDARE MAHKEMESİ ŞUBESİNE\nANKARA",
-                BodyTemplate = "Müdürlüğümüz veznesinde {{Tarih}} tarihinde tahsil edilen tutarların aşağıda belirtilen hesaplara yatırılması gerekmektedir. Stopaj tutarı {{BankayaStopaj}} ({{IbanStopaj}}), tahsilat tutarı {{BankayaTahsilat}} ({{IbanTahsilat}}), harç tutarı {{BankayaHarc}} ({{IbanHarc}}) olmak üzere toplam {{BankayaToplam}} yatırılacaktır. Gereğini arz ederim.",
+                BodyTemplate = "Müdürlüğümüz veznesinde {{Tarih}} tarihinde tahsil edilen tutarların aşağıda belirtilen hesaplara yatırılması gerekmektedir. Tahsilat tutarı {{BankayaTahsilat}} ({{IbanTahsilat}}), harç tutarı {{BankayaHarc}} ({{IbanHarc}}), stopaj tutarı {{BankayaStopaj}} ({{IbanStopaj}}) olmak üzere toplam {{BankayaToplam}} yatırılacaktır. Gereğini arz ederim.",
                 ImzaBlokuText = "{{Hazirlayan}}\nVezne Ön Büro\nVezne Yazı İşleri Müdürü",
                 FooterText = "Bu belge elektronik ortamda üretilmiştir.",
                 IsActive = true

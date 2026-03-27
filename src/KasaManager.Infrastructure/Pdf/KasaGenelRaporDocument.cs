@@ -214,21 +214,7 @@ public sealed class KasaGenelRaporDocument : IDocument
             col.Item().Background("#E8F5E9").Padding(2)
                 .Text("BANKAYA GÖTÜRÜLECEK").FontSize(7).Bold().FontColor(Colors.Green.Darken3);
 
-            // Stopaj
-            col.Item().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten3).Padding(2)
-                .Row(row =>
-                {
-                    row.RelativeItem().Column(c =>
-                    {
-                        c.Item().Text("Stopaj").FontSize(6.5f).SemiBold();
-                        if (!string.IsNullOrEmpty(_d.IbanStopaj))
-                            c.Item().Text($"{_d.HesapAdiStopaj} — {FormatIban(_d.IbanStopaj)}").FontSize(5f).FontColor(Colors.Grey.Darken1);
-                    });
-                    row.ConstantItem(80).AlignRight().AlignMiddle()
-                        .Text(M(_d.BankayaStopaj)).FontSize(8).Bold().FontColor(Colors.Blue.Darken2);
-                });
-
-            // Tahsilat
+            // Tahsilat → Harç → Stopaj (stopaj virman ile yapıldığı için en sonda)
             col.Item().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten3).Padding(2)
                 .Row(row =>
                 {
@@ -254,6 +240,20 @@ public sealed class KasaGenelRaporDocument : IDocument
                     });
                     row.ConstantItem(80).AlignRight().AlignMiddle()
                         .Text(M(_d.BankayaHarc)).FontSize(8).Bold().FontColor(Colors.Blue.Darken2);
+                });
+
+            // Stopaj
+            col.Item().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten3).Padding(2)
+                .Row(row =>
+                {
+                    row.RelativeItem().Column(c =>
+                    {
+                        c.Item().Text("Stopaj").FontSize(6.5f).SemiBold();
+                        if (!string.IsNullOrEmpty(_d.IbanStopaj))
+                            c.Item().Text($"{_d.HesapAdiStopaj} — {FormatIban(_d.IbanStopaj)}").FontSize(5f).FontColor(Colors.Grey.Darken1);
+                    });
+                    row.ConstantItem(80).AlignRight().AlignMiddle()
+                        .Text(M(_d.BankayaStopaj)).FontSize(8).Bold().FontColor(Colors.Blue.Darken2);
                 });
 
             // TOPLAM

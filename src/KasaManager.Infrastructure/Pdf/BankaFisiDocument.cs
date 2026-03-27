@@ -66,20 +66,20 @@ public sealed class BankaFisiDocument : IDocument
     {
         container.PaddingTop(10).Column(col =>
         {
-            // ── Hesap Blokları ──
-            if (_data.TutarStopaj != 0 || !string.IsNullOrEmpty(_data.IbanStopaj))
-                col.Item().Element(c => ComposeAccountBlock(c, "STOPAJ", _data.HesapAdiStopaj, _data.IbanStopaj, _data.TutarStopaj, "#FFF3E0"));
-
+            // ── Hesap Blokları (Tahsilat → Harç → Stopaj) ──
             if (_data.TutarMasraf != 0 || !string.IsNullOrEmpty(_data.IbanMasraf))
-            {
-                col.Item().PaddingTop(6);
                 col.Item().Element(c => ComposeAccountBlock(c, "TAHSİLAT", _data.HesapAdiMasraf, _data.IbanMasraf, _data.TutarMasraf, "#E3F2FD"));
-            }
 
             if (_data.TutarHarc != 0 || !string.IsNullOrEmpty(_data.IbanHarc))
             {
                 col.Item().PaddingTop(6);
                 col.Item().Element(c => ComposeAccountBlock(c, "HARÇ", _data.HesapAdiHarc, _data.IbanHarc, _data.TutarHarc, "#E8F5E9"));
+            }
+
+            if (_data.TutarStopaj != 0 || !string.IsNullOrEmpty(_data.IbanStopaj))
+            {
+                col.Item().PaddingTop(6);
+                col.Item().Element(c => ComposeAccountBlock(c, "STOPAJ", _data.HesapAdiStopaj, _data.IbanStopaj, _data.TutarStopaj, "#FFF3E0"));
             }
 
             // ── TOPLAM ──

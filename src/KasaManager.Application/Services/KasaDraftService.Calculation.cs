@@ -6,6 +6,7 @@ using KasaManager.Application.Abstractions;
 using KasaManager.Domain.Abstractions;
 using KasaManager.Domain.Constants;
 using KasaManager.Domain.FormulaEngine;
+using KasaManager.Domain.Helpers;
 using KasaManager.Domain.Reports;
 
 namespace KasaManager.Application.Services;
@@ -93,7 +94,7 @@ private sealed record AksamLegacyCalc(
     decimal BankaGoturulecekNakit,
     decimal BozukParaHaricKasa);
 
-    [Obsolete("LEGACY: Use FormulaEngine instead. Kept for parity/debugging.")]
+    // LEGACY: Production'da aktif. FormulaEngine tam geçiş tamamlandığında temizlenecek.
     private static Dictionary<string, string> BuildAksamInlineFormulas(
         decimal devredenKasa,
         KasaUstSummary ust,
@@ -216,7 +217,7 @@ Auto = BaseForTarget - Hedef";
         return d;
     }
 
-    [Obsolete("LEGACY: Use FormulaEngine instead. Kept for parity/debugging.")]
+    // LEGACY: Production'da aktif. FormulaEngine tam geçiş tamamlandığında temizlenecek.
     private static Dictionary<string, string> BuildSabahInlineFormulas(
         decimal devredenKasa,
         KasaUstSummary ust,
@@ -301,7 +302,7 @@ return d;
     }
 
 
-[Obsolete("LEGACY: Use FormulaEngine instead. This method is kept for parity checking only.")]
+// LEGACY: Production'da aktif. FormulaEngine tam geçiş tamamlandığında temizlenecek.
 private static AksamLegacyCalc CalculateAksamLegacy(
     decimal devredenKasa,
     bool isSabah,
@@ -391,19 +392,21 @@ private static AksamLegacyCalc CalculateAksamLegacy(
     // Excel: Bozuk para hariç kasa
     var bozukParaHaricKasa = genelKasa - bozukPara;
 
+    // P1-FIN-01 FIX: FormulaEngineService ile parity — tüm finansal çıktılar
+    // FinancialMath.Round (2 basamak, MidpointRounding.AwayFromZero) ile yuvarlanır.
     return new AksamLegacyCalc(
-        NormalTahsilat: normalTahsilat,
-        NormalHarc: normalHarc,
-        NormalReddiyat: normalReddiyat,
-        NormalStopaj: normalStopaj,
-        OnlineStopaj: onlineStopaj,
-        ToplamStopaj: toplamStopaj,
-        BankayaYatirilacakHarc: bankayaYatirilacakHarc,
-        BankayaYatirilacakNakit: bankayaYatirilacakNakit,
-        BankayaYatirilacakStopaj: bankayaYatirilacakStopaj,
-        StopajKontrol: stopajKontrol,
-        GenelKasa: genelKasa,
-        BankaGoturulecekNakit: bankaGoturulecekNakit,
-        BozukParaHaricKasa: bozukParaHaricKasa);
+        NormalTahsilat: FinancialMath.Round(normalTahsilat),
+        NormalHarc: FinancialMath.Round(normalHarc),
+        NormalReddiyat: FinancialMath.Round(normalReddiyat),
+        NormalStopaj: FinancialMath.Round(normalStopaj),
+        OnlineStopaj: FinancialMath.Round(onlineStopaj),
+        ToplamStopaj: FinancialMath.Round(toplamStopaj),
+        BankayaYatirilacakHarc: FinancialMath.Round(bankayaYatirilacakHarc),
+        BankayaYatirilacakNakit: FinancialMath.Round(bankayaYatirilacakNakit),
+        BankayaYatirilacakStopaj: FinancialMath.Round(bankayaYatirilacakStopaj),
+        StopajKontrol: FinancialMath.Round(stopajKontrol),
+        GenelKasa: FinancialMath.Round(genelKasa),
+        BankaGoturulecekNakit: FinancialMath.Round(bankaGoturulecekNakit),
+        BozukParaHaricKasa: FinancialMath.Round(bozukParaHaricKasa));
 }
 }

@@ -145,22 +145,20 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
         var adayNonStopaj = adayKayitlar.Where(k => k.HesapTuru != BankaHesapTuru.Stopaj).ToList();
         var adayStopaj = adayKayitlar.Where(k => k.HesapTuru == BankaHesapTuru.Stopaj).ToList();
 
-        // ─ Mevcut Acik kayıtlar (sadece bunlar silinebilir) ─
-        // AnalizTarihi filtresi: sadece aynı güne ait Acik kayıtları diff'le
+        // ─ Mevcut Acik kayıtlar (TÜM tarihler — global dedup) ─
+        // Aynı fingerprint'e sahip kayıt herhangi bir tarihte Acik ise tekrar eklenmez.
         var mevcutAcik = await _db.HesapKontrolKayitlari
-            .Where(x => x.AnalizTarihi == analizTarihi
-                     && x.Durum == KayitDurumu.Acik
+            .Where(x => x.Durum == KayitDurumu.Acik
                      && x.HesapTuru != BankaHesapTuru.Stopaj)
             .ToListAsync(ct);
 
-        // ─ Tüm kullanıcı etkileşimli kayıtlar (duplicate kontrolü) ─
+        // ─ Tüm kullanıcı etkileşimli kayıtlar (global duplicate kontrolü) ─
         // Takipte, Onaylandi, Cozuldu, Iptal → kullanıcı bunları işlemiş, aynısı tekrar eklenmemeli.
         // Özellikle Iptal (Yok Say): kullanıcı bilinçli olarak reddetmiş,
         // analiz tekrar çalıştığında aynı kayıt yeniden oluşturulmamalı.
-        // AnalizTarihi filtresi: sadece aynı güne ait işlenmiş kayıtları kontrol et
+        // TÜM tarihler kontrol ediliyor — farklı günde işlenmiş aynı kayıt tekrar eklenmez.
         var kullaniciIslemliKayitlar = await _db.HesapKontrolKayitlari
-            .Where(x => x.AnalizTarihi == analizTarihi
-                      && x.Durum != KayitDurumu.Acik
+            .Where(x => x.Durum != KayitDurumu.Acik
                       && x.HesapTuru != BankaHesapTuru.Stopaj)
             .ToListAsync(ct);
 
@@ -195,8 +193,11 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
             eklenecek.Add(aday);
         }
 
-        // mevcutAcikPool'da kalan kayıtlar artık tespit edilmiyor → eski/stale → silinecek
-        var silinecek = mevcutAcikPool.ToList();
+        // mevcutAcikPool'da kalan kayıtlar: sadece AYNI güne ait stale kayıtları sil
+        // Farklı günlere ait Acik kayıtlara dokunma (onlar kendi günlerinde yönetilir)
+        var silinecek = mevcutAcikPool
+            .Where(x => x.AnalizTarihi == analizTarihi)
+            .ToList();
 
         // ─── Stopaj özel temizliği ───
         // Stopaj Acik kayıtları: her zaman yeniden oluştur

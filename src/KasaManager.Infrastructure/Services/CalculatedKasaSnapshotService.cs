@@ -218,12 +218,12 @@ public sealed class CalculatedKasaSnapshotService : ICalculatedKasaSnapshotServi
         // Sıralama
         q = query.SortBy?.ToLower() switch
         {
-            "name" => query.SortDescending ? q.OrderByDescending(x => x.Name) : q.OrderBy(x => x.Name),
-            "kasaturu" => query.SortDescending ? q.OrderByDescending(x => x.KasaTuru) : q.OrderBy(x => x.KasaTuru),
-            "calculatedatutc" => query.SortDescending ? q.OrderByDescending(x => x.CalculatedAtUtc) : q.OrderBy(x => x.CalculatedAtUtc),
+            "name" => query.SortDescending ? q.OrderByDescending(x => x.Name).ThenBy(x => x.Id) : q.OrderBy(x => x.Name).ThenBy(x => x.Id),
+            "kasaturu" => query.SortDescending ? q.OrderByDescending(x => x.KasaTuru).ThenBy(x => x.Id) : q.OrderBy(x => x.KasaTuru).ThenBy(x => x.Id),
+            "calculatedatutc" => query.SortDescending ? q.OrderByDescending(x => x.CalculatedAtUtc).ThenBy(x => x.Id) : q.OrderBy(x => x.CalculatedAtUtc).ThenBy(x => x.Id),
             _ => query.SortDescending
-                ? q.OrderByDescending(x => x.RaporTarihi).ThenByDescending(x => x.CalculatedAtUtc)
-                : q.OrderBy(x => x.RaporTarihi).ThenBy(x => x.CalculatedAtUtc)
+                ? q.OrderByDescending(x => x.RaporTarihi).ThenByDescending(x => x.CalculatedAtUtc).ThenBy(x => x.Id)
+                : q.OrderBy(x => x.RaporTarihi).ThenBy(x => x.CalculatedAtUtc).ThenBy(x => x.Id)
         };
 
         // Sayfalama

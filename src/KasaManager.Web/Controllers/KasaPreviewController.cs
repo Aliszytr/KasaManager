@@ -408,7 +408,7 @@ public sealed partial class KasaPreviewController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Calculate(KasaPreviewViewModel model, CancellationToken ct)
     {
-        _log.LogWarning("▶▶▶ CALCULATE ACTION ENTERED ◀◀◀ KasaType={KT}, HasResults={HR}", model.KasaType, model.HasResults);
+        _log.LogDebug("Calculate entered: KasaType={KasaType}, HasResults={HasResults}", model.KasaType, model.HasResults);
         // Genel Kasa tarihleri: hidden field'dan model binding başarısız olabilir
         if (!model.GenelKasaStartDate.HasValue)
         {
