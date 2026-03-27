@@ -307,6 +307,135 @@
                     </div>
                 </div>
             }
+
+            @* ── Excel Dosya Tarih Bilgi Şeridi ── *@
+            @if (Model.UstRaporPanel?.DateEval != null)
+            {
+                var de = Model.UstRaporPanel.DateEval;
+                var dosyaTarihi = de.ProposedDate;
+                var secilenTarih = Model.SelectedDate;
+                var dosyaSayisi = de.Sources?.Count(s => s.FileName != "(yok)" && s.HasDate) ?? 0;
+                var toplamDosya = de.Sources?.Count(s => s.FileName != "(yok)") ?? 0;
+                var tarihUyumlu = dosyaTarihi.HasValue && secilenTarih.HasValue && dosyaTarihi.Value == secilenTarih.Value;
+                var tarihYok = !de.HasAnyDate;
+
+                <div id="excelDosyaBilgiStrip" class="mt-3" style="border-radius: 10px; padding: 12px 16px; font-size: 0.82rem;
+                    background: @(tarihYok ? "rgba(245,158,11,0.08)" : tarihUyumlu ? "rgba(16,185,129,0.06)" : "rgba(239,68,68,0.08)");
+                    border: 1px solid @(tarihYok ? "rgba(245,158,11,0.25)" : tarihUyumlu ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.25)");
+                    ">
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        @* Dosya Sayısı *@
+                        <span style="display:inline-flex; align-items:center; gap:4px; color: var(--kasa-text-secondary, #94a3b8);">
+                            <i class="fas fa-folder-open" style="color:#6366f1;"></i>
+                            <strong>@toplamDosya dosya</strong> yüklü
+                        </span>
+
+                        <span style="color: var(--kasa-text-muted, #475569);">•</span>
+
+                        @* Tespit Edilen Tarih *@
+                        @if (dosyaTarihi.HasValue)
+                        {
+                            <span style="display:inline-flex; align-items:center; gap:4px; color: var(--kasa-text-secondary, #94a3b8);">
+                                <i class="fas fa-calendar-alt" style="color:#0ea5e9;"></i>
+                                Dosya tarihi: <strong id="excelDetectedDate" data-date="@dosyaTarihi.Value.ToString("yyyy-MM-dd")"
+                                    style="color: var(--kasa-text, #e2e8f0);">@dosyaTarihi.Value.ToString("dd.MM.yyyy")</strong>
+                            </span>
+                        }
+                        else
+                        {
+                            <span style="display:inline-flex; align-items:center; gap:4px; color: var(--kasa-warning, #f59e0b);">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                Dosyalarda tarih tespit edilemedi
+                            </span>
+                        }
+                    </div>
+
+                    @* Uyumsuzluk Uyarısı *@
+                    <div id="excelTarihUyariKutusu" class="mt-2" style="display: @(tarihUyumlu || tarihYok ? "none" : "block");">
+                        <div style="display:flex; align-items:flex-start; gap:8px; padding:8px 12px; border-radius:8px;
+                            background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2);">
+                            <i class="fas fa-exclamation-circle" style="color:#ef4444; margin-top:2px; flex-shrink:0;"></i>
+                            <div>
+                                <strong style="color:#ef4444; font-size:0.82rem;">DİKKAT — Tarih Uyumsuzluğu!</strong>
+                                <div style="color: var(--kasa-text-secondary, #94a3b8); font-size:0.78rem; margin-top:2px;"
+                                     id="excelTarihUyariMesaj">
+                                    Seçilen rapor tarihi (<strong>@(secilenTarih?.ToString("dd.MM.yyyy") ?? "—")</strong>)
+                                    ile Excel dosyalarındaki tarih (<strong>@(dosyaTarihi?.ToString("dd.MM.yyyy") ?? "—")</strong>) uyuşmuyor.
+                                    Hesaplamada yanlış veriler kullanılabilir. Lütfen tarih seçimini veya dosyaları kontrol edin.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    @* Uyumlu Bilgi *@
+                    <div id="excelTarihUyumluKutusu" class="mt-1" style="display: @(tarihUyumlu ? "block" : "none");">
+                        <span style="color:var(--kasa-success, #10b981); font-size:0.78rem;">
+                            <i class="fas fa-check-circle"></i>
+                            Dosya tarihi ile seçilen rapor tarihi uyumlu
+                        </span>
+                    </div>
+
+                    @* Dosya Detayları (çakışma varsa) *@
+                    @if (de.HasConflict && de.Sources != null)
+                    {
+                        <div class="mt-2" style="font-size:0.75rem; color: var(--kasa-text-muted, #64748b);">
+                            <i class="fas fa-info-circle"></i> Dosya detayları:
+                            @foreach (var src in de.Sources.Where(s => s.HasDate))
+                            {
+                                <span style="margin-left:6px;">
+                                    <strong>@src.Kind</strong>: @string.Join(", ", src.DistinctDates.Select(d => d.ToString("dd.MM.yyyy")))
+                                </span>
+                            }
+                        </div>
+                    }
+                </div>
+
+                @* JS: Tarih değiştiğinde uyarı kutusunu güncelleyen script *@
+                <script>
+                (function() {
+                    var dateInput = document.getElementById('SelectedDate');
+                    var detectedEl = document.getElementById('excelDetectedDate');
+                    var uyariBox = document.getElementById('excelTarihUyariKutusu');
+                    var uyumluBox = document.getElementById('excelTarihUyumluKutusu');
+                    var uyariMesaj = document.getElementById('excelTarihUyariMesaj');
+                    var strip = document.getElementById('excelDosyaBilgiStrip');
+
+                    if (!dateInput || !detectedEl) return;
+                    var detectedDate = detectedEl.getAttribute('data-date'); // yyyy-MM-dd
+                    if (!detectedDate) return;
+
+                    function formatDate(ymd) {
+                        var p = ymd.split('-');
+                        return p.length === 3 ? (p[2] + '.' + p[1] + '.' + p[0]) : ymd;
+                    }
+
+                    dateInput.addEventListener('change', function() {
+                        var selected = dateInput.value; // yyyy-MM-dd
+                        var match = selected === detectedDate;
+
+                        if (uyariBox) uyariBox.style.display = match ? 'none' : 'block';
+                        if (uyumluBox) uyumluBox.style.display = match ? 'block' : 'none';
+
+                        // Strip renk güncelle
+                        if (strip) {
+                            strip.style.background = match
+                                ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.08)';
+                            strip.style.borderColor = match
+                                ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.25)';
+                        }
+
+                        // Uyarı metnini güncelle
+                        if (uyariMesaj && !match) {
+                            uyariMesaj.innerHTML =
+                                'Seçilen rapor tarihi (<strong>' + formatDate(selected) + '</strong>) ' +
+                                'ile Excel dosyalarındaki tarih (<strong>' + formatDate(detectedDate) + '</strong>) uyuşmuyor. ' +
+                                'Hesaplamada yanlış veriler kullanılabilir. Lütfen tarih seçimini veya dosyaları kontrol edin.';
+                        }
+                    });
+                })();
+                </script>
+            }
+
         </form>
     </div>
 </div>
@@ -2755,6 +2884,165 @@
         var hiddens = e.target.querySelectorAll('.rpt-gunluk-not');
         hiddens.forEach(function(h) { h.value = notValue; });
     });
+
+    // ═══════════════════════════════════════════════════════════════════
+    // File System Access API: "Farklı Kaydet" diyaloğu desteği
+    // Chromium tabanlı tarayıcılarda (Chrome, Edge) çalışır.
+    // Desteklenmeyen tarayıcılarda mevcut davranış (otomatik indirme) korunur.
+    // ═══════════════════════════════════════════════════════════════════
+
+    // Kasa tarih ve tür bilgisini formdan çıkar
+    function getKasaInfo(form) {
+        var dateInput = form.querySelector('input[name="SelectedDate"]');
+        var typeInput = form.querySelector('input[name="KasaType"]');
+        var dateVal = dateInput ? dateInput.value : '';
+        var typeVal = typeInput ? typeInput.value : '';
+        // DateOnly format: yyyy-MM-dd → dd.MM.yyyy
+        var formattedDate = '';
+        if (dateVal) {
+            var parts = dateVal.split('-');
+            if (parts.length === 3) {
+                formattedDate = parts[2] + '.' + parts[1] + '.' + parts[0];
+            } else {
+                formattedDate = dateVal;
+            }
+        }
+        return { date: formattedDate, type: typeVal || 'Kasa' };
+    }
+
+    // Kasa türünü Türkçe oku
+    function kasaTuruLabel(type) {
+        var t = (type || '').toLowerCase();
+        if (t === 'sabah') return 'Sabah';
+        if (t === 'aksam') return 'Aksam';
+        if (t === 'genel') return 'Genel';
+        return type || 'Kasa';
+    }
+
+    // Action'dan dosya tipi bilgisini çıkar
+    function getSuggestedName(form) {
+        var action = form.getAttribute('action') || '';
+        var info = getKasaInfo(form);
+        var kasaLabel = kasaTuruLabel(info.type);
+        var prefix = info.date ? (info.date + ' Tarihli ' + kasaLabel + ' Kasa') : (kasaLabel + ' Kasa');
+
+        if (action.indexOf('DownloadGenelRapor') !== -1)
+            return { name: prefix + ' Genel Rapor.pdf', mime: 'application/pdf', ext: '.pdf' };
+        if (action.indexOf('DownloadOzetRapor') !== -1)
+            return { name: prefix + ' Ozet Rapor.pdf', mime: 'application/pdf', ext: '.pdf' };
+        if (action.indexOf('DownloadBankaFisi') !== -1)
+            return { name: prefix + ' Banka Fisi.pdf', mime: 'application/pdf', ext: '.pdf' };
+        if (action.indexOf('DownloadBankaYazisi') !== -1) {
+            var yaziTipi = form.querySelector('input[name="yaziTipi"]');
+            var yaziLabel = yaziTipi ? yaziTipi.value : 'Yazisi';
+            return { name: prefix + ' Banka ' + yaziLabel + '.pdf', mime: 'application/pdf', ext: '.pdf' };
+        }
+        if (action.indexOf('DownloadJson') !== -1)
+            return { name: prefix + ' Veri.json', mime: 'application/json', ext: '.json' };
+        if (action.indexOf('/Export') !== -1) {
+            var formatInput = form.querySelector('input[name="format"]');
+            var formatVal = formatInput ? formatInput.value : '';
+            if (formatVal === '3') // Excel
+                return { name: prefix + ' Rapor.xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ext: '.xlsx' };
+            if (formatVal === '4') // CSV
+                return { name: prefix + ' Rapor.csv', mime: 'text/csv', ext: '.csv' };
+        }
+        return null; // Tanınmayan form — normal davranış
+    }
+
+    // showSaveFilePicker desteği var mı?
+    var hasSaveFilePicker = typeof window.showSaveFilePicker === 'function';
+
+    if (hasSaveFilePicker) {
+        // Export formlarını intercept et
+        document.addEventListener('submit', function(e) {
+            var form = e.target;
+            var suggested = getSuggestedName(form);
+            if (!suggested) return; // Bu form export formu değil, normal devam et
+
+            e.preventDefault(); // Normal submit'i durdur
+
+            // Form verilerini hazırla
+            var formData = new FormData(form);
+            var actionUrl = form.getAttribute('action');
+
+            // Buton durumunu göster
+            var submitBtn = form.querySelector('button[type="submit"]');
+            var originalBtnHTML = submitBtn ? submitBtn.innerHTML : '';
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Hazırlanıyor...';
+            }
+
+            // Fetch ile dosyayı al
+            fetch(actionUrl, {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin'
+            })
+            .then(function(response) {
+                if (!response.ok) throw new Error('Sunucu hatası: ' + response.status);
+                return response.blob();
+            })
+            .then(function(blob) {
+                // Farklı Kaydet diyaloğu
+                var fileTypes = [];
+                if (suggested.ext === '.pdf') {
+                    fileTypes.push({ description: 'PDF Belgesi', accept: { 'application/pdf': ['.pdf'] } });
+                } else if (suggested.ext === '.xlsx') {
+                    fileTypes.push({ description: 'Excel Belgesi', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } });
+                } else if (suggested.ext === '.csv') {
+                    fileTypes.push({ description: 'CSV Dosyası', accept: { 'text/csv': ['.csv'] } });
+                } else if (suggested.ext === '.json') {
+                    fileTypes.push({ description: 'JSON Dosyası', accept: { 'application/json': ['.json'] } });
+                }
+
+                return window.showSaveFilePicker({
+                    suggestedName: suggested.name,
+                    types: fileTypes
+                }).then(function(handle) {
+                    return handle.createWritable().then(function(writable) {
+                        return writable.write(blob).then(function() {
+                            return writable.close();
+                        });
+                    });
+                });
+            })
+            .then(function() {
+                // Başarılı kayıt bildirimi
+                if (submitBtn) {
+                    submitBtn.innerHTML = '<i class="fas fa-check me-1"></i>Kaydedildi!';
+                    submitBtn.style.background = 'rgba(16,185,129,0.15)';
+                    submitBtn.style.color = '#059669';
+                    setTimeout(function() {
+                        submitBtn.innerHTML = originalBtnHTML;
+                        submitBtn.disabled = false;
+                        submitBtn.style.background = '';
+                        submitBtn.style.color = '';
+                    }, 2000);
+                }
+            })
+            .catch(function(err) {
+                // Kullanıcı iptal ettiyse (AbortError) sessizce devam et
+                if (err && err.name === 'AbortError') {
+                    if (submitBtn) {
+                        submitBtn.innerHTML = originalBtnHTML;
+                        submitBtn.disabled = false;
+                    }
+                    return;
+                }
+
+                // Gerçek hata — fallback olarak normal indirme yap
+                console.warn('Farklı Kaydet başarısız, normal indirme yapılıyor:', err);
+                if (submitBtn) {
+                    submitBtn.innerHTML = originalBtnHTML;
+                    submitBtn.disabled = false;
+                }
+                // Normal form submit ile devam et (fallback)
+                form.submit();
+            });
+        }, true); // capture phase — ilk bizim listener çalışsın
+    }
 })();
 </script>
 
