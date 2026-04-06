@@ -21,9 +21,9 @@ public sealed class KasaUstRaporPanelViewModel
     // Tarih Kural Motoru bilgisi
     public DateRulesEvaluation? DateEval { get; set; }
 
-    // Snapshot durumu
-    public bool HasExistingSnapshot { get; set; }
-    public DateOnly? LastSnapshotDate { get; set; }
+    // P4.3: Snapshot durumu tamamen kaldırıldı (Stateless UI)
+    // public bool HasExistingSnapshot { get; set; }
+    // public DateOnly? LastSnapshotDate { get; set; }
 
     // Kontrol ayarları
     public bool StartOpen { get; set; } = true;

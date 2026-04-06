@@ -24,6 +24,19 @@ public sealed class KasaRaporSnapshot
     public string? CreatedBy { get; set; }
 
     /// <summary>
+    /// R6-AUDIT: Immutable kuralı gereği üretilen snapshot'ın ezildiğini belirten bayrak.
+    /// Eğer aynı tarih için yeni kaydet denirse, eskisi silinmez, bu true yapılır.
+    /// (ALLOWED_HISTORY_READ)
+    /// </summary>
+    public bool IsSuperseded { get; set; }
+
+    /// <summary>
+    /// R6-AUDIT: Snapshot'ın oluşturulduğu döneme ait kaynak excel dosya fingerprint/isimleri vb.
+    /// (Örn: {"MasrafveReddiyat": "2026-03-31_xyz.xlsx"})
+    /// </summary>
+    public string? SourceEvidenceJson { get; set; }
+
+    /// <summary>
     /// Üst grid'de seçilen kişilerin bakiyelerinden oluşan seçim toplamı.
     /// </summary>
     public decimal SelectionTotal { get; set; }

@@ -47,7 +47,10 @@ public sealed class KasaRaporSnapshotService : IKasaRaporSnapshotService
 
             if (existing != null)
             {
-                _db.KasaRaporSnapshots.Remove(existing);
+                // R6-AUDIT: Immutable model kuralı gereğince artık eski kaydı silmiyoruz.
+                // Üzerine yazma isteği yeni bir snapshot versiyonudur. Eskisini Superseded yapıyoruz.
+                existing.IsSuperseded = true;
+                _db.KasaRaporSnapshots.Update(existing);
 
                 try
                 {
@@ -113,6 +116,8 @@ public sealed class KasaRaporSnapshotService : IKasaRaporSnapshotService
             .Include(x => x.Rows)
             .Include(x => x.Inputs)
             .Include(x => x.Results)
+            // R6-AUDIT: Sadece aktif (superseded OLMAYAN) kaydı getir.
+            .Where(x => !x.IsSuperseded)
             .FirstOrDefaultAsync(x => x.RaporTarihi == raporTarihi && x.RaporTuru == raporTuru, ct);
     }
 

@@ -1,4 +1,6 @@
 #nullable enable
+using KasaManager.Domain.Reports;
+
 namespace KasaManager.Application.Abstractions;
 
 /// <summary>
@@ -22,4 +24,7 @@ public sealed class GenelKasaR10EngineInputBundle
     public string? RawJson { get; init; }
 
     public IReadOnlyList<string> Issues { get; init; } = Array.Empty<string>();
+
+    public BankaBakiyeDiagnosticInfo? BankaBakiyeDiagnostic { get; init; }
+    public BankaMismatchType BankaMismatchType { get; init; }
 }

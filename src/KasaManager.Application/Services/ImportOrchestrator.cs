@@ -2,15 +2,23 @@ using KasaManager.Application.Abstractions;
 using KasaManager.Domain.Abstractions;
 using KasaManager.Domain.Reports;
 
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using KasaManager.Application.Services.DataFirst;
+
 namespace KasaManager.Application.Services;
 
 public sealed class ImportOrchestrator : IImportOrchestrator
 {
     private readonly IExcelTableReader _excel;
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ILogger<ImportOrchestrator> _logger;
 
-    public ImportOrchestrator(IExcelTableReader excel)
+    public ImportOrchestrator(IExcelTableReader excel, IServiceScopeFactory scopeFactory, ILogger<ImportOrchestrator> logger)
     {
         _excel = excel;
+        _scopeFactory = scopeFactory;
+        _logger = logger;
     }
 
     
@@ -45,6 +53,9 @@ public sealed class ImportOrchestrator : IImportOrchestrator
             ColumnMetas = table.ColumnMetas,
             Rows = table.Rows
         };
+
+        // Faz 1: Shadow Ingestion (Fire and Forget)
+        FireAndForgetShadowIngest(imported, absoluteFilePath);
 
         return Result<ImportedTable>.Success(imported);
     }
@@ -111,6 +122,43 @@ public ImportFileKind GuessKindFromFileName(string fileName)
             Rows = table.Rows
         };
 
+        // Faz 1: Shadow Ingestion (Fire and Forget)
+        FireAndForgetShadowIngest(imported, absoluteFilePath);
+
         return Result<ImportedTable>.Success(imported);
+    }
+    
+    private void FireAndForgetShadowIngest(ImportedTable table, string absoluteFilePath)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var normalizationService = scope.ServiceProvider.GetRequiredService<IFactNormalizationService>();
+                
+                // Tarihi yoldan tahmin etmeye çalış, bulamazsan bugünü at.
+                var targetDate = GuessDateFromPath(absoluteFilePath);
+                
+                await normalizationService.NormalizeAndSaveShadowFactsAsync(table, targetDate, absoluteFilePath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "FireAndForgetShadowIngest failed for {FilePath}", absoluteFilePath);
+            }
+        });
+    }
+
+    private DateOnly GuessDateFromPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return DateOnly.FromDateTime(DateTime.UtcNow);
+        
+        var parts = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        foreach (var p in parts.Reverse())
+        {
+            if (DateOnly.TryParseExact(p, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d)) return d;
+            if (DateOnly.TryParseExact(p, "dd.MM.yyyy", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d2)) return d2;
+        }
+        return DateOnly.FromDateTime(DateTime.UtcNow); 
     }
 }

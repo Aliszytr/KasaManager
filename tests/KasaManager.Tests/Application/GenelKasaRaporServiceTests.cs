@@ -30,10 +30,10 @@ public sealed class GenelKasaRaporServiceTests
     public async Task BuildCalculationRunAsync_InputsFail_ReturnsError()
     {
         _draftsMock
-            .Setup(d => d.BuildGenelKasaR10EngineInputsAsync(It.IsAny<DateOnly?>(), It.IsAny<decimal?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(d => d.BuildGenelKasaR10EngineInputsAsync(It.IsAny<DateOnly?>(), It.IsAny<decimal?>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<GenelKasaR10EngineInputBundle>.Fail("Test hatası"));
 
-        var (run, error) = await _sut.BuildCalculationRunAsync(null, null, "/tmp", CancellationToken.None);
+        var (run, error) = await _sut.BuildCalculationRunAsync(null, null, "/tmp", false, CancellationToken.None);
 
         Assert.Null(run);
         Assert.Contains("hatası", error!);
@@ -51,7 +51,7 @@ public sealed class GenelKasaRaporServiceTests
         };
 
         _draftsMock
-            .Setup(d => d.BuildGenelKasaR10EngineInputsAsync(It.IsAny<DateOnly?>(), It.IsAny<decimal?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(d => d.BuildGenelKasaR10EngineInputsAsync(It.IsAny<DateOnly?>(), It.IsAny<decimal?>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<GenelKasaR10EngineInputBundle>.Success(bundle));
 
         // GetBuiltInFormulaSets boş dönecek — FormulaSet bulunamaz
@@ -59,7 +59,7 @@ public sealed class GenelKasaRaporServiceTests
             .Setup(e => e.GetBuiltInFormulaSets())
             .Returns(new List<FormulaSet>());
 
-        var (run, error) = await _sut.BuildCalculationRunAsync(null, null, "/tmp", CancellationToken.None);
+        var (run, error) = await _sut.BuildCalculationRunAsync(null, null, "/tmp", false, CancellationToken.None);
 
         Assert.Null(run);
         Assert.Contains("bulunamadı", error!);
@@ -83,7 +83,7 @@ public sealed class GenelKasaRaporServiceTests
         };
 
         _draftsMock
-            .Setup(d => d.BuildGenelKasaR10EngineInputsAsync(It.IsAny<DateOnly?>(), It.IsAny<decimal?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(d => d.BuildGenelKasaR10EngineInputsAsync(It.IsAny<DateOnly?>(), It.IsAny<decimal?>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<GenelKasaR10EngineInputBundle>.Success(bundle));
 
         _engineMock
@@ -97,7 +97,7 @@ public sealed class GenelKasaRaporServiceTests
             .Setup(e => e.Run(It.IsAny<DateOnly>(), It.IsAny<FormulaSet>(), It.IsAny<IReadOnlyList<UnifiedPoolEntry>>(), null))
             .Returns(Result<CalculationRun>.Success(calcRun));
 
-        var (run, error) = await _sut.BuildCalculationRunAsync(null, null, "/tmp", CancellationToken.None);
+        var (run, error) = await _sut.BuildCalculationRunAsync(null, null, "/tmp", false, CancellationToken.None);
 
         Assert.NotNull(run);
         Assert.Null(error);
@@ -108,10 +108,10 @@ public sealed class GenelKasaRaporServiceTests
     public async Task BuildReportDataAsync_Failure_ReturnsIssues()
     {
         _draftsMock
-            .Setup(d => d.BuildGenelKasaR10EngineInputsAsync(It.IsAny<DateOnly?>(), It.IsAny<decimal?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(d => d.BuildGenelKasaR10EngineInputsAsync(It.IsAny<DateOnly?>(), It.IsAny<decimal?>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<GenelKasaR10EngineInputBundle>.Fail("Veri yok"));
 
-        var data = await _sut.BuildReportDataAsync(null, null, "/tmp", CancellationToken.None);
+        var data = await _sut.BuildReportDataAsync(null, null, "/tmp", false, CancellationToken.None);
 
         Assert.NotEmpty(data.Issues);
     }

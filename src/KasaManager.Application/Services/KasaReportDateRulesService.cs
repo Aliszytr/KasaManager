@@ -18,6 +18,8 @@ namespace KasaManager.Application.Services;
 /// </summary>
 public sealed class KasaReportDateRulesService : IKasaReportDateRulesService
 {
+    private readonly IImportOrchestrator _orchestrator;
+
     private static readonly ImportFileKind[] _dateBearingKinds = new[]
     {
         ImportFileKind.BankaTahsilat,
@@ -27,13 +29,9 @@ public sealed class KasaReportDateRulesService : IKasaReportDateRulesService
         ImportFileKind.OnlineReddiyat,
     };
 
-    private readonly IImportOrchestrator _orchestrator;
-    private readonly IKasaRaporSnapshotService _snapshots;
-
-    public KasaReportDateRulesService(IImportOrchestrator orchestrator, IKasaRaporSnapshotService snapshots)
+    public KasaReportDateRulesService(IImportOrchestrator orchestrator)
     {
         _orchestrator = orchestrator;
-        _snapshots = snapshots;
     }
 
     public async Task<DateRulesEvaluation> EvaluateAsync(string uploadFolderAbsolute, CancellationToken ct = default)
@@ -48,9 +46,6 @@ public sealed class KasaReportDateRulesService : IKasaReportDateRulesService
             };
         }
 
-        // DB süreklilik referansı (KasaÜstRapor = Genel)
-        var last = await _snapshots.GetLastSnapshotDateAsync(KasaRaporTuru.Genel, ct);
-        DateOnly? expected = last.HasValue ? last.Value.AddDays(1) : null;
 
         var sources = new List<DateRulesSourceDate>();
 
@@ -120,8 +115,8 @@ public sealed class KasaReportDateRulesService : IKasaReportDateRulesService
         DateOnly? proposed = null;
         if (!hasAny)
         {
-            // Hiç tarih yoksa: DB beklenen tarihi öner, yoksa null
-            proposed = expected;
+            // Hiç tarih yoksa: null döner, snapshot/expected kapatıldı
+            proposed = null;
         }
         else if (!hasConflict)
         {
@@ -149,23 +144,14 @@ public sealed class KasaReportDateRulesService : IKasaReportDateRulesService
         if (crossConflict)
             warnings.Add($"Raporlar arasında tarih uyuşmazlığı var: {string.Join(", ", allDistinct)}");
 
-        // Süreklilik
-        var continuityOk = true;
-        if (expected.HasValue && proposed.HasValue && proposed.Value != expected.Value)
-        {
-            continuityOk = false;
-            warnings.Add($"DB süreklilik uyarısı: Son kayıt {last:yyyy-MM-dd}. Beklenen {expected:yyyy-MM-dd} ama tespit edilen/önerilen {proposed:yyyy-MM-dd}." );
-        }
+
 
         return new DateRulesEvaluation
         {
             ProposedDate = proposed,
             FinalSuggestedDate = proposed,
-            DbLastSnapshotDate = last,
-            DbExpectedNextDate = expected,
             HasConflict = hasConflict,
             HasAnyDate = hasAny,
-            ContinuityLooksOk = continuityOk,
             Sources = sources,
             Warnings = warnings
         };

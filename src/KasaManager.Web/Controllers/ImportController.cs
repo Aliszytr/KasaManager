@@ -29,7 +29,6 @@ public sealed class ImportController : Controller
     private readonly IConfiguration _cfg;
     private readonly ILogger<ImportController> _log;
     private readonly IKasaReportDateRulesService _dateRules;
-    private readonly IKasaRaporSnapshotService _snapshots;
     private readonly IKasaGlobalDefaultsService _globalDefaults;
     private readonly IComparisonArchiveService _archiveService;
 
@@ -41,7 +40,7 @@ public sealed class ImportController : Controller
         IConfiguration cfg,
         ILogger<ImportController> log,
         IKasaReportDateRulesService dateRules,
-        IKasaRaporSnapshotService snapshots,
+
         IKasaGlobalDefaultsService globalDefaults,
         IComparisonArchiveService archiveService)
     {
@@ -52,7 +51,7 @@ public sealed class ImportController : Controller
         _cfg = cfg;
         _log = log;
         _dateRules = dateRules;
-        _snapshots = snapshots;
+
         _globalDefaults = globalDefaults;
         _archiveService = archiveService;
     }
@@ -634,9 +633,6 @@ public sealed class ImportController : Controller
             var proposed = eval.ProposedDate;
             var (veznedarCol, bakiyeCol) = GuessColumns(table);
 
-            // Son Genel snapshot tarihini çek
-            var lastSnapshotDate = await _snapshots.GetLastSnapshotDateAsync(KasaRaporTuru.Genel, ct);
-
             // Varsayılan VergiKasa veznedarları
             var defaults = await _globalDefaults.GetAsync(ct);
             var defaultVergiList = new List<string>();
@@ -656,8 +652,7 @@ public sealed class ImportController : Controller
                 VeznedarColumn = veznedarCol,
                 BakiyeColumn = bakiyeCol,
                 DefaultVergiKasaVeznedarlar = defaultVergiList,
-                HasExistingSnapshot = lastSnapshotDate.HasValue,
-                LastSnapshotDate = lastSnapshotDate,
+                // P4.3: Snapshot references removed
                 StartOpen = true,
                 ShowSaveButton = true,
                 Context = "import"

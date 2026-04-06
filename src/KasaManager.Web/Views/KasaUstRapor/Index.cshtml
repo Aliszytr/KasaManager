@@ -123,14 +123,10 @@
                 </div>
                 <div class="kasa-card-body">
                     <!-- Tarih Bilgileri -->
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                    <div style="display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 16px;">
                         <div style="background: var(--surface-body); border-radius: var(--radius-sm); padding: 10px 14px;">
-                            <div style="font-size: 0.7rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 2px;">DB Son</div>
-                            <div style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 0.9rem; color: var(--text-primary);">@fmt(eval?.DbLastSnapshotDate)</div>
-                        </div>
-                        <div style="background: var(--surface-body); border-radius: var(--radius-sm); padding: 10px 14px;">
-                            <div style="font-size: 0.7rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 2px;">DB Beklenen</div>
-                            <div style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 0.9rem; color: var(--text-primary);">@fmt(eval?.DbExpectedNextDate)</div>
+                            <div style="font-size: 0.7rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 2px;">Tarih Sürekliliği</div>
+                            <div style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 0.9rem; color: var(--text-primary);">Stateless (Koparıldı)</div>
                         </div>
                     </div>
                     <div style="background: rgba(8, 145, 178, 0.08); border: 1px solid rgba(8, 145, 178, 0.2); border-radius: var(--radius-sm); padding: 10px 14px; text-align: center;">
@@ -265,7 +261,7 @@
                                     </label>
                                     @if (eval?.HasAnyDate == false)
                                     {
-                                        var suggestedFull = eval.DbExpectedNextDate ?? DateOnly.FromDateTime(DateTime.Today);
+                                        var suggestedFull = DateOnly.FromDateTime(DateTime.Today);
                                         <div style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25);
                                                     border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;">
                                             <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">

@@ -67,6 +67,8 @@ public sealed partial class BankaHesapKontrolService
             query = query.Where(x => x.HesapTuru == hesapTuru.Value);
         if (durum.HasValue)
             query = query.Where(x => x.Durum == durum.Value);
+        else
+            query = query.Where(x => x.Durum != KayitDurumu.Iptal);
 
         return await query
             .OrderByDescending(x => x.AnalizTarihi)
@@ -90,6 +92,8 @@ public sealed partial class BankaHesapKontrolService
             query = query.Where(x => x.HesapTuru == hesapTuru.Value);
         if (durum.HasValue)
             query = query.Where(x => x.Durum == durum.Value);
+        else
+            query = query.Where(x => x.Durum != KayitDurumu.Iptal);
 
         return await query
             .OrderByDescending(x => x.TakipBaslangicTarihi)
@@ -144,17 +148,22 @@ public sealed partial class BankaHesapKontrolService
             gunBazli);
     }
 
-    public async Task<HesapKontrolDashboard> GetDashboardAsync(DateOnly? analizTarihi = null, CancellationToken ct = default)
+    // BUG-SYNC-1 FIX: hesapTuru parametresi eklendi — OpenItems ile aynı filtreleme semantiği.
+    public async Task<HesapKontrolDashboard> GetDashboardAsync(DateOnly? analizTarihi = null, BankaHesapTuru? hesapTuru = null, CancellationToken ct = default)
     {
         var acikQuery = _db.HesapKontrolKayitlari
             .Where(x => x.Durum == KayitDurumu.Acik);
         if (analizTarihi.HasValue)
             acikQuery = acikQuery.Where(x => x.AnalizTarihi == analizTarihi.Value);
+        if (hesapTuru.HasValue)
+            acikQuery = acikQuery.Where(x => x.HesapTuru == hesapTuru.Value);
         var acikKayitlar = await acikQuery.ToListAsync(ct);
 
-        var takipteKayitlar = await _db.HesapKontrolKayitlari
-            .Where(x => x.Durum == KayitDurumu.Takipte)
-            .ToListAsync(ct);
+        var takipteQuery = _db.HesapKontrolKayitlari
+            .Where(x => x.Durum == KayitDurumu.Takipte);
+        if (hesapTuru.HasValue)
+            takipteQuery = takipteQuery.Where(x => x.HesapTuru == hesapTuru.Value);
+        var takipteKayitlar = await takipteQuery.ToListAsync(ct);
 
         // BUG-3 FIX: Local time kullan (TR UTC+3, gece 00-03 arası yanlış sonuç veriyordu)
         var bugun = DateOnly.FromDateTime(DateTime.Now);
@@ -363,11 +372,15 @@ public sealed partial class BankaHesapKontrolService
         var toplamFarkTahsilat = ToplamFark(BankaHesapTuru.Tahsilat);
         var toplamFarkHarc = ToplamFark(BankaHesapTuru.Harc);
 
+        // BUG-AUTOFILL-1 FIX: GuneAitNet artık Acik + Onaylandi durumundaki kayıtları kapsar.
+        // ESKİ: Sadece Onaylandi → yeni tespit edilen farklar (Acik) dışarıda kalıyordu → ToplamFark ile uyumsuzluk.
+        // YENİ: Acik + Onaylandi → ToplamFark ile matematiksel tutarlılık sağlanır.
+        // NOT: Cozuldu/Takipte/Iptal dahil edilmez — bunlar ayrı alanlarda (BugunCozulen, Takipte paneli) gösterilir.
         decimal GuneAitNet(BankaHesapTuru hesap) =>
             bugunKayitlar
                 .Where(x => x.HesapTuru == hesap
                          && x.Sinif != FarkSinifi.Beklenen
-                         && x.Durum == KayitDurumu.Onaylandi)
+                         && (x.Durum == KayitDurumu.Acik || x.Durum == KayitDurumu.Onaylandi))
                 .Sum(x => x.Yon == KayitYonu.Fazla ? x.Tutar : -x.Tutar);
 
         var guneAitTahsilat = GuneAitNet(BankaHesapTuru.Tahsilat);

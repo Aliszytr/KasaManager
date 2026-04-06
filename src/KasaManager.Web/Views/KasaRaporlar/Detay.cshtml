@@ -111,6 +111,26 @@
         border-style: solid;
         border-color: var(--kasa-primary, #6366f1);
     }
+
+    /* Versiyon geçmişi tablo */
+    .versiyon-table thead th {
+        background: var(--kasa-bg, #f9fafb);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--kasa-text-secondary, #6b7280);
+        font-weight: 600;
+        padding: 0.65rem 1rem;
+        border-bottom: 2px solid var(--kasa-border, #e5e7eb);
+    }
+    .versiyon-table tbody td {
+        padding: 0.6rem 1rem;
+        vertical-align: middle;
+        font-size: 0.85rem;
+        border-bottom: 1px solid var(--kasa-border-light, #f3f4f6);
+    }
+    .versiyon-aktif-row { background: rgba(99,102,241,0.04); }
+    .versiyon-silinmis-row { opacity: 0.5; }
 </style>
 }
 
@@ -350,10 +370,90 @@
     </div>
 }
 
-<!-- ════════════════════════════════════════════════════════ -->
+<!-- ╔══════════════════════════════════════════════════════ -->
+<!-- VERSİYON GEÇMİŞİ                                      -->
+<!-- ══════════════════════════════════════════════════════ -->
+@if (Model.Versiyonlar.Count > 0)
+{
+    <div class="detay-section mt-3">
+        <div class="detay-section-header">
+            <i class="fas fa-code-branch text-primary"></i> Versiyon Geçmişi
+            <span class="badge bg-primary ms-auto">@Model.Versiyonlar.Count versiyon</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table versiyon-table mb-0">
+                <thead>
+                    <tr>
+                        <th>Ver.</th>
+                        <th>Durum</th>
+                        <th>Rapor Adı</th>
+                        <th>Hesaplayan</th>
+                        <th>Kaydedildi</th>
+                        <th>Formül Seti</th>
+                        <th class="text-end">İşlem</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var v in Model.Versiyonlar)
+                    {
+                        var rowClass = v.IsDeleted ? "versiyon-silinmis-row" : (v.IsActive ? "versiyon-aktif-row" : "");
+                        <tr class="@rowClass">
+                            <td><span class="badge" style="background:var(--kasa-bg,#f3f4f6);color:var(--kasa-text-secondary,#6b7280);font-size:0.75rem;">v@(v.Version)</span></td>
+                            <td>
+                                @if (v.IsDeleted)
+                                {
+                                    <span class="badge" style="background:#fee2e2;color:#991b1b;"><i class="fas fa-trash-alt me-1"></i>Silinmiş</span>
+                                }
+                                else if (v.IsActive)
+                                {
+                                    <span class="badge" style="background:#d1fae5;color:#065f46;"><i class="fas fa-check me-1"></i>Aktif</span>
+                                }
+                                else
+                                {
+                                    <span class="badge" style="background:#f3f4f6;color:#6b7280;">Pasif</span>
+                                }
+                            </td>
+                            <td class="fw-semibold">@(string.IsNullOrWhiteSpace(v.Name) ? $"{v.KasaTuru} Kasa — {v.RaporTarihi:dd.MM.yyyy}" : v.Name)</td>
+                            <td class="text-muted">@(v.CalculatedBy ?? "—")</td>
+                            <td class="text-muted" style="white-space:nowrap;">@v.CalculatedAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</td>
+                            <td class="text-muted small">@(v.FormulaSetName ?? "—")</td>
+                            <td class="text-end" style="white-space:nowrap;">
+                                <a href="/KasaPreview/LoadSnapshot?id=@v.Id"
+                                   class="btn btn-sm btn-outline-primary" title="Bu versiyonu yükle">
+                                    <i class="fas fa-play"></i>
+                                </a>
+                                @if (!v.IsDeleted && !v.IsActive)
+                                {
+                                    <button class="btn btn-sm btn-outline-success btn-activate-version"
+                                            data-id="@v.Id" data-version="@v.Version"
+                                            title="Bu versiyonu aktif yap">
+                                        <i class="fas fa-check"></i> Aktif Yap
+                                    </button>
+                                }
+                                else if (v.IsActive)
+                                {
+                                    <span class="badge" style="background:rgba(16,185,129,0.1);color:#065f46;padding:0.35rem 0.6rem;border-radius:0.375rem;">
+                                        <i class="fas fa-star me-1"></i>Şu An Aktif
+                                    </span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+<!-- ╔══════════════════════════════════════════════════════ -->
 <!-- EXPORT Toolbar                                         -->
-<!-- ════════════════════════════════════════════════════════ -->
+<!-- ══════════════════════════════════════════════════════ -->
 <div class="d-flex justify-content-end gap-2 mt-3 mb-4">
+    <a href="/KasaPreview/LoadSnapshot?id=@s.Id"
+       class="btn btn-sm btn-primary"
+       title="Raporu KasaPreview'da aç — buradan PDF, CSV vb. çıktı alabilirsiniz">
+        <i class="fas fa-play me-1"></i>KasaPreview'da Aç
+    </a>
     <a asp-action="ExportJson" asp-route-id="@s.Id" class="btn btn-outline-info btn-sm">
         <i class="fas fa-download me-1"></i>JSON İndir
     </a>
@@ -410,6 +510,35 @@
             console.error('Güncelleme hatası:', err);
             if (typeof kasaToast === 'function') kasaToast('Güncelleme başarısız!', 'error');
         }
+    });
+
+    // ═══ VERSİYON AKTİF YAP ═══
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.btn-activate-version');
+        if (!btn) return;
+
+        const vId = btn.dataset.id;
+        const vNo = btn.dataset.version;
+        if (!confirm(`v${vNo} versiyonunu aktif yapmak istediğinize emin misiniz? Mevcut aktif versiyon pasife alınacak.`)) return;
+
+        fetch('@Url.Action("VersionuAktifYap")', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'RequestVerificationToken': antiForgeryToken
+            },
+            body: `id=${vId}`
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                if (typeof kasaToast === 'function') kasaToast(data.message, 'success');
+                setTimeout(() => location.reload(), 700);
+            } else {
+                if (typeof kasaToast === 'function') kasaToast(data.message, 'error');
+            }
+        })
+        .catch(err => console.error('Aktivasyon hatası:', err));
     });
 })();
 </script>

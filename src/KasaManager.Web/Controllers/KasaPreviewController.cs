@@ -27,8 +27,6 @@ public sealed partial class KasaPreviewController : Controller
     private readonly IConfiguration _cfg;
     private readonly IImportOrchestrator _importOrchestrator;
     private readonly IKasaReportDateRulesService _dateRules;
-    private readonly IKasaRaporSnapshotService _snapshots;
-    private readonly ICalculatedKasaSnapshotService _calcSnapshots;
     private readonly IKasaGlobalDefaultsService _globalDefaults;
     private readonly IBankaHesapKontrolService _hesapKontrol;
     private readonly IReportDataBuilder _reportBuilder;
@@ -40,6 +38,7 @@ public sealed partial class KasaPreviewController : Controller
     private readonly IFinansalIstisnaAnomaliService _anomali;
     private readonly IDistributedCache _cache;
     private readonly ILogger<KasaPreviewController> _log;
+    private readonly KasaManager.Application.Services.ReadAdapter.IKasaReadModelService _readModelService;
 
     public KasaPreviewController(
         IKasaOrchestrator orchestrator,
@@ -47,8 +46,7 @@ public sealed partial class KasaPreviewController : Controller
         IConfiguration cfg,
         IImportOrchestrator importOrchestrator,
         IKasaReportDateRulesService dateRules,
-        IKasaRaporSnapshotService snapshots,
-        ICalculatedKasaSnapshotService calcSnapshots,
+
         IKasaGlobalDefaultsService globalDefaults,
         IBankaHesapKontrolService hesapKontrol,
         IReportDataBuilder reportBuilder,
@@ -59,15 +57,16 @@ public sealed partial class KasaPreviewController : Controller
         IFinansalIstisnaService finansalIstisna,
         IFinansalIstisnaAnomaliService anomali,
         IDistributedCache cache,
-        ILogger<KasaPreviewController> log)
+        ILogger<KasaPreviewController> log,
+        // FAZ 4: Adapter Injection
+        KasaManager.Application.Services.ReadAdapter.IKasaReadModelService readModelService)
     {
         _orchestrator = orchestrator;
         _env = env;
         _cfg = cfg;
         _importOrchestrator = importOrchestrator;
         _dateRules = dateRules;
-        _snapshots = snapshots;
-        _calcSnapshots = calcSnapshots;
+
         _globalDefaults = globalDefaults;
         _hesapKontrol = hesapKontrol;
         _reportBuilder = reportBuilder;
@@ -79,6 +78,7 @@ public sealed partial class KasaPreviewController : Controller
         _anomali = anomali;
         _cache = cache;
         _log = log;
+        _readModelService = readModelService;
     }
 
     // =========================================================================
@@ -93,9 +93,8 @@ public sealed partial class KasaPreviewController : Controller
         try
         {
             // 1. Tarih default: KasaÜstRapor snapshot tarihi (yoksa bugün)
-            var lastSnapshotDate = await _snapshots.GetLastSnapshotDateAsync(KasaRaporTuru.Genel, ct);
-            model.SelectedDate = lastSnapshotDate ?? DateOnly.FromDateTime(DateTime.Today);
-            model.LastSnapshotDate = lastSnapshotDate;
+            var defaultDate = DateOnly.FromDateTime(DateTime.Today);
+            model.SelectedDate = defaultDate;
 
             // 2. Intent-First: Dashboard'dan kasaType geliyorsa pipeline
             if (!string.IsNullOrEmpty(kasaType))
@@ -103,8 +102,7 @@ public sealed partial class KasaPreviewController : Controller
                 var normalizedType = NormalizeKasaType(kasaType);
                 model.KasaType = normalizedType;
 
-                // 2a. Draft restore — cache'te hesaplanmış veri varsa geri yükle
-                if (await TryRestoreDraftAsync(model, normalizedType, lastSnapshotDate, ct))
+                if (await TryRestoreDraftAsync(model, normalizedType, null, ct))
                     return View(model);
 
                 // 2b. FormulaSet yükleme
@@ -117,12 +115,15 @@ public sealed partial class KasaPreviewController : Controller
                     model.GenelKasaEndDate ??= model.SelectedDate;
                 }
 
-                // 2d. Auto-Load: Snapshot varsa verileri otomatik yükle
-                if (lastSnapshotDate.HasValue)
-                    await SafeAutoLoadPreviewAsync(model, normalizedType, ct);
+                // Vergide Biriken: Tüm kasa tipleri için hesaplama ÖNCESİ çağrılır
+                // VergiKasaBakiyeToplam değeri formüle input olarak gerekli
+                await HydrateVergideBirikenSeedAsync(model, ct);
+
+                // 2d. Auto-Load: Stateless - her zaman güncel veriyi yükle (veya cache'ten oku)
+                await SafeAutoLoadPreviewAsync(model, normalizedType, ct);
             }
 
-            // 3. Ortak hydration (UstRapor panel, upload dosyaları, vergide biriken, IBAN)
+            // 3. Ortak hydration (UstRapor panel, upload dosyaları, IBAN vb.)
             await HydrateCommonAsync(model, ct);
         }
         catch (Exception ex)
@@ -159,7 +160,7 @@ public sealed partial class KasaPreviewController : Controller
                 ?? $"📋 {normalizedType} Kasa verileri önbellekten yüklendi. Tekrar hesaplamak için 'Tekrar Hesapla' butonunu kullanabilirsiniz.";
 
             model.UstRaporPanel ??= await HydrateUstRaporPanelAsync(ct);
-            model.LastSnapshotDate = lastSnapshotDate;
+            // P4.3: LastSnapshotDate removed
             model.HasUploadedFiles = ListUploadedFiles().Count > 0;
 
             if (string.IsNullOrEmpty(model.IbanStopaj))
@@ -197,10 +198,47 @@ public sealed partial class KasaPreviewController : Controller
         try
         {
             var uploadPath = ResolveUploadFolderAbsolute();
-            var autoDto = model.ToDto();
-            await _orchestrator.LoadPreviewAsync(autoDto, uploadPath, ct);
-            await _orchestrator.HydrateDbFormulaSetsAsync(autoDto, ct);
-            model.UpdateFromDto(autoDto);
+            
+            // FAZ 4: Adapter üzerinden geçirme (Sadece 1 kritik read entry point)
+            var readReq = new KasaManager.Application.Services.ReadAdapter.KasaReadRequest {
+                TargetDate = model.SelectedDate ?? DateOnly.FromDateTime(DateTime.Today),
+                KasaScope = normalizedType,
+                BaseUploadFolder = uploadPath,
+                ContextDto = model.ToDto() // Düzeltme: UI state kaybolmasın diye ContextDto eklendi
+            };
+            
+            var readRes = await _readModelService.GetReadModelAsync(readReq, ct);
+            if (readRes.Ok && readRes.Value != null)
+            {
+                // Primary Legacy olarak döner (Mutlak kural)
+                model.UpdateFromDto(readRes.Value.Primary);
+
+                if (model.IsAdminMode)
+                {
+                    model.CandidateEligibility = readRes.Value.EligibilityReason.ToString();
+                    model.HasCandidate = readRes.Value.Candidate != null;
+                    model.HasDrift = readRes.Value.EligibilityReason == KasaManager.Application.Services.ReadAdapter.EligibilityReason.NotMatchedParity;
+                    model.ParityStatus = model.HasDrift ? "Drift Detected" : 
+                                         (readRes.Value.EligibilityReason == KasaManager.Application.Services.ReadAdapter.EligibilityReason.Eligible ? "Exact Match" : "Not Eligible");
+                }
+
+                // DB FormulaSet'lerini de alıp DTO'ya yüklemek isteyebiliriz:
+                var tempDto = model.ToDto();
+                await _orchestrator.HydrateDbFormulaSetsAsync(tempDto, ct);
+                model.UpdateFromDto(tempDto);
+                
+                // UI'ye candidate/read-mode bilgilerini aktar
+                ViewData["CandidateEligibility"] = readRes.Value.EligibilityReason.ToString();
+                ViewData["ExecutedReadMode"] = readRes.Value.ExecutedMode.ToString();
+            }
+            else
+            {
+                // Fail-closed tam fallback
+                var autoDto = model.ToDto();
+                await _orchestrator.LoadPreviewAsync(autoDto, uploadPath, ct);
+                await _orchestrator.HydrateDbFormulaSetsAsync(autoDto, ct);
+                model.UpdateFromDto(autoDto);
+            }
 
             // Sabah + Akşam Kasa: Eksik/Fazla auto-fill
             if (normalizedType.Equals("Sabah", StringComparison.OrdinalIgnoreCase)
@@ -218,12 +256,11 @@ public sealed partial class KasaPreviewController : Controller
         }
     }
 
-    /// <summary>Ortak panel hydration — UstRapor, upload, vergide biriken, IBAN.</summary>
+    /// <summary>Ortak panel hydration — UstRapor, upload, IBAN.</summary>
     private async Task HydrateCommonAsync(KasaPreviewViewModel model, CancellationToken ct)
     {
         model.UstRaporPanel = await HydrateUstRaporPanelAsync(ct);
         model.HasUploadedFiles = ListUploadedFiles().Count > 0;
-        await HydrateVergideBirikenSeedAsync(model, ct);
         await HydrateIbanInfoAsync(model, ct);
         await HydrateFinansalIstisnalarAsync(model, ct);
     }
@@ -244,10 +281,9 @@ public sealed partial class KasaPreviewController : Controller
     [HttpGet]
     public async Task<IActionResult> Designer(string? kasaType, CancellationToken ct)
     {
-        var lastSnapshotDate = await _snapshots.GetLastSnapshotDateAsync(KasaRaporTuru.Genel, ct);
         var model = new KasaPreviewViewModel
         {
-            SelectedDate = lastSnapshotDate ?? DateOnly.FromDateTime(DateTime.Today),
+            SelectedDate = DateOnly.FromDateTime(DateTime.Today),
             IsAdminMode = true,
             KasaType = NormalizeKasaType(kasaType ?? "Custom")
         };
@@ -290,6 +326,9 @@ public sealed partial class KasaPreviewController : Controller
             var raw = Request.Form["GenelKasaEndDate"].ToString();
             if (DateOnly.TryParse(raw, out var parsed)) model.GenelKasaEndDate = parsed;
         }
+
+        // Vergide Biriken: Tüm kasa tipleri için hesaplama ÖNCESİ
+        await HydrateVergideBirikenSeedAsync(model, ct);
 
         var dto = model.ToDto();
         var uploadPath = ResolveUploadFolderAbsolute();
@@ -343,6 +382,9 @@ public sealed partial class KasaPreviewController : Controller
             if (DateOnly.TryParse(raw, out var parsed)) model.GenelKasaEndDate = parsed;
         }
 
+        // Vergide Biriken: Tüm kasa tipleri için hesaplama ÖNCESİ
+        await HydrateVergideBirikenSeedAsync(model, ct);
+
         var dto = model.ToDto();
         var uploadPath = ResolveUploadFolderAbsolute();
 
@@ -386,7 +428,6 @@ public sealed partial class KasaPreviewController : Controller
             }
         }
 
-        await HydrateVergideBirikenSeedAsync(model, ct);
         await HydrateIbanInfoAsync(model, ct);
         await HydrateFinansalIstisnalarAsync(model, ct);
         await HydrateValidationAsync(model, ct);
@@ -421,6 +462,8 @@ public sealed partial class KasaPreviewController : Controller
             if (DateOnly.TryParse(raw, out var parsed)) model.GenelKasaEndDate = parsed;
         }
 
+        // Vergide Biriken: Tüm kasa tipleri için hesaplama ÖNCESİ
+        await HydrateVergideBirikenSeedAsync(model, ct);
         var dto = model.ToDto();
         var uploadPath = ResolveUploadFolderAbsolute();
 
@@ -459,9 +502,8 @@ public sealed partial class KasaPreviewController : Controller
             }
         }
 
-        // Vergide Biriken seed hydration
-        await HydrateVergideBirikenSeedAsync(model, ct);
-
+        // Vergide Biriken seed hydration (Moved to top before calculation)
+        
         // IBAN hydration
         await HydrateIbanInfoAsync(model, ct);
 
@@ -494,6 +536,8 @@ public sealed partial class KasaPreviewController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> RunFormulaEngine(KasaPreviewViewModel model, CancellationToken ct)
     {
+        // Vergide Biriken: Tüm kasa tipleri için hesaplama ÖNCESİ
+        await HydrateVergideBirikenSeedAsync(model, ct);
         var dto = model.ToDto();
         var uploadPath = ResolveUploadFolderAbsolute();
 

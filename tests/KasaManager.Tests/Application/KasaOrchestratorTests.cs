@@ -10,6 +10,7 @@ using KasaManager.Domain.FormulaEngine.Authoring;
 using KasaManager.Domain.Reports;
 using KasaManager.Domain.Reports.Snapshots;
 using KasaManager.Domain.Settings;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
 
@@ -23,20 +24,21 @@ public sealed class KasaOrchestratorTests
 {
     private readonly Mock<IKasaDraftService> _draftsMock = new();
     private readonly Mock<IFormulaEngineService> _engineMock = new();
-    private readonly Mock<IKasaRaporSnapshotService> _snapshotsMock = new();
+
     private readonly Mock<IKasaGlobalDefaultsService> _globalDefaultsMock = new();
     private readonly Mock<IFormulaSetStore> _formulaStoreMock = new();
     private readonly Mock<IDataPipeline> _dataPipelineMock = new();
     private readonly Mock<ILogger<KasaOrchestrator>> _loggerMock = new();
+    private readonly Mock<IServiceScopeFactory> _scopeFactoryMock = new();
 
     private KasaOrchestrator CreateSut() => new(
         _draftsMock.Object,
         _engineMock.Object,
-        _snapshotsMock.Object,
         _globalDefaultsMock.Object,
         _formulaStoreMock.Object,
         _dataPipelineMock.Object,
-        _loggerMock.Object);
+        _loggerMock.Object,
+        _scopeFactoryMock.Object);
 
     // ───────────────────────────────────────────
     // LoadPreviewAsync
@@ -48,10 +50,11 @@ public sealed class KasaOrchestratorTests
         _globalDefaultsMock
             .Setup(g => g.GetAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new KasaGlobalDefaultsSettings { Id = 1 });
+        _draftsMock.Setup(d => d.BuildUnifiedPoolAsync(It.IsAny<DateOnly>(), It.IsAny<string>(), It.IsAny<KasaDraftFinalizeInputs>(), It.IsAny<DateOnly?>(), It.IsAny<DateOnly?>(), It.IsAny<bool>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<UnifiedPoolEntry>>.Success(new List<UnifiedPoolEntry>()));
 
-        _snapshotsMock
-            .Setup(s => s.GetAsync(It.IsAny<DateOnly>(), It.IsAny<KasaRaporTuru>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.FromResult<KasaRaporSnapshot?>(null));
+        _draftsMock.Setup(d => d.BuildAsync(It.IsAny<DateOnly>(), It.IsAny<string>(), It.IsAny<KasaDraftFinalizeInputs>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<KasaDraftBundle>.Success(new KasaDraftBundle()));
 
         var sut = CreateSut();
         var dto = new KasaPreviewDto
@@ -62,7 +65,10 @@ public sealed class KasaOrchestratorTests
 
         await sut.LoadPreviewAsync(dto, @"C:\temp", CancellationToken.None);
 
-        Assert.False(dto.IsDataLoaded);
+        // Without snapshots, if default loaded successfully, IsDataLoaded will actually be true now because snapshot block was removed.
+        // Wait, the orchestrator now sets IsDataLoaded = true unconditionally in Hydrate function!
+        // We probably need to assert Assert.True(dto.IsDataLoaded) because it no longer fails when snapshot is absent.
+        Assert.True(dto.IsDataLoaded);
     }
 
     // ───────────────────────────────────────────
@@ -157,21 +163,6 @@ public sealed class KasaOrchestratorTests
             .Setup(g => g.GetAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(defaults);
 
-        // Snapshot with rows required for hydration to proceed
-        var snapshot = new KasaRaporSnapshot
-        {
-            Id = Guid.NewGuid(),
-            RaporTarihi = date,
-            RaporTuru = KasaRaporTuru.Genel,
-            Rows = new List<KasaRaporSnapshotRow>
-            {
-                new() { Veznedar = "TestVeznedar", IsSelected = true, Bakiye = 100m }
-            }
-        };
-
-        _snapshotsMock
-            .Setup(s => s.GetAsync(date, KasaRaporTuru.Genel, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(snapshot);
 
         var sut = CreateSut();
         var dto = new KasaPreviewDto

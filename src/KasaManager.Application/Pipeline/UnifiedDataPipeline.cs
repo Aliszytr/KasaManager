@@ -17,7 +17,8 @@ public sealed class UnifiedDataPipeline : IDataPipeline
 {
     private readonly IKasaDraftService _draftService;
     private readonly IKasaGlobalDefaultsService _defaults;
-    private readonly IKasaRaporSnapshotService _snapshotService;
+
+    private readonly ICarryoverResolver _carryoverResolver;
 
     // Pipeline seviyesinde çok kısa süreli cache (aynı tarih için peş peşe çağrıları hızlandırır).
     // Özellikle sol menü "alanları getir" + ardından "şablon yükle/hesapla" senaryosunda.
@@ -27,11 +28,11 @@ public sealed class UnifiedDataPipeline : IDataPipeline
     public UnifiedDataPipeline(
         IKasaDraftService draftService,
         IKasaGlobalDefaultsService defaults,
-        IKasaRaporSnapshotService snapshotService)
+        ICarryoverResolver carryoverResolver)
     {
         _draftService = draftService;
         _defaults = defaults;
-        _snapshotService = snapshotService;
+        _carryoverResolver = carryoverResolver;
     }
     
     /// <summary>
@@ -232,7 +233,13 @@ public sealed class UnifiedDataPipeline : IDataPipeline
 
         AddSettingsIfMissing("genel_kasa_devreden_seed", defaults.DefaultGenelKasaDevredenSeed, "Genel Kasa Devreden (Seed)");
         AddSettingsIfMissing("kayden_tahsilat_ayar", defaults.DefaultKaydenTahsilat, "Kayden Tahsilat (Ayar)");
-        AddSettingsIfMissing("dunden_devreden_kasa_nakit", defaults.DefaultDundenDevredenKasaNakit, "Dünden Devreden Kasa Nakit");
+        // R14C: dunden_devreden_kasa_nakit zaten Pool'dan doğru fallback ile geliyor.
+        // Settings override sadece 0'dan farklı anlamlı değer varsa eklenir (savunma katmanı).
+        var ddknOverride = defaults.DefaultDundenDevredenKasaNakit;
+        if (ddknOverride.HasValue && ddknOverride.Value != 0m)
+        {
+            AddSettingsIfMissing("dunden_devreden_kasa_nakit", ddknOverride, "Dünden Devreden Kasa Nakit (Ayarlar Override)");
+        }
         
         return count;
     }
@@ -285,37 +292,28 @@ public sealed class UnifiedDataPipeline : IDataPipeline
         List<string> debugLog,
         CancellationToken ct)
     {
-        // Önceki günün snapshot'ından taşınan değerler
-        var previousDate = request.RaporTarihi.AddDays(-1);
-        var snapshot = await _snapshotService.GetLastGenelKasaSnapshotBeforeOrOnAsync(previousDate, ct);
-        if (snapshot?.Results is null) return 0;
-        
+        // R6-AUDIT P1(B): Carryover kararı ICarryoverResolver'a devredildi.
+        // Tekilleştirilmiş ve standardize edilmiş devreden kararını okuyoruz.
+        CarryoverResolutionResult res = request.KasaScope.StartsWith("Aksam", StringComparison.OrdinalIgnoreCase) 
+            ? await _carryoverResolver.ResolveAsync(request.RaporTarihi, CarryoverScope.AksamKasaNakit, ct)
+            : await _carryoverResolver.ResolveAsync(request.RaporTarihi, CarryoverScope.GenelKasa, ct);
+
+        // Fallback bilgisi log için
+        var fbSource = res.UsedFallback ? $", fallback=true" : "";
+        debugLog.Add($"[CarryoverResolver] targetDate={request.RaporTarihi:yyyy-MM-dd} scope={request.KasaScope} result={res.Value:N2} (source={res.SourceCode}{fbSource})");
+
         int count = 0;
         
-        // Results.ValuesJson'dan değerleri parse et
-        try
+        cells.Set(new Cell
         {
-            var values = JsonSerializer.Deserialize<Dictionary<string, decimal>>(snapshot.Results.ValuesJson);
-            if (values is not null && values.TryGetValue("GenelKasa", out var devreden))
-            {
-                cells.Set(new Cell
-                {
-                    Key = "dunden_devreden_kasa",
-                    Value = devreden,
-                    Source = CellSource.Carryover,
-                    DisplayName = "Dünden Devreden Kasa",
-                    Category = "Carryover",
-                    Notes = $"Tarih: {previousDate:yyyy-MM-dd}"
-                });
-                count++;
-            }
-        }
-        catch (Exception ex)
-        {
-            // P1-EXC-01: Carryover JSON parse hatası — dünden devreden değer 0 olacak
-            debugLog.Add($"[Carryover] Results.ValuesJson parse edilemedi: {ex.Message}");
-            System.Diagnostics.Debug.WriteLine($"[UnifiedDataPipeline] Carryover parse hatası (önceki gün: {previousDate:yyyy-MM-dd}): {ex.Message}");
-        }
+            Key = "dunden_devreden_kasa",
+            Value = res.Value,
+            Source = CellSource.Carryover,
+            DisplayName = "Dünden Devreden Kasa (Resolver)",
+            Category = "Carryover",
+            Notes = $"Kaynak: {res.SourceCode}\nKarar: {res.Reason}\nTarih (Source): {res.SourceDate:yyyy-MM-dd}"
+        });
+        count++;
 
         return count;
     }

@@ -3,6 +3,7 @@ using KasaManager.Web;
 using KasaManager.Web.Middleware;
 using KasaManager.Application.Services;
 using KasaManager.Application.Orchestration;
+using KasaManager.Application.Observability;
 
 using KasaManager.Application.Services.Comparison;
 using KasaManager.Infrastructure;              // ✅ AddProcessingWorkspaceInMemory burada
@@ -21,6 +22,9 @@ using System.Linq;
 System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
 
 var builder = WebApplication.CreateBuilder(args);
+
+// GÖREV 2: Central Log Filter
+builder.Logging.AddFilter("KasaManager.Application.Services.EksikFazlaProjectionEngine", LogLevel.Warning);
 
 // Kestrel: büyük dosya upload'ları için limit (yıllık MasrafveReddiyat vb.)
 builder.WebHost.ConfigureKestrel(opt =>
@@ -46,10 +50,11 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
 builder.Services.AddAuthorization();
 
 // Performans: Response sıkıştırma (JSON, HTML, CSS, JS)
-builder.Services.AddResponseCompression(options =>
-{
-    options.EnableForHttps = true;
-});
+// Geçici teşhis için kapatıldı:
+// builder.Services.AddResponseCompression(options =>
+// {
+//     options.EnableForHttps = true;
+// });
 
 // ✅ HttpContextAccessor (FormulaDesigner için gerekli)
 builder.Services.AddHttpContextAccessor();
@@ -77,8 +82,35 @@ builder.Services.AddSingleton<IAppCache, KasaManager.Infrastructure.Caching.Memo
 // Decorator pattern: CachingImportOrchestrator wraps ImportOrchestrator
 builder.Services.AddScoped<ImportOrchestrator>();
 builder.Services.AddScoped<IImportOrchestrator, CachingImportOrchestrator>();
+builder.Services.AddScoped<KasaManager.Application.Services.DataFirst.IFactNormalizationService, KasaManager.Infrastructure.Services.FactNormalizationService>();
+builder.Services.AddScoped<KasaManager.Application.Services.DataFirst.IParityCheckService, KasaManager.Infrastructure.Services.ParityCheckService>();
+// FAZ 12: Trust DB isolation — Repository pattern
+builder.Services.AddScoped<KasaManager.Application.Services.DataFirst.IDataFirstTrustReadRepository, KasaManager.Infrastructure.Services.DataFirstTrustReadRepository>();
+builder.Services.AddScoped<KasaManager.Application.Services.DataFirst.IDataFirstTrustService, KasaManager.Infrastructure.Services.DataFirstTrustService>();
+
+// FAZ 4: Read Adapter
+builder.Services.AddScoped<KasaManager.Application.Services.ReadAdapter.ILegacyKasaReadService, KasaManager.Infrastructure.Services.ReadAdapter.LegacyKasaReadService>();
+builder.Services.AddScoped<KasaManager.Application.Services.ReadAdapter.IDataFirstKasaReadService, KasaManager.Infrastructure.Services.ReadAdapter.DataFirstKasaReadService>();
+builder.Services.AddScoped<KasaManager.Application.Services.ReadAdapter.IReadModeResolver, KasaManager.Infrastructure.Services.ReadAdapter.ReadModeResolver>();
+builder.Services.AddScoped<KasaManager.Application.Services.ReadAdapter.IReadEligibilityService, KasaManager.Infrastructure.Services.ReadAdapter.ReadEligibilityService>();
+builder.Services.AddScoped<KasaManager.Application.Services.ReadAdapter.IKasaReadModelService, KasaManager.Infrastructure.Services.ReadAdapter.KasaReadModelService>();
+builder.Services.AddScoped<KasaManager.Application.Services.ReadAdapter.IDualKasaReadService, KasaManager.Infrastructure.Services.ReadAdapter.DualKasaReadService>();
+// FAZ 12: Switch Policy threshold'ları config'den okunur
+builder.Services.Configure<KasaManager.Domain.Settings.SwitchPolicyOptions>(
+    builder.Configuration.GetSection(KasaManager.Domain.Settings.SwitchPolicyOptions.SectionName));
+builder.Services.AddScoped<KasaManager.Application.Services.DataFirst.ISwitchSimulationService, KasaManager.Infrastructure.Services.SwitchSimulationService>();
+builder.Services.AddScoped<KasaManager.Application.Services.DataFirst.ISwitchReadinessPolicyService, KasaManager.Infrastructure.Services.SwitchReadinessPolicyService>();
+builder.Services.AddScoped<KasaManager.Application.Services.DataFirst.ISwitchGateService, KasaManager.Infrastructure.Services.SwitchGateService>();
+builder.Services.AddScoped<KasaManager.Application.Services.DataFirst.IManualSwitchOrchestrator, KasaManager.Infrastructure.Services.ManualSwitchOrchestrator>();
+
 builder.Services.AddScoped<IKasaReportDateRulesService, KasaReportDateRulesService>();
+// P1(C): Typed config — env-var yerine IOptions pattern
+builder.Services.Configure<KasaManager.Domain.Settings.UstRaporSourceOptions>(
+    builder.Configuration.GetSection(KasaManager.Domain.Settings.UstRaporSourceOptions.SectionName));
+builder.Services.AddScoped<ICarryoverResolver, CarryoverResolver>();
 builder.Services.AddScoped<IKasaDraftService, KasaDraftService>();
+builder.Services.AddScoped<KasaManager.Application.Abstractions.IEksikFazlaProjectionEngine, EksikFazlaProjectionEngine>();
+builder.Services.AddScoped<IAlertService, AlertService>(); // GÖREV 3: IAlertService DI kaydı
 builder.Services.AddScoped<IExcelValidationService, KasaManager.Application.Services.Import.ExcelValidationService>();
 builder.Services.AddScoped<IKasaOrchestrator, KasaOrchestrator>();
 builder.Services.AddScoped<IGenelKasaRaporService, GenelKasaRaporService>();
@@ -166,7 +198,8 @@ else
     app.UseHsts();
 }
 
-app.UseResponseCompression();
+// Geçici teşhis için kapatıldı:
+// app.UseResponseCompression();
 
 // Kurumsal ağda HTTPS sertifikası olmayabilir — Production'da sadece HTTP kullan
 if (app.Environment.IsDevelopment())
@@ -181,6 +214,16 @@ app.UseSession();
 // ✅ Authentication & Authorization
 app.UseAuthentication();
 app.UseAuthorization();
+
+// GÖREV 5: Health Check Endpoint
+app.MapGet("/health/shadow", () =>
+{
+    return Results.Ok(new
+    {
+        missingInputCount = ShadowMetrics.MissingInputCount,
+        successCount = ShadowMetrics.SuccessCount
+    });
+});
 
 app.MapControllerRoute(
     name: "default",

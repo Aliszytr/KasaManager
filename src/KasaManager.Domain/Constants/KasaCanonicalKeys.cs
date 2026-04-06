@@ -56,18 +56,18 @@ public static class KasaCanonicalKeys
     #endregion
 
     #region Banka - Tahsilat Hesabı
-    public const string DundenDevredenBankaTahsilat = "dunden_devreden_banka_tahsilat";
-    public const string YarinaDeverecekBankaTahsilat = "yarina_deverecek_banka_tahsilat";
+    public const string DundenDevredenBankaTahsilat = "banka_devreden_tahsilat";
+    public const string YarinaDeverecekBankaTahsilat = "banka_yarina_devredecek_tahsilat";
     public const string BankaGirenTahsilat = "bankaya_giren_tahsilat";
-    public const string BankaCikanTahsilat = "banka_cikan_tahsilat";
+    public const string BankaCikanTahsilat = "bankadan_cikan_tahsilat";
     public const string BankaCekilenTahsilat = "banka_cekilen_tahsilat";
     #endregion
 
     #region Banka - Harç Hesabı
-    public const string DundenDevredenBankaHarc = "dunden_devreden_banka_harc";
-    public const string YarinaDeverecekBankaHarc = "yarina_deverecek_banka_harc";
+    public const string DundenDevredenBankaHarc = "banka_devreden_harc";
+    public const string YarinaDeverecekBankaHarc = "banka_yarina_devredecek_harc";
     public const string BankaGirenHarc = "bankaya_giren_harc";
-    public const string BankaCikanHarc = "banka_cikan_harc";
+    public const string BankaCikanHarc = "bankadan_cikan_harc";
     public const string BankaCekilenHarc = "banka_cekilen_harc";
     #endregion
 
@@ -75,7 +75,6 @@ public static class KasaCanonicalKeys
     public const string DundenDevredenBanka = "dunden_devreden_banka";
     public const string YarinaDeverecekBanka = "yarina_deverecek_banka";
     public const string BankayaGiren = "bankaya_giren";
-    public const string BankadanCikan = "bankadan_cikan";
     public const string BankadanCekilen = "bankadan_cekilen";
     public const string BankaBakiye = "banka_bakiye";
     #endregion

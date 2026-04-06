@@ -38,6 +38,7 @@ public interface IKasaDraftService
         DateOnly? selectedBitisTarihi,
         decimal? gelmeyenD,
         string uploadFolderAbsolute,
+        bool confirmBankaDiagnosticOverride = false,
         CancellationToken ct = default);
 
     /// <summary>
@@ -215,5 +216,6 @@ public enum UnifiedPoolValueType
 {
     Raw = 0,
     Override = 1,
-    Derived = 2
+    Derived = 2,
+    Devreden = 3
 }

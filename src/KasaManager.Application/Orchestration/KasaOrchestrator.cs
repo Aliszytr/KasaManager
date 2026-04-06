@@ -21,28 +21,28 @@ public partial class KasaOrchestrator : IKasaOrchestrator
 {
     private readonly IKasaDraftService _drafts;
     private readonly IFormulaEngineService _formulaEngine;
-    private readonly IKasaRaporSnapshotService _snapshots;
     private readonly IKasaGlobalDefaultsService _globalDefaults;
     private readonly IFormulaSetStore _formulaSetStore;
     private readonly IDataPipeline _dataPipeline;
     private readonly ILogger<KasaOrchestrator> _logger;
+    private readonly Microsoft.Extensions.DependencyInjection.IServiceScopeFactory _scopeFactory;
 
     public KasaOrchestrator(
         IKasaDraftService drafts,
         IFormulaEngineService formulaEngine,
-        IKasaRaporSnapshotService snapshots,
         IKasaGlobalDefaultsService globalDefaults,
         IFormulaSetStore formulaSetStore,
         IDataPipeline dataPipeline,
-        ILogger<KasaOrchestrator> logger)
+        ILogger<KasaOrchestrator> logger,
+        Microsoft.Extensions.DependencyInjection.IServiceScopeFactory scopeFactory)
     {
         _drafts = drafts;
         _formulaEngine = formulaEngine;
-        _snapshots = snapshots;
         _globalDefaults = globalDefaults;
         _formulaSetStore = formulaSetStore;
         _dataPipeline = dataPipeline;
         _logger = logger;
+        _scopeFactory = scopeFactory;
     }
 
     // =========================================================================
@@ -77,6 +77,10 @@ public partial class KasaOrchestrator : IKasaOrchestrator
         var effectiveMesaiSonu = kasaTypeHint.Equals("Aksam", StringComparison.OrdinalIgnoreCase) && dto.AksamMesaiSonuModu;
 
         // 1. Build UnifiedPool (date range aware)
+        // FIX: kasaScope must be null for LoadPreview — SlimPool filtering (R25) must NOT run here.
+        // When kasaScope="Aksam"/"Sabah", FieldCatalog.GetRequiredKeysFor() stripped essential pool entries
+        // (e.g. devreden_kasa, vergi_kasa, yt_tahsilat_degistir_*) causing FormulaEngine wrong results.
+        // Genel Kasa is unaffected (uses separate SSOT path inside BuildUnifiedPoolAsync).
         var dailyPoolRes = useRange
             ? await _drafts.BuildUnifiedPoolAsync(date, uploadBasePath, finalize, dto.GenelKasaStartDate, dto.GenelKasaEndDate, false, null, effectiveMesaiSonu, ct)
             : await _drafts.BuildUnifiedPoolAsync(date, uploadBasePath, finalize, rangeStart: null, rangeEnd: null, fullExcelTotals: false, kasaScope: null, mesaiSonuModu: effectiveMesaiSonu, ct: ct);
@@ -126,6 +130,8 @@ public partial class KasaOrchestrator : IKasaOrchestrator
 
         var effectiveMesaiSonu = kasaTypeHint == KasaScopeTypes.Aksam && dto.AksamMesaiSonuModu;
 
+        // FIX: kasaScope=null — same as LoadPreviewAsync fix. SlimPool filtering must not run
+        // for Aksam/Sabah, otherwise essential pool entries get stripped before FormulaEngine.
         var poolRes = useRange
            ? await _drafts.BuildUnifiedPoolAsync(date, uploadBasePath, finalize, dto.GenelKasaStartDate, dto.GenelKasaEndDate, false, null, effectiveMesaiSonu, ct)
            : await _drafts.BuildUnifiedPoolAsync(date, uploadBasePath, finalize, null, null, false, null, effectiveMesaiSonu, ct);
@@ -183,6 +189,25 @@ public partial class KasaOrchestrator : IKasaOrchestrator
         {
             dto.ParityDiffs = BuildParityDiffs(dto.Drafts, dto.FormulaRun);
         }
+
+        // FAZ 2: Shadow Parity Check (Fire and Forget)
+        // Kullanıcı arayüzünü geciktirmeden arka planda legacy vs data-first sonuçlarını DB'ye kaydet.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var parity = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<KasaManager.Application.Services.DataFirst.IParityCheckService>(scope.ServiceProvider);
+
+                // FAZ 12 FIX: HTTP request CT kullanma — request bittiğinde token iptal edilir
+                // ve shadow check yarıda kalır. CancellationToken.None ile tamamlanması garanti.
+                await parity.RunShadowCheckAsync(date, scopeHint, dto.PoolEntries, dto.FormulaRun!, uiSet, overrides, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Shadow Parity Check Trigger failed for {Date}", date);
+            }
+        });
     }
 
     /// <summary>

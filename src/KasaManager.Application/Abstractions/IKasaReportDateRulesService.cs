@@ -16,21 +16,14 @@ public sealed record DateRulesEvaluation
     public DateOnly? ProposedDate { get; init; }
     public DateOnly? FinalSuggestedDate { get; init; }
 
-    /// <summary>DB'de (Genel) son snapshot tarihi.</summary>
-    public DateOnly? DbLastSnapshotDate { get; init; }
-
-    /// <summary>DB'ye göre beklenen bir sonraki tarih (son + 1 gün).</summary>
-    public DateOnly? DbExpectedNextDate { get; init; }
-
     public bool HasConflict { get; init; }
     public bool HasAnyDate { get; init; }
-    public bool ContinuityLooksOk { get; init; }
 
     public List<DateRulesSourceDate> Sources { get; init; } = new();
     public List<string> Warnings { get; init; } = new();
     public List<string> Errors { get; init; } = new();
 
-    public bool RequiresUserDecision => HasConflict || !HasAnyDate || !ContinuityLooksOk;
+    public bool RequiresUserDecision => HasConflict || !HasAnyDate;
 }
 
 public sealed class DateRulesSourceDate

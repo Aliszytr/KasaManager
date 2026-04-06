@@ -16,7 +16,7 @@ public static class KasaPreviewMapper
             AksamMesaiSonuModu = vm.AksamMesaiSonuModu,
             HasResults = vm.HasResults,
             IsDataLoaded = vm.IsDataLoaded,
-            HasSnapshot = vm.HasSnapshot,
+            // P4.3: HasSnapshot removed
 
             // Genel Kasa Metadata
             GenelKasaStartDate = vm.GenelKasaStartDate,
@@ -139,7 +139,7 @@ public static class KasaPreviewMapper
         vm.DesignerEndDate = dto.DesignerEndDate;
         vm.InputCatalogScopeLabel = dto.InputCatalogScopeLabel;
         vm.IsDataLoaded = dto.IsDataLoaded;
-        vm.HasSnapshot = dto.HasSnapshot;
+        // P4.3: HasSnapshot removed
         vm.VergiKasaBakiyeToplam = dto.VergiKasaBakiyeToplam;
         vm.DefaultBozukPara = dto.DefaultBozukPara;
         vm.DefaultNakitPara = dto.DefaultNakitPara;

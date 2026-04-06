@@ -64,13 +64,14 @@ public static class PersistenceDependencyInjection
             });
         });
 
-        services.AddScoped<IKasaRaporSnapshotService, KasaRaporSnapshotService>();
+        // Snapshot servisleri aktif sistemden tamamen ayrıştırıldı (P4.4 Stateless Engine)
+        // Eğer arşivi doğrudan DB'den okunacak bir duruma gelirse ArchiveService üzerinden yönetilecek.
         services.AddScoped<IKasaGlobalDefaultsService, KasaGlobalDefaultsService>();
         services.AddScoped<IFormulaSetStore, FormulaSetStore>();
 
         // R17: Field Chooser ve Calculated Kasa servisleri
         services.AddScoped<IFieldPreferenceService, KasaManager.Infrastructure.Services.FieldPreferenceService>();
-        services.AddScoped<ICalculatedKasaSnapshotService, KasaManager.Infrastructure.Services.CalculatedKasaSnapshotService>();
+        // services.AddScoped<ICalculatedKasaSnapshotService, KasaManager.Infrastructure.Services.CalculatedKasaSnapshotService>(); // P4.4 İptali
 
         // R19: InMemory caching - performans optimizasyonu
         services.AddMemoryCache();

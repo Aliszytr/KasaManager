@@ -132,8 +132,9 @@ public interface IBankaHesapKontrolService
 
     /// <summary>
     /// Dashboard özet bilgileri.
+    /// BUG-SYNC-1 FIX: hesapTuru parametresi eklendi — OpenItems ile aynı filtreleme semantiği.
     /// </summary>
-    Task<HesapKontrolDashboard> GetDashboardAsync(DateOnly? analizTarihi = null, CancellationToken ct = default);
+    Task<HesapKontrolDashboard> GetDashboardAsync(DateOnly? analizTarihi = null, BankaHesapTuru? hesapTuru = null, CancellationToken ct = default);
 
     /// <summary>
     /// Faz 3: Belirli bir tarih için tam dashboard verisini yeniden oluşturur.

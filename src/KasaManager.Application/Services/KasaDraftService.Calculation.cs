@@ -8,6 +8,7 @@ using KasaManager.Domain.Constants;
 using KasaManager.Domain.FormulaEngine;
 using KasaManager.Domain.Helpers;
 using KasaManager.Domain.Reports;
+using Microsoft.Extensions.Logging;
 
 namespace KasaManager.Application.Services;
 
@@ -18,64 +19,17 @@ public sealed partial class KasaDraftService
 
     private async Task<decimal> DetermineDevredenKasaAsync(DateOnly raporTarihi, List<string> issues, CancellationToken ct)
     {
-        // R14C: Öncelik - Ayarlardaki override (0/boş değilse)
-        try
+        // R6-AUDIT P1(B): Carryover resolver
+        var res = await _carryoverResolver.ResolveAsync(raporTarihi, CarryoverScope.AksamKasaNakit, ct);
+        if (res.UsedFallback)
         {
-            var defaults = await _globalDefaults.GetAsync(ct);
-            var overrideVal = defaults.DefaultDundenDevredenKasaNakit;
-            if (overrideVal.HasValue && overrideVal.Value != 0m)
-            {
-                issues.Add($"DEVREDEN OVERRIDE: Ayarlardaki Dünden Devreden Kasa kullanıldı: {overrideVal.Value:N2}.");
-                return overrideVal.Value;
-            }
+            issues.Add($"Devreden Kasa: {res.Reason} (Tarih: {res.SourceDate:dd.MM.yyyy}).");
         }
-        catch (Exception ex)
+        else
         {
-            issues.Add($"Devreden Kasa: Ayarlardan okuma başarısız. Fallback'e geçiliyor. Hata={ex.Message}");
+             issues.Add($"DEVREDEN OVERRIDE: {res.Reason}");
         }
-
-        // R14C: Fallback - bir önceki gün aynı kasa (Akşam) snapshot'ından GenelKasa/Devreden alanı
-        return await TryReadDevredenKasaFromPreviousAksamSnapshotAsync(raporTarihi, issues, ct);
-    }
-
-    private async Task<decimal> TryReadDevredenKasaFromPreviousAksamSnapshotAsync(DateOnly raporTarihi, List<string> issues, CancellationToken ct)
-    {
-        try
-        {
-            var prev = raporTarihi.AddDays(-1);
-            var snap = await _snapshots.GetAsync(prev, KasaRaporTuru.Aksam, ct);
-            if (snap?.Results == null || string.IsNullOrWhiteSpace(snap.Results.ValuesJson))
-            {
-                issues.Add($"{prev:dd.MM.yyyy} tarihli Akşam snapshot sonucu bulunamadı. DevredenKasa 0 kabul edildi.");
-                return 0m;
-            }
-
-            var dict = JsonSerializer.Deserialize<Dictionary<string, string?>>(snap.Results.ValuesJson) ?? new();
-
-            // Sonuç json key'leri finalize fazında netleşecek. Şimdilik bilinen birkaç anahtar deneyelim.
-            var candidates = new[]
-            {
-                "KasaSonDurum.GenelKasa",
-                "KasaSonDurum_GenelKasa",
-                "GenelKasa",
-                "Genel_Kasa",
-                "genel_kasa"
-            };
-
-            foreach (var k in candidates)
-            {
-                if (dict.TryGetValue(k, out var v) && TryParseDecimal(v, out var d))
-                    return d;
-            }
-
-            issues.Add($"{prev:dd.MM.yyyy} Akşam snapshot sonucu okundu ancak GenelKasa alanı bulunamadı. DevredenKasa 0 kabul edildi.");
-            return 0m;
-        }
-        catch (Exception ex)
-        {
-            issues.Add($"DevredenKasa (önceki Akşam snapshot) okuma hatası: {ex.Message}. DevredenKasa 0 kabul edildi.");
-            return 0m;
-        }
+        return res.Value;
     }
 
     

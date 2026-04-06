@@ -361,17 +361,30 @@
         <span class="d-flex align-items-center">
             <i class="fas fa-lightbulb text-warning me-2" style="opacity: 0.7;"></i>
             <span class="small text-muted">Akıllı Öneriler</span>
-            <span class="badge bg-secondary bg-opacity-50 ms-2 small">@Model.AnomaliOnerileri.Count</span>
+            <span class="badge bg-secondary bg-opacity-50 ms-2 small" id="anomaliBadge">@Model.AnomaliOnerileri.Count</span>
         </span>
-        <i class="fas fa-chevron-down text-muted small" id="anomaliChevron"></i>
+        <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2"
+                    id="btnAnomaliTumunuKapat"
+                    onclick="event.stopPropagation(); anomaliDismissAll();"
+                    title="Tüm önerileri kapat">
+                <i class="fas fa-times-circle me-1"></i><span class="small">Tümünü Kapat</span>
+            </button>
+            <i class="fas fa-chevron-down text-muted small" id="anomaliChevron"></i>
+        </div>
     </div>
     <div class="collapse" id="collapseAnomaliOnerileri">
         <div class="card-body p-0">
-            <div class="list-group list-group-flush">
+            <div class="list-group list-group-flush" id="anomaliOnerileriList">
+                @{ var anomaliIndex = 0; }
                 @foreach (var oneri in Model.AnomaliOnerileri)
                 {
                     var guvenClass = oneri.GuvenSeviyesi >= 0.7 ? "bg-success" : oneri.GuvenSeviyesi >= 0.5 ? "bg-warning text-dark" : "bg-secondary";
-                    <div class="list-group-item list-group-item-action py-2">
+                    var dismissKey = oneri.KaynakKayitId.HasValue
+                        ? $"hk_{oneri.KaynakKayitId}"
+                        : $"pattern_{oneri.OnerilenHesapTuru}_{oneri.OnerilenTutar:F2}";
+                    <div class="list-group-item list-group-item-action py-2 anomali-item"
+                         data-dismiss-key="@dismissKey">
                         <div class="d-flex justify-content-between align-items-start">
                             <div>
                                 <strong class="small">@oneri.Baslik</strong>
@@ -407,9 +420,16 @@
                                    title="Bu öneriyi istisna olarak ekle">
                                     <i class="fas fa-plus me-1"></i>İstisna Ekle
                                 </a>
+                                @* Dismiss (Kapat) butonu — tüm öneriler için *@
+                                <button type="button" class="btn btn-sm btn-outline-dark text-nowrap anomali-dismiss"
+                                        data-dismiss-key="@dismissKey"
+                                        title="Bu öneriyi kapat (7 gün gösterilmez)">
+                                    <i class="fas fa-eye-slash"></i>
+                                </button>
                             </div>
                         </div>
                     </div>
+                    anomaliIndex++;
                 }
             </div>
         </div>
@@ -422,6 +442,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var token = document.querySelector('input[name="__RequestVerificationToken"]');
     if (!token) return;
 
+    // ── Anomali Aksiyon Butonları (Çözüldü, Takibe Al, Yok Say) ──
     document.querySelectorAll('.anomali-aksiyon').forEach(function (btn) {
         btn.addEventListener('click', function () {
             var url = btn.dataset.url;
@@ -439,10 +460,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
             fetch(url, { method: 'POST', body: body })
                 .then(function () {
+                    // Aksiyon başarılı → dismiss key'i de kaydet
+                    var dismissKey = row ? row.getAttribute('data-dismiss-key') : null;
+                    if (dismissKey) anomaliDismissItem(dismissKey);
                     if (row) {
                         row.style.transition = 'opacity 0.4s';
                         row.style.opacity = '0';
-                        setTimeout(function () { row.remove(); }, 400);
+                        setTimeout(function () { row.remove(); anomaliUpdateBadge(); }, 400);
                     }
                 })
                 .catch(function () {
@@ -452,5 +476,87 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
         });
     });
+
+    // ── Anomali Dismiss (Kapat) Butonları ──
+    document.querySelectorAll('.anomali-dismiss').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var key = btn.dataset.dismissKey;
+            var row = btn.closest('.list-group-item');
+            anomaliDismissItem(key);
+            if (row) {
+                row.style.transition = 'opacity 0.3s, max-height 0.3s';
+                row.style.opacity = '0';
+                row.style.maxHeight = '0';
+                row.style.overflow = 'hidden';
+                setTimeout(function () { row.remove(); anomaliUpdateBadge(); }, 300);
+            }
+        });
+    });
+
+    // ── Sayfa yüklendiğinde dismiss edilenleri gizle ──
+    anomaliHideDismissed();
 });
+
+// ── localStorage Dismiss Yönetimi ──
+var ANOMALI_STORAGE_KEY = 'kasaYonetim_anomaliDismissed';
+var ANOMALI_TTL_DAYS = 7;
+
+function anomaliGetDismissed() {
+    try {
+        var data = JSON.parse(localStorage.getItem(ANOMALI_STORAGE_KEY) || '{}');
+        var now = Date.now();
+        var cleaned = {};
+        for (var key in data) {
+            if (now - data[key] < ANOMALI_TTL_DAYS * 86400000) {
+                cleaned[key] = data[key];
+            }
+        }
+        if (Object.keys(cleaned).length !== Object.keys(data).length) {
+            localStorage.setItem(ANOMALI_STORAGE_KEY, JSON.stringify(cleaned));
+        }
+        return cleaned;
+    } catch (e) { return {}; }
+}
+
+function anomaliDismissItem(key) {
+    var data = anomaliGetDismissed();
+    data[key] = Date.now();
+    localStorage.setItem(ANOMALI_STORAGE_KEY, JSON.stringify(data));
+}
+
+function anomaliDismissAll() {
+    document.querySelectorAll('.anomali-item').forEach(function (item) {
+        var key = item.getAttribute('data-dismiss-key');
+        if (key) anomaliDismissItem(key);
+        item.style.transition = 'opacity 0.3s';
+        item.style.opacity = '0';
+        setTimeout(function () { item.remove(); anomaliUpdateBadge(); }, 300);
+    });
+}
+
+function anomaliHideDismissed() {
+    var dismissed = anomaliGetDismissed();
+    document.querySelectorAll('.anomali-item').forEach(function (item) {
+        var key = item.getAttribute('data-dismiss-key');
+        if (key && dismissed[key]) {
+            item.remove();
+        }
+    });
+    anomaliUpdateBadge();
+}
+
+function anomaliUpdateBadge() {
+    var remaining = document.querySelectorAll('.anomali-item').length;
+    var badge = document.getElementById('anomaliBadge');
+    if (badge) badge.textContent = remaining;
+    // Eğer hiç kalan yoksa paneli gizle
+    var panel = document.querySelector('.anomali-item');
+    if (!panel) {
+        var card = document.getElementById('collapseAnomaliOnerileri');
+        if (card && card.closest('.card')) {
+            card.closest('.card').style.display = 'none';
+        }
+    }
+}
 </script>

@@ -1,0 +1,50 @@
+﻿C:\Program Files\dotnet\sdk\10.0.201\Microsoft.Common.CurrentVersion.targets(2451,5): warning MSB3270: Derlenen projenin i┼şlemci mimarisi "MSIL" ile "F:\KasaYonetim_New\src\KasaManager.Application\bin\Debug\net8.0\KasaManager.Application.dll" ba┼şvurusunun i┼şlemci mimarisi "AMD64" aras─▒nda bir uyu┼şmazl─▒k vard─▒. Bu uyu┼şmazl─▒k ├ğal─▒┼şma zaman─▒ hatalar─▒na neden olabilir. L├╝tfen proje ve ba┼şvurular─▒n─▒z─▒n i┼şlemci mimarilerini uyumlu hale getirmek i├ğin projenizin hedeflenen i┼şlemci mimarisini Configuration Manager arac─▒l─▒─ş─▒yla de─şi┼ştirin veya projenizin hedeflenen i┼şlemci mimarisiyle e┼şle┼şen bir i┼şlemci mimarisine sahip ba┼şvurular ├╝zerine bir ba─ş─▒ml─▒l─▒k al─▒n. [F:\KasaYonetim_New\src\ProofGeneratorParity\ProofGeneratorParity.csproj]
+C:\Program Files\dotnet\sdk\10.0.201\Microsoft.Common.CurrentVersion.targets(2451,5): warning MSB3270: Derlenen projenin i┼şlemci mimarisi "MSIL" ile "F:\KasaYonetim_New\src\KasaManager.Domain\bin\Debug\net8.0\KasaManager.Domain.dll" ba┼şvurusunun i┼şlemci mimarisi "AMD64" aras─▒nda bir uyu┼şmazl─▒k vard─▒. Bu uyu┼şmazl─▒k ├ğal─▒┼şma zaman─▒ hatalar─▒na neden olabilir. L├╝tfen proje ve ba┼şvurular─▒n─▒z─▒n i┼şlemci mimarilerini uyumlu hale getirmek i├ğin projenizin hedeflenen i┼şlemci mimarisini Configuration Manager arac─▒l─▒─ş─▒yla de─şi┼ştirin veya projenizin hedeflenen i┼şlemci mimarisiyle e┼şle┼şen bir i┼şlemci mimarisine sahip ba┼şvurular ├╝zerine bir ba─ş─▒ml─▒l─▒k al─▒n. [F:\KasaYonetim_New\src\ProofGeneratorParity\ProofGeneratorParity.csproj]
+----- FAZ 3: CARRY OVER CHAiN PARITY REPORT -----
+1.06.2026 - [INPUT] devreden_kasa     | L:     0 | DF:       | Diff:     0 | [MINOR_DRIFT] | Legacy Zero Seed vs DataFirst Missing | Hint: 
+1.06.2026 - [INPUT] gunluk_tahsilat   | L:   100 | DF:   100 | Diff:     0 | [EXACT] | Parity Achieved | Hint: 
+1.06.2026 - [OUTPUT] devreden_kasa    | L:     0 | DF:     0 | Diff:     0 | [EXACT] | Parity Achieved | Hint: 
+1.06.2026 - [OUTPUT] kasa_toplam      | L:   100 | DF:   100 | Diff:     0 | [EXACT] | Parity Achieved | Hint: 
+2.06.2026 - [OUTPUT] kasa_toplam      | L:   150 | DF:   150 | Diff:     0 | [EXACT] | Parity Achieved | Hint: 
+2.06.2026 - [INPUT] prev_kasa_toplam  | L:       | DF:   100 | Diff:   100 | [MAJOR_DRIFT] | Missing in Legacy (Extra Fact) | Hint: 
+2.06.2026 - [OUTPUT] devreden_kasa    | L:   100 | DF:   100 | Diff:     0 | [EXACT] | Parity Achieved | Hint: 
+2.06.2026 - [INPUT] gunluk_tahsilat   | L:    50 | DF:    50 | Diff:     0 | [EXACT] | Parity Achieved | Hint: 
+2.06.2026 - [INPUT] devreden_kasa     | L:   100 | DF:     0 | Diff:   100 | [MAJOR_DRIFT] | Value Divergence (Rounding or Source Drift) | Hint: OverrideRipple
+2.06.2026 - [INPUT] prev_devreden_kasa | L:       | DF:     0 | Diff:     0 | [MINOR_DRIFT] | DataFirst Zero Seed vs Legacy Missing | Hint: 
+3.06.2026 - [INPUT] gunluk_tahsilat   | L:    70 | DF:    70 | Diff:     0 | [EXACT] | Parity Achieved | Hint: 
+3.06.2026 - [INPUT] devreden_kasa     | L:   150 | DF:   100 | Diff:    50 | [MAJOR_DRIFT] | Value Divergence (Rounding or Source Drift) | Hint: OverrideRipple
+3.06.2026 - [OUTPUT] kasa_toplam      | L:   220 | DF:   220 | Diff:     0 | [EXACT] | Parity Achieved | Hint: 
+3.06.2026 - [INPUT] prev_devreden_kasa | L:       | DF:   100 | Diff:   100 | [MAJOR_DRIFT] | Missing in Legacy (Extra Fact) | Hint: 
+3.06.2026 - [INPUT] prev_kasa_toplam  | L:       | DF:   150 | Diff:   150 | [MAJOR_DRIFT] | Missing in Legacy (Extra Fact) | Hint: 
+3.06.2026 - [OUTPUT] devreden_kasa    | L:   150 | DF:   150 | Diff:     0 | [EXACT] | Parity Achieved | Hint: 
+4.06.2026 - [INPUT] devreden_kasa     | L:   220 | DF:   150 | Diff:    70 | [MAJOR_DRIFT] | Value Divergence (Rounding or Source Drift) | Hint: OverrideRipple
+4.06.2026 - [INPUT] prev_kasa_toplam  | L:       | DF:   220 | Diff:   220 | [MAJOR_DRIFT] | Missing in Legacy (Extra Fact) | Hint: 
+4.06.2026 - [OUTPUT] devreden_kasa    | L:   220 | DF:   220 | Diff:     0 | [EXACT] | Parity Achieved | Hint: 
+4.06.2026 - [INPUT] prev_devreden_kasa | L:       | DF:   150 | Diff:   150 | [MAJOR_DRIFT] | Missing in Legacy (Extra Fact) | Hint: 
+4.06.2026 - [OUTPUT] kasa_toplam      | L:   250 | DF:  8220 | Diff:  7970 | [MAJOR_DRIFT] | Calculation Output Divergence | Hint: 
+4.06.2026 - [INPUT] gunluk_tahsilat   | L:    30 | DF:    30 | Diff:     0 | [EXACT] | Parity Achieved | Hint: 
+5.06.2026 - [INPUT] devreden_kasa     | L:   250 | DF:   220 | Diff:    30 | [MAJOR_DRIFT] | Value Divergence (Rounding or Source Drift) | Hint: OverrideRipple
+5.06.2026 - [OUTPUT] devreden_kasa    | L:   250 | DF:  8220 | Diff:  7970 | [MAJOR_DRIFT] | Calculation Output Divergence | Hint: CarryOverMismatch
+5.06.2026 - [INPUT] gunluk_tahsilat   | L:    10 | DF:    10 | Diff:     0 | [EXACT] | Parity Achieved | Hint: PreviousDayStale
+5.06.2026 - [INPUT] prev_devreden_kasa | L:       | DF:   220 | Diff:   220 | [MAJOR_DRIFT] | Missing in Legacy (Extra Fact) | Hint: PreviousDayStale
+5.06.2026 - [INPUT] prev_kasa_toplam  | L:       | DF:  8220 | Diff:  8220 | [MAJOR_DRIFT] | Missing in Legacy (Extra Fact) | Hint: PreviousDayStale
+5.06.2026 - [OUTPUT] kasa_toplam      | L:   260 | DF:  8230 | Diff:  7970 | [MAJOR_DRIFT] | Calculation Output Divergence | Hint: PreviousDayStale
+7.06.2026 - [OUTPUT] devreden_kasa    | L:   260 | DF:     0 | Diff:   260 | [MAJOR_DRIFT] | Calculation Output Divergence | Hint: CarryOverMismatch
+7.06.2026 - [INPUT] devreden_kasa     | L:   260 | DF:       | Diff:   260 | [MAJOR_DRIFT] | Missing Fact in DataFirst | Hint: MissingPreviousResult
+7.06.2026 - [INPUT] gunluk_tahsilat   | L:    10 | DF:    10 | Diff:     0 | [EXACT] | Parity Achieved | Hint: 
+7.06.2026 - [OUTPUT] kasa_toplam      | L:   270 | DF:    10 | Diff:   260 | [MAJOR_DRIFT] | Calculation Output Divergence | Hint: 
+9.06.2026 - [OUTPUT] kasa_toplam      | L:   540 | DF:   540 | Diff:     0 | [EXACT] | Parity Achieved | Hint: 
+9.06.2026 - [INPUT] gunluk_tahsilat   | L:    40 | DF:    40 | Diff:     0 | [EXACT] | Parity Achieved | Hint: 
+9.06.2026 - [OUTPUT] devreden_kasa    | L:   500 | DF:   500 | Diff:     0 | [EXACT] | Parity Achieved | Hint: 
+9.06.2026 - [INPUT] devreden_kasa     | L:   500 | DF:       | Diff:   500 | [MAJOR_DRIFT] | Missing Fact in DataFirst | Hint: MissingPreviousResult
+9.06.2026 - [INPUT] prev_kasa_toplam  | L:       | DF:   500 | Diff:   500 | [MAJOR_DRIFT] | Missing in Legacy (Extra Fact) | Hint: 
+
+----- DAiLY CALCULATiON RESULTS CHAiN -----
+1.06.2026 - Locked: False | Stale: False | Version: 1
+2.06.2026 - Locked: False | Stale: False | Version: 1
+3.06.2026 - Locked: False | Stale: False | Version: 1
+4.06.2026 - Locked: False | Stale: True | Version: 1
+5.06.2026 - Locked: False | Stale: True | Version: 1
+7.06.2026 - Locked: False | Stale: False | Version: 1
+8.06.2026 - Locked: True | Stale: False | Version: 1
+9.06.2026 - Locked: False | Stale: False | Version: 1

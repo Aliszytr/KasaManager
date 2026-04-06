@@ -53,7 +53,7 @@ public sealed class GenelKasaRaporController : Controller
     public async Task<IActionResult> Index(CancellationToken ct)
     {
         var folder = ResolveUploadFolder();
-        var data = await _raporService.BuildReportDataAsync(selectedEndDate: null, gelmeyenD: null, folder, ct);
+        var data = await _raporService.BuildReportDataAsync(selectedEndDate: null, gelmeyenD: null, folder, confirmBankaDiagnosticOverride: false, ct);
         var model = MapToViewModel(data);
         return View(model);
     }
@@ -63,6 +63,7 @@ public sealed class GenelKasaRaporController : Controller
     public async Task<IActionResult> Hazirla(
         [FromForm] DateOnly? selectedBitisTarihi,
         [FromForm] string? gelmeyenD,
+        [FromForm] bool confirmBankaDiagnosticOverride,
         CancellationToken ct)
     {
         decimal? parsedGelmeyen = null;
@@ -70,9 +71,10 @@ public sealed class GenelKasaRaporController : Controller
             parsedGelmeyen = v;
 
         var folder = ResolveUploadFolder();
-        var data = await _raporService.BuildReportDataAsync(selectedEndDate: selectedBitisTarihi, gelmeyenD: parsedGelmeyen, folder, ct);
+        var data = await _raporService.BuildReportDataAsync(selectedEndDate: selectedBitisTarihi, gelmeyenD: parsedGelmeyen, folder, confirmBankaDiagnosticOverride, ct);
         var model = MapToViewModel(data);
         model.SelectedBitisTarihi = selectedBitisTarihi;
+        model.ConfirmBankaDiagnosticOverride = confirmBankaDiagnosticOverride;
         return View("Index", model);
     }
 
@@ -90,6 +92,7 @@ public sealed class GenelKasaRaporController : Controller
         [FromForm] string exportType,
         [FromForm] DateOnly? selectedBitisTarihi,
         [FromForm] string? gelmeyenD,
+        [FromForm] bool confirmBankaDiagnosticOverride,
         CancellationToken ct)
     {
         // 1) CalculationRun üret
@@ -98,15 +101,23 @@ public sealed class GenelKasaRaporController : Controller
             parsedGelmeyen = gv;
 
         var folder = ResolveUploadFolder();
-        var (run, error) = await _raporService.BuildCalculationRunAsync(selectedBitisTarihi, parsedGelmeyen, folder, ct);
+
+        var data = await _raporService.BuildReportDataAsync(selectedEndDate: selectedBitisTarihi, gelmeyenD: parsedGelmeyen, folder, confirmBankaDiagnosticOverride, ct);
+        if (data.BankaMismatchType != KasaManager.Domain.Reports.BankaMismatchType.None && !confirmBankaDiagnosticOverride)
+        {
+            TempData["ExportError"] = "Tarih uyuşmazlığı veya teşhis uyarısı nedeniyle çıktı üretilemedi. Önce uyarıyı onaylayın ve sayfadaki işlemi tamamlayın.";
+            var model = MapToViewModel(data);
+            model.SelectedBitisTarihi = selectedBitisTarihi;
+            model.ConfirmBankaDiagnosticOverride = confirmBankaDiagnosticOverride;
+            return View("Index", model);
+        }
+
+        var (run, error) = await _raporService.BuildCalculationRunAsync(selectedBitisTarihi, parsedGelmeyen, folder, confirmBankaDiagnosticOverride, ct);
         if (run is null)
         {
             TempData["ExportError"] = error ?? "Hesaplama başarısız.";
             return RedirectToAction("Index");
         }
-
-        // 2) CalculationRun → GenelKasaRaporData
-        var data = await _raporService.BuildReportDataAsync(selectedEndDate: selectedBitisTarihi, gelmeyenD: parsedGelmeyen, folder, ct);
 
         // 3) Format'a göre çıktı üret
         byte[] fileBytes;
@@ -190,6 +201,7 @@ public sealed class GenelKasaRaporController : Controller
         [FromForm] string? gelmeyenD,
         [FromForm] string? SaveRaporAdi,
         [FromForm] string? SaveVeznedar,
+        [FromForm] bool confirmBankaDiagnosticOverride,
         CancellationToken ct)
     {
         try
@@ -199,7 +211,18 @@ public sealed class GenelKasaRaporController : Controller
                 parsedGelmeyen = gv;
 
             var folder = ResolveUploadFolder();
-            var (run, error) = await _raporService.BuildCalculationRunAsync(selectedBitisTarihi, parsedGelmeyen, folder, ct);
+
+            var data = await _raporService.BuildReportDataAsync(selectedEndDate: selectedBitisTarihi, gelmeyenD: parsedGelmeyen, folder, confirmBankaDiagnosticOverride, ct);
+            if (data.BankaMismatchType != KasaManager.Domain.Reports.BankaMismatchType.None && !confirmBankaDiagnosticOverride)
+            {
+                TempData["ErrorMessage"] = "Banka tahsilat uyuşmazlığı algılandığı için rapor kaydedilemedi. Lütfen ekrandaki uyarıyı onaylayın veya dosyalarınızı düzeltin.";
+                var model = MapToViewModel(data);
+                model.SelectedBitisTarihi = selectedBitisTarihi;
+                model.ConfirmBankaDiagnosticOverride = confirmBankaDiagnosticOverride;
+                return View("Index", model);
+            }
+
+            var (run, error) = await _raporService.BuildCalculationRunAsync(selectedBitisTarihi, parsedGelmeyen, folder, confirmBankaDiagnosticOverride, ct);
             if (run is null)
             {
                 TempData["ErrorMessage"] = error ?? "Hesaplama başarısız.";
@@ -238,13 +261,14 @@ public sealed class GenelKasaRaporController : Controller
                 FormulaSetName = run.FormulaSetId
             };
 
-            await _calcSnapshots.SaveAsync(snapshot, ct);
+            // P4.1 Stateless Snapshot Deactivation
+            // await _calcSnapshots.SaveAsync(snapshot, ct);
 
-            _log.LogInformation("GenelKasa rapor kaydedildi: {Name}, Tarih={Tarih}, Id={Id}",
-                snapshot.Name, snapshot.RaporTarihi, snapshot.Id);
+            _log.LogInformation("GenelKasa rapor kaydedildi (Stateless - DB atlandı): {Name}, Tarih={Tarih}",
+                snapshot.Name, snapshot.RaporTarihi);
 
-            TempData["SuccessMessage"] = $"✅ Rapor başarıyla kaydedildi: {snapshot.Name} (v{snapshot.Version})";
-            return RedirectToAction("LoadSnapshot", new { id = snapshot.Id });
+            TempData["SuccessMessage"] = $"✅ Rapor başarıyla hesaplandı ve doğrulandı (Snapshot DB Kaydı Kapatıldı): {snapshot.Name}";
+            return RedirectToAction("Index");
         }
         catch (Exception ex)
         {
@@ -267,18 +291,64 @@ public sealed class GenelKasaRaporController : Controller
             return RedirectToAction("Index");
         }
 
-        // Hesaplama verileriyle yeni model oluştur
-        var folder = ResolveUploadFolder();
-        var data = await _raporService.BuildReportDataAsync(selectedEndDate: snapshot.RaporTarihi, gelmeyenD: null, folder, ct);
-        var model = MapToViewModel(data);
-
-        // Snapshot tracking
-        model.LoadedSnapshotId = snapshot.Id;
-        model.LoadedSnapshotName = snapshot.Name;
-        model.LoadedSnapshotVersion = snapshot.Version;
-
+        var model = MapSnapshotToViewModel(snapshot);
         TempData["SuccessMessage"] = $"✅ Rapor yüklendi: {snapshot.Name} (v{snapshot.Version})";
         return View("Index", model);
+    }
+
+    private GenelKasaRaporViewModel MapSnapshotToViewModel(CalculatedKasaSnapshot snapshot)
+    {
+        var inputs = string.IsNullOrWhiteSpace(snapshot.InputsJson) ? new() : JsonSerializer.Deserialize<Dictionary<string, decimal>>(snapshot.InputsJson) ?? new();
+        var outputs = string.IsNullOrWhiteSpace(snapshot.OutputsJson) ? new() : JsonSerializer.Deserialize<Dictionary<string, decimal>>(snapshot.OutputsJson) ?? new();
+        decimal GetVal(string k) => outputs.TryGetValue(k, out var ov) ? ov : (inputs.TryGetValue(k, out var iv) ? iv : 0m);
+
+        var baslangicTarihi = snapshot.RaporTarihi;
+        var devSonTarihi = snapshot.RaporTarihi;
+        try 
+        {
+             if (!string.IsNullOrWhiteSpace(snapshot.KasaRaporDataJson)) 
+             {
+                 using var doc = JsonDocument.Parse(snapshot.KasaRaporDataJson);
+                 var root = doc.RootElement;
+                 if (root.TryGetProperty("UstRaporSatirlar", out var rows) && rows.GetArrayLength() > 0)
+                 {
+                     var firstDec = rows[0].GetProperty("Degerler");
+                     if (firstDec.TryGetProperty("D.Baş.Tarihi", out var bd) && DateOnly.TryParseExact(bd.GetString() ?? "", "dd.MM.yyyy", null, System.Globalization.DateTimeStyles.None, out var bdt))
+                         baslangicTarihi = bdt;
+                     if (firstDec.TryGetProperty("Dev.Son.Tarih", out var ds) && DateOnly.TryParseExact(ds.GetString() ?? "", "dd.MM.yyyy", null, System.Globalization.DateTimeStyles.None, out var dsdt))
+                         devSonTarihi = dsdt;
+                 }
+             }
+        } catch { }
+
+        return new GenelKasaRaporViewModel
+        {
+            BaslangicTarihi = baslangicTarihi,
+            BitisTarihi = snapshot.RaporTarihi,
+            DevredenSonTarihi = devSonTarihi,
+            RaporSonTarihi = snapshot.RaporTarihi,
+            TahsilatTarihi = snapshot.RaporTarihi,
+
+            ToplamTahsilat = GetVal(KasaCanonicalKeys.ToplamTahsilat),
+            ToplamReddiyat = GetVal(KasaCanonicalKeys.ToplamReddiyat),
+            KaydenTahsilat = GetVal(KasaCanonicalKeys.KaydenTahsilat),
+            BankaBakiye = GetVal(KasaCanonicalKeys.BankaBakiye),
+
+            Devreden = GetVal(KasaCanonicalKeys.Devreden),
+            Gelmeyen = GetVal(KasaCanonicalKeys.GelmeyenD),
+            EksikYadaFazla = GetVal(KasaCanonicalKeys.EksikFazla),
+            KasaNakit = GetVal(KasaCanonicalKeys.KasaNakit),
+
+            TahsilatReddiyatFark = GetVal(KasaCanonicalKeys.TahRedFark),
+            SonrayaDevredecek = GetVal(KasaCanonicalKeys.SonrayaDevredecek),
+            MutabakatFarki = GetVal(KasaCanonicalKeys.MutabakatFarki),
+            GenelKasa = GetVal(KasaCanonicalKeys.GenelKasa),
+
+            LoadedSnapshotId = snapshot.Id,
+            LoadedSnapshotName = snapshot.Name,
+            LoadedSnapshotVersion = snapshot.Version,
+            SelectedBitisTarihi = snapshot.RaporTarihi
+        };
     }
 
     /// <summary>
@@ -414,6 +484,9 @@ public sealed class GenelKasaRaporController : Controller
             SonrayaDevredecek = data.SonrayaDevredecek,
             MutabakatFarki = data.MutabakatFarki,
             GenelKasa = data.GenelKasa,
+
+            BankaBakiyeDiagnostic = data.BankaBakiyeDiagnostic,
+            BankaMismatchType = data.BankaMismatchType,
 
             Issues = data.Issues,
         };

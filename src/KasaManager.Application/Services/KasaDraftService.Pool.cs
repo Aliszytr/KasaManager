@@ -29,10 +29,13 @@ public sealed partial class KasaDraftService
 
         var issues = new List<string>();
 
-        // R7 Snapshot kaynağı: KasaÜstRapor snapshot'ı (Genel)
-        var genSnap = await _snapshots.GetAsync(raporTarihi, KasaRaporTuru.Genel, ct);
-        if (genSnap == null)
-            return Result<IReadOnlyList<UnifiedPoolEntry>>.Fail($"{raporTarihi:dd.MM.yyyy} tarihli Genel snapshot bulunamadı. Önce KasaÜstRapor ekranından kaydedin.");
+        // P4.4: Snapshot dependency completely removed.
+        // We now rely exclusively on Live Data for the Unified Pool.
+
+        var liveProvider = new IntermediateLiveUstRaporProvider(_import);
+        var liveSummaryRes = liveProvider.GetSummary(raporTarihi, uploadFolderAbsolute, issues);
+        if (!liveSummaryRes.Ok || liveSummaryRes.Value == null)
+            return Result<IReadOnlyList<UnifiedPoolEntry>>.Fail($"{raporTarihi:dd.MM.yyyy} tarihli canlı (live) KasaÜstRapor okunamadı. {liveSummaryRes.Error}");
 
         finalizeInputs ??= new KasaDraftFinalizeInputs();
 
@@ -42,16 +45,43 @@ public sealed partial class KasaDraftService
         var defaultDundenDevredenKasaNakit = defaults.DefaultDundenDevredenKasaNakit ?? 0m;
         var defaultKasaEksikFazla = defaults.DefaultKasaEksikFazla ?? 0m;
 
-        // R5.1 Contract-First: Legacy Akşam/Sabah parity için devreden kasa (dün akşam genel kasa) değeri engine inputs içinde bulunmalı.
-        // Bu değer Controller'da hesaplanamaz; snapshot/ayar mantığı KasaDraftService içinde tek yerde tutulur.
-        var devredenKasa = await DetermineDevredenKasaAsync(raporTarihi, issues, ct);
+        // R5.1 Contract-First: Legacy Akşam/Sabah parity için devreden kasa değeri engine inputs içinde bulunmalı.
+        // Eğer KasaScope "Genel" ise GenelKasa devreden SSOT değerini kullanırız.
+        decimal devredenKasa = 0m;
+        if (kasaScope != null && (kasaScope.Equals("Genel", StringComparison.OrdinalIgnoreCase) || kasaScope.Equals("GenelKasa", StringComparison.OrdinalIgnoreCase)))
+        {
+            // BUG FIX: Genel kasa dönemsel bir raporlama ise, devredeni ararken Bitiş Tarihine (raporTarihi) göre değil, 
+            // Başlangıç Tarihine (rangeStart) göre geriye doğru aramak gerekir!
+            var targetDate = rangeStart ?? raporTarihi;
+            var ssot = await DetermineGenelKasaDevredenSsotAsync(targetDate, ct);
+            devredenKasa = ssot.Devreden;
+        }
+        else
+        {
+            devredenKasa = await DetermineDevredenKasaAsync(raporTarihi, issues, ct);
+        }
 
         // Raw kaynaklar
         var hasRange = rangeStart.HasValue && rangeEnd.HasValue;
         var useFullExcel = !hasRange && fullExcelTotals;
 
-        var ust = ReadKasaUstRaporSummary(genSnap, issues);
+        var l = liveSummaryRes.Value;
+        var ust = new KasaUstSummary(l.PosTahsilat, l.OnlineTahsilat, l.PostTahsilat, l.Tahsilat, l.Reddiyat, l.PosHarc, l.OnlineHarc, l.PostHarc, l.GelmeyenPost, l.Harc, l.GelirVergisi, l.DamgaVergisi, l.Stopaj);
         var online = ReadOnlineReddiyatTotals(raporTarihi, uploadFolderAbsolute, issues, out _, rangeStart: rangeStart, rangeEnd: rangeEnd, fullExcelTotals: useFullExcel);
+        
+        var theRangeStart = rangeStart ?? raporTarihi;
+        var theRangeEnd = rangeEnd ?? raporTarihi;
+        
+        // ImportBankaBakiyeAsync: Sadece Genel Kasa scope'ta çağrılır.
+        // Sabah/Akşam'da bu metot eski publish'te yoktu — BankaBakiye direkt TryReadBankaBakiye ile okunuyordu.
+        decimal bankaBakiye = 0m;
+        BankaMismatchType bankaMismatch = BankaMismatchType.None;
+        BankaBakiyeDiagnosticInfo bankaDiag = new();
+        var isGenel = kasaScope != null && (kasaScope.Equals("Genel", StringComparison.OrdinalIgnoreCase) || kasaScope.Equals("GenelKasa", StringComparison.OrdinalIgnoreCase));
+        if (isGenel)
+        {
+            (bankaBakiye, _, bankaMismatch, bankaDiag) = await ImportBankaBakiyeAsync(uploadFolderAbsolute, theRangeStart, theRangeEnd, issues, ct);
+        }
 
         var bankaTahsilatGun = ReadBankaTahsilatGun(raporTarihi, uploadFolderAbsolute, issues, out var bankaTahsilatGunRawJson, rangeStart: rangeStart, rangeEnd: rangeEnd, fullExcelTotals: useFullExcel);
         var bankaExtraInflow = ReadBankaTahsilatExtraInflowAgg(raporTarihi, uploadFolderAbsolute, issues, out var bankaExtraRawJson, rangeStart: rangeStart, rangeEnd: rangeEnd, fullExcelTotals: useFullExcel);
@@ -184,8 +214,38 @@ public sealed partial class KasaDraftService
         // === Ayarlar'dan gelen override'lar (eski sistem parity) ===
         // Not: Kullanıcı bu değerleri Ayarlar ekranından yönetmeye devam edecek.
         // Burada sadece Formula Authoring için görünür yapıyoruz.
-        AddOverride("dunden_devreden_kasa_nakit", defaultDundenDevredenKasaNakit, "Ayarlar: Dünden devreden kasa nakit (eski sistem)." );
-        AddOverride("kasa_eksik_fazla", defaultKasaEksikFazla, "Ayarlar: Önceki günden devreden (+/-) bakiye / eksik-fazla (eski sistem)." );
+        var isGenelScope = isGenel; // isGenel yukarıda hesaplandı
+
+        if (isGenelScope)
+        {
+            // GENEL KASA: SSOT mantığını kullan (devredenKasa = DetermineGenelKasaDevredenSsotAsync sonucu)
+            var isSettingsOverrideActive = defaults.DefaultDundenDevredenKasaNakit.HasValue
+                                          && defaults.DefaultDundenDevredenKasaNakit.Value != 0m;
+            AddOverride("dunden_devreden_kasa_nakit", devredenKasa,
+                isSettingsOverrideActive
+                    ? $"Ayarlar override: {defaults.DefaultDundenDevredenKasaNakit!.Value:N2}"
+                    : "Önceki Akşam snapshot fallback.");
+            AddOverride(KasaCanonicalKeys.Devreden, devredenKasa,
+                isSettingsOverrideActive
+                    ? $"Ayarlar override: {defaults.DefaultDundenDevredenKasaNakit!.Value:N2}"
+                    : "Önceki snapshot fallback.");
+            AddOverride("genel_kasa_devreden_seed", devredenKasa,
+                isSettingsOverrideActive
+                    ? $"Ayarlar override: {defaults.DefaultGenelKasaDevredenSeed!.Value:N2}"
+                    : "Önceki snapshot fallback (SSOT).");
+
+            AddOverride("kasa_eksik_fazla", defaultKasaEksikFazla, "Ayarlar: Önceki günden devreden (+/-) bakiye / eksik-fazla (eski sistem)." );
+            AddOverride(KasaCanonicalKeys.EksikFazla, defaultKasaEksikFazla, "Ayarlar: DefaultKasaEksikFazla");
+            var kasaNakit = (defaults.DefaultNakitPara ?? 0m) + (defaults.DefaultBozukPara ?? 0m);
+            AddOverride(KasaCanonicalKeys.KasaNakit, kasaNakit, "Ayarlar: DefaultNakitPara+DefaultBozukPara");
+            AddOverride(KasaCanonicalKeys.GelmeyenD, finalizeInputs.GelmeyenD ?? 0m, "UI manuel");
+        }
+        else
+        {
+            // SABAH / AKŞAM KASA: Eski (legacy) davranışı koru — ayarlardan gelen değerleri kullan
+            AddOverride("dunden_devreden_kasa_nakit", defaultDundenDevredenKasaNakit, "Ayarlar: Dünden devreden kasa nakit (eski sistem)." );
+            AddOverride("kasa_eksik_fazla", defaultKasaEksikFazla, "Ayarlar: Önceki günden devreden (+/-) bakiye / eksik-fazla (eski sistem)." );
+        }
 
         // Minimal RAW set (Excel parity için kritik)
         AddRaw("toplam_tahsilat", toplamTahsilat, "KasaUstRaporSnapshot", "KasaUstRapor.xlsx", "TOPLAMLAR/Tahsilat");
@@ -211,25 +271,35 @@ public sealed partial class KasaDraftService
         AddRaw("toplam_stopaj", ust.Stopaj, "KasaUstRaporSnapshot", "KasaUstRapor.xlsx", "TOPLAMLAR/Stopaj (toplam)");
         AddRaw("online_stopaj", online.OnlineStopaj, "OnlineReddiyat", "OnlineReddiyat.xlsx", "Gelir+Damga Vergisi toplamı (online)");
 
+        // Banka (HAM) - Doğrudan Net Bakiye — SADECE Genel Kasa scope'ta
+        if (isGenelScope)
+        {
+            AddRaw(KasaCanonicalKeys.BankaBakiye, bankaBakiye, "BankaTahsilat", "BankaTahsilat.xlsx", 
+                $"{theRangeStart:dd.MM.yyyy}-{theRangeEnd:dd.MM.yyyy} bakiye hesaplaması", 
+                notes: bankaDiag.FileExists 
+                    ? (bankaMismatch != BankaMismatchType.None ? $"UYARI: Banka uyuşmazlığı tespit edildi ({bankaMismatch})" : null) 
+                    : "MISSING_SOURCE: BankaTahsilat.xlsx okunamadı");
+        }
+
         // Banka günlük giriş/çıkış (HAM)
-        AddRaw("bankaya_giren_tahsilat", bankaTahsilatGun.Giren, "BankaTahsilatGun", "BankaTahsilat.xlsx", "Günlük banka giriş toplamı");
-        AddRaw("bankadan_cikan_tahsilat", bankaTahsilatGun.Cikan, "BankaTahsilatGun", "BankaTahsilat.xlsx", "Günlük banka çıkış toplamı");
+        AddRaw(KasaCanonicalKeys.BankaGirenTahsilat, bankaTahsilatGun.Giren, "BankaTahsilatGun", "BankaTahsilat.xlsx", "Günlük banka giriş toplamı");
+        AddRaw(KasaCanonicalKeys.BankaCikanTahsilat, bankaTahsilatGun.Cikan, "BankaTahsilatGun", "BankaTahsilat.xlsx", "Günlük banka çıkış toplamı");
 
         // BankaTahsilat.xlsx ek girişler (HAM) – yeni alanlar
-        AddRaw("eft_otomatik_iade", bankaExtraInflow.EftOtomatikIade, "BankaTahsilatExtra", "BankaTahsilat.xlsx", "İşlem Adı: Gelen EFT Otomatik Yatan (toplam)");
-        AddRaw("gelen_havale", bankaExtraInflow.GelenHavale, "BankaTahsilatExtra", "BankaTahsilat.xlsx", "İşlem Adı: Gelen Havale (toplam)");
-        AddRaw("iade_kelimesi_giris", bankaExtraInflow.IadeKelimesiGiris, "BankaTahsilatExtra", "BankaTahsilat.xlsx", "Açıklama/İşlem adında 'iade' geçen girişler (toplam)");
+        AddRaw(KasaCanonicalKeys.EftOtomatikIade, bankaExtraInflow.EftOtomatikIade, "BankaTahsilatExtra", "BankaTahsilat.xlsx", "İşlem Adı: Gelen EFT Otomatik Yatan (toplam)");
+        AddRaw(KasaCanonicalKeys.GelenHavale, bankaExtraInflow.GelenHavale, "BankaTahsilatExtra", "BankaTahsilat.xlsx", "İşlem Adı: Gelen Havale (toplam)");
+        AddRaw(KasaCanonicalKeys.IadeKelimesiGiris, bankaExtraInflow.IadeKelimesiGiris, "BankaTahsilatExtra", "BankaTahsilat.xlsx", "Açıklama/İşlem adında 'iade' geçen girişler (toplam)");
         AddRaw("islem_disi_yansiyan", bankaExtraInflow.IslemDisiToplam, "BankaTahsilatExtra", "BankaTahsilat.xlsx", "İşlem dışı yansıyan / özel filtreli girişler (toplam)");
 
         // Banka devreden/yarına devredecek (HAM) – referans değerler
-        AddRaw("banka_devreden_tahsilat", bankaTahsilatGun.Devreden, "BankaTahsilatGun", "BankaTahsilat.xlsx", "Önceki günden devreden banka bakiyesi (tahsilat)");
-        AddRaw("banka_yarina_devredecek_tahsilat", bankaTahsilatGun.Yarina, "BankaTahsilatGun", "BankaTahsilat.xlsx", "Yarın devredecek banka bakiyesi (tahsilat)");
+        AddRaw(KasaCanonicalKeys.DundenDevredenBankaTahsilat, bankaTahsilatGun.Devreden, "BankaTahsilatGun", "BankaTahsilat.xlsx", "Önceki günden devreden banka bakiyesi (tahsilat)");
+        AddRaw(KasaCanonicalKeys.YarinaDeverecekBankaTahsilat, bankaTahsilatGun.Yarina, "BankaTahsilatGun", "BankaTahsilat.xlsx", "Yarın devredecek banka bakiyesi (tahsilat)");
 
-        AddRaw("bankaya_giren_harc", bankaHarcGun.Giren, "BankaHarcGun", "BankaHarc.xlsx", "Günlük banka harç giriş toplamı");
-        AddRaw("bankadan_cikan_harc", bankaHarcGun.Cikan, "BankaHarcGun", "BankaHarc.xlsx", "Günlük banka harç çıkış toplamı");
+        AddRaw(KasaCanonicalKeys.BankaGirenHarc, bankaHarcGun.Giren, "BankaHarcGun", "BankaHarc.xlsx", "Günlük banka harç giriş toplamı");
+        AddRaw(KasaCanonicalKeys.BankaCikanHarc, bankaHarcGun.Cikan, "BankaHarcGun", "BankaHarc.xlsx", "Günlük banka harç çıkış toplamı");
 
-        AddRaw("banka_devreden_harc", bankaHarcGun.Devreden, "BankaHarcGun", "BankaHarc.xlsx", "Önceki günden devreden banka bakiyesi (harç)");
-        AddRaw("banka_yarina_devredecek_harc", bankaHarcGun.Yarina, "BankaHarcGun", "BankaHarc.xlsx", "Yarın devredecek banka bakiyesi (harç)");
+        AddRaw(KasaCanonicalKeys.DundenDevredenBankaHarc, bankaHarcGun.Devreden, "BankaHarcGun", "BankaHarc.xlsx", "Önceki günden devreden banka bakiyesi (harç)");
+        AddRaw(KasaCanonicalKeys.YarinaDeverecekBankaHarc, bankaHarcGun.Yarina, "BankaHarcGun", "BankaHarc.xlsx", "Yarın devredecek banka bakiyesi (harç)");
 
         // Bankaya Yatırılacak Doğrulama — Mevduata Para Yatırma / Virman çıkışları (HAM)
         var tahsilatOutflow = ReadBankaOutflowByType(raporTarihi, uploadFolderAbsolute, "BankaTahsilat.xlsx", ImportFileKind.BankaTahsilat, issues, out _, rangeStart: rangeStart, rangeEnd: rangeEnd, fullExcelTotals: useFullExcel);

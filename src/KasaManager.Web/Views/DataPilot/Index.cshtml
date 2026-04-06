@@ -1,0 +1,573 @@
+@model KasaManager.Web.Models.DataPilotIndexViewModel
+@using KasaManager.Domain.Calculation.Data
+@using KasaManager.Web.Models
+
+@{
+    ViewData["Title"] = "DataFirst Pilot Readiness";
+}
+
+<div class="container-fluid py-4">
+    
+    <!-- HARD-CODED WARNING BANNER -->
+    <div class="alert alert-danger d-flex align-items-center mb-4" role="alert">
+        <i class="fas fa-exclamation-triangle fs-4 me-3"></i>
+        <div>
+            <h5 class="alert-heading mb-1 fw-bold">CRITICAL SYSTEM NOTICE</h5>
+            <div class="mb-0">
+                <strong>Manual switch simulation only. System still runs on LEGACY. No real switch is performed.</strong><br/>
+                <strong>Primary System:</strong> LEGACY (ACTIVE)<br />
+                <strong>DataFirst:</strong> CANDIDATE (PILOT / VISIBILITY ONLY)<br />
+                <em>Simulation and trust scores are informational only. No automatic or manual switch is permitted.</em>
+            </div>
+        </div>
+    </div>
+
+    <!-- ERROR/SUCCESS ALERTS -->
+    @if(TempData["Error"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="fas fa-ban me-2"></i> @TempData["Error"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+    @if(TempData["Warning"] != null)
+    {
+        <div class="alert alert-warning alert-dismissible fade show" role="alert">
+            <i class="fas fa-exclamation-circle me-2"></i> @TempData["Warning"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+    @if(TempData["Info"] != null)
+    {
+        <div class="alert alert-info alert-dismissible fade show" role="alert">
+            <i class="fas fa-info-circle me-2"></i> @TempData["Info"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+    @if(TempData["Success"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <i class="fas fa-check-circle me-2"></i> @TempData["Success"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="fas fa-shield-alt text-primary me-2"></i>DataFirst Trust Layer</h2>
+        <span class="badge bg-danger"><i class="fas fa-user-shield me-1"></i>Admin Only</span>
+    </div>
+
+    <!-- RECENT TRUST TREND (Phase 7) -->
+    @if (Model.RecentTrustTrend.Any())
+    {
+        <div class="card shadow-sm border-0 mb-4 bg-light">
+            <div class="card-body py-2 px-3 d-flex align-items-center flex-wrap gap-2">
+                <strong class="text-secondary me-2"><i class="fas fa-chart-line me-1"></i>Son 7 Gün Trend:</strong>
+                @foreach(var trend in Model.RecentTrustTrend)
+                {
+                    string tColor = trend.TrustLevel == TrustLevel.High ? "success" : (trend.TrustLevel == TrustLevel.Medium ? "warning" : "danger");
+                    <span class="badge bg-white border border-@tColor text-@tColor">
+                        @trend.TargetDate.ToString("dd.MM") - @trend.KasaType: <strong>%@trend.ConfidenceScore.ToString("0")</strong>
+                    </span>
+                }
+            }
+            </div>
+        </div>
+    }
+
+    <!-- KPI / TREND PANEL -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white shadow-sm h-100 border-0">
+                <div class="card-body">
+                    <h6 class="card-title text-white-50">Toplam Taranan Gün</h6>
+                    <h2 class="mb-0">@Model.TotalDaysAnalyzed</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white shadow-sm h-100 border-0">
+                <div class="card-body">
+                    <h6 class="card-title text-white-50">Ready (Eligible) Gün</h6>
+                    <h2 class="mb-0">@Model.EligibleDays</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-danger text-white shadow-sm h-100 border-0">
+                <div class="card-body">
+                    <h6 class="card-title text-white-50">Not Ready Gün</h6>
+                    <h2 class="mb-0">@Model.NotEligibleDays</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-dark shadow-sm h-100 border-0">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Açık / İncelemedeki Drifts</h6>
+                    <h2 class="mb-0">@(Model.OpenDrifts + Model.InvestigatingDrifts)</h2>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- FILTER SECTION -->
+    <div class="card shadow-sm border-0 rounded-3 mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label text-muted small fw-bold">Başlangıç Tarihi</label>
+                    <input type="date" name="startDate" class="form-control form-control-sm" value="@Model.StartDate?.ToString("yyyy-MM-dd")" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label text-muted small fw-bold">Bitiş Tarihi</label>
+                    <input type="date" name="endDate" class="form-control form-control-sm" value="@Model.EndDate?.ToString("yyyy-MM-dd")" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label text-muted small fw-bold">Kasa Türü</label>
+                    <select name="kasaType" class="form-select form-select-sm">
+                        <option value="">Tümü</option>
+                        <option value="Sabah" selected="@(Model.KasaType == "Sabah")">Sabah</option>
+                        <option value="Aksam" selected="@(Model.KasaType == "Aksam")">Aksam</option>
+                        <option value="Genel" selected="@(Model.KasaType == "Genel")">Genel</option>
+                        <option value="Ortak" selected="@(Model.KasaType == "Ortak")">Ortak</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label text-muted small fw-bold">Eligible Durumu</label>
+                    <select name="isEligibleFilter" class="form-select form-select-sm">
+                        <option value="">Tümü</option>
+                        <option value="true" selected="@(Model.IsEligibleFilter == true)">Sadece Eligible</option>
+                        <option value="false" selected="@(Model.IsEligibleFilter == false)">Sadece Not Eligible</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-sm btn-primary w-100"><i class="fas fa-filter me-1"></i>Filtrele</button>
+                    <a href="/DataPilot" class="btn btn-sm btn-link text-muted w-100 mt-1">Temizle</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- GRID -->
+    <div class="card shadow-sm border-0 rounded-3">
+        <div class="card-header bg-white border-bottom py-3">
+            <h5 class="mb-0 text-secondary"><i class="fas fa-list-alt me-2"></i>Calculation Results Grid</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-4">Tarih</th>
+                            <th>Kasa Türü</th>
+                            <th class="text-end">Legacy Output</th>
+                            <th class="text-end">DataFirst Output</th>
+                            <th class="text-end">Difference</th>
+                            <th>Policy Status</th>
+                            <th>Trust</th>
+                            <th class="text-center">Switch Gate</th>
+                            <th>Block Reason</th>
+                            <th>Drift Info</th>
+                            <th>Aksiyon</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if(!Model.GridItems.Any())
+                        {
+                            <tr><td colspan="7" class="text-center text-muted py-4">Henüz DataFirst gölge hesaplaması bulunamadı veya filtreye uyan kayıt yok.</td></tr>
+                        }
+                        @foreach(var item in Model.GridItems.OrderByDescending(x => x.TargetDate))
+                        {
+                            string rowClass = "";
+                            string readinessBadge = "";
+                            string trustBadge = "<span class='badge bg-secondary'>NOT SCORED</span>";
+                            
+                            if (item.PolicyResult != null)
+                            {
+                                if (item.PolicyResult.Status == PolicyStatus.Eligible)
+                                {
+                                    rowClass = "table-success";
+                                    readinessBadge = "<span class='badge bg-success'><i class='fas fa-check-circle me-1'></i>ELIGIBLE</span>";
+                                }
+                                else if (item.PolicyResult.Status == PolicyStatus.Review)
+                                {
+                                    rowClass = "table-warning";
+                                    readinessBadge = "<span class='badge bg-warning text-dark'><i class='fas fa-eye me-1'></i>REVIEW</span>";
+                                }
+                                else
+                                {
+                                    rowClass = "table-danger";
+                                    readinessBadge = "<span class='badge bg-danger'><i class='fas fa-lock me-1'></i>BLOCKED</span>";
+                                }
+                                if (!string.IsNullOrEmpty(item.PolicyResult.Reason))
+                                {
+                                    readinessBadge += $"<div class='mt-1 small fw-bold text-muted' style='font-size: 0.75rem;'>{item.PolicyResult.Reason}</div>";
+                                }
+                            }
+                            else
+                            {
+                                // Fallback
+                                if (item.ReadinessStatus == PilotReadiness.Ready)
+                                {
+                                    rowClass = "table-success";
+                                    readinessBadge = "<span class='badge bg-success'><i class='fas fa-check-circle me-1'></i>READY</span>";
+                                }
+                                else if (item.OpenDriftsCount > 0)
+                                {
+                                    rowClass = "table-warning";
+                                    readinessBadge = "<span class='badge bg-warning text-dark'><i class='fas fa-lock me-1'></i>BLOCKED</span>";
+                                }
+                                else
+                                {
+                                    rowClass = "table-danger";
+                                    readinessBadge = "<span class='badge bg-danger'><i class='fas fa-lock me-1'></i>BLOCKED</span>";
+                                }
+                            }
+
+                            if (item.TrustSnapshot != null && item.TrustSnapshot.TotalCount > 0)
+                            {
+                                string tClass = item.TrustSnapshot.TrustLevel == TrustLevel.High ? "bg-success" : (item.TrustSnapshot.TrustLevel == TrustLevel.Medium ? "bg-warning text-dark" : "bg-danger");
+                                trustBadge = $"<span class='badge {tClass}'>[{item.TrustSnapshot.TrustLevel.ToString().ToUpper()} - %{item.TrustSnapshot.ConfidenceScore.ToString("0")}]</span>";
+                            }
+
+                            // Dual Result Logic
+                            string diffBadge = "—";
+                            string legacyStr = "—";
+                            string dfStr = "—";
+                            if (item.DualResult != null)
+                            {
+                                legacyStr = item.DualResult.LegacyResult.ToString("N2");
+                                dfStr = item.DualResult.DataFirstResult.ToString("N2");
+                                
+                                string diffSign = item.DualResult.DifferenceAmount > 0 ? "+" : "";
+                                string categoryColor = item.DualResult.DriftCategory == DriftSeverity.ExactMatch ? "bg-success" :
+                                                       item.DualResult.DriftCategory == DriftSeverity.MinorDrift ? "bg-warning text-dark" : "bg-danger";
+                                
+                                diffBadge = $"<span class='badge {categoryColor}'>{diffSign}{item.DualResult.DifferenceAmount.ToString("N2")} <small>({item.DualResult.DifferencePercent.ToString("N2")}%)</small></span>";
+                            }
+
+                            // Gate Result Logic
+                            string gateBadge = "—";
+                            if (item.GateResult != null)
+                            {
+                                string wouldSwitchHtml = item.GateResult.WouldSwitch 
+                                    ? "<span class='badge bg-success'><i class='fas fa-power-off me-1'></i>Switch: Yes</span>" 
+                                    : "<span class='badge bg-danger'><i class='fas fa-power-off me-1'></i>Switch: No</span>";
+                                
+                                string safeWindowHtml = item.GateResult.IsSafeWindow 
+                                    ? "<span class='badge bg-primary mt-1'><i class='fas fa-shield-alt me-1'></i>Safe Window: Yes</span>" 
+                                    : "<span class='badge bg-secondary mt-1'><i class='fas fa-shield-alt me-1'></i>Safe Window: No</span>";
+                                
+                                gateBadge = $"{wouldSwitchHtml}<br/>{safeWindowHtml}";
+                            }
+
+                            <tr class="@rowClass">
+                                <td class="ps-4 fw-bold">@item.TargetDate.ToString("dd.MM.yyyy")</td>
+                                <td><span class="badge bg-secondary">@item.KasaScope</span></td>
+                                <td class="text-end font-monospace">@legacyStr</td>
+                                <td class="text-end font-monospace text-primary fw-bold">@dfStr</td>
+                                <td class="text-end">@Html.Raw(diffBadge)</td>
+                                <td>@Html.Raw(readinessBadge)</td>
+                                <td>@Html.Raw(trustBadge)</td>
+                                <td class="text-center align-middle">
+                                    @Html.Raw(gateBadge)
+                                </td>
+                                <td>
+                                    @if(string.IsNullOrEmpty(item.BlockReason) || item.BlockReason == "Eligible") {
+                                        <span class="text-success"><i class="fas fa-minus"></i> Yok</span>
+                                    } else {
+                                        <span class="text-danger fw-bold">@item.BlockReason</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (item.Drifts.Any())
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-dark" data-bs-toggle="collapse" data-bs-target="#drifts_@(item.TargetDate.ToString("yyyyMMdd"))_@item.KasaScope">
+                                            <i class="fas fa-layer-group"></i> @item.Drifts.Count Drift
+                                            @if(item.ExactUnresolvedCount > 0) {
+                                                <span class="badge bg-warning text-dark ms-1" title="Unresolved Exact Match!">@item.ExactUnresolvedCount Exact</span>
+                                            }
+                                            <i class="fas fa-chevron-down ms-1"></i>
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted"><i class="fas fa-check text-success"></i> Tertemiz</span>
+                                    }
+                                </td>
+                                <td>
+                                    <a class="btn btn-sm btn-primary text-white mb-1" href="/KasaPreview?Date=@item.TargetDate.ToString("yyyy-MM-dd")&KasaType=@item.KasaScope" target="_blank">
+                                        <i class="fas fa-search"></i> Görüntüle
+                                    </a><br/>
+                                    <button class="btn btn-sm btn-warning fw-bold text-dark w-100" onclick="simulateSwitch('@item.TargetDate.ToString("yyyy-MM-dd")', '@item.KasaScope')">
+                                        <i class="fas fa-bolt"></i> Simulate Switch
+                                    </button>
+                                </td>
+                            </tr>
+                            
+                            @if(item.Drifts.Any())
+                            {
+                                <tr class="collapse bg-light" id="drifts_@(item.TargetDate.ToString("yyyyMMdd"))_@item.KasaScope">
+                                    <td colspan="11" class="p-0 border-0">
+                                        <div class="p-4" style="background: rgba(0,0,0,0.02); border-left: 4px solid #475569;">
+                                            <h6 class="text-secondary"><i class="fas fa-search-plus me-2"></i>Drift / Parity Sorunları</h6>
+                                            <table class="table table-sm table-bordered bg-white mb-0 mt-3" style="font-size: 0.85rem;">
+                                                <thead class="bg-light">
+                                                    <tr>
+                                                        <th>Key</th>
+                                                        <th>Severity</th>
+                                                        <th># Eski (Legacy)</th>
+                                                        <th># Yeni (DataFirst)</th>
+                                                        <th>Fark</th>
+                                                        <th>Reason / Root Cause</th>
+                                                        <th>Resolution Status</th>
+                                                        <th>Resolution Note</th>
+                                                        <th>Reviewed By/At</th>
+                                                        <th>Action</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                @foreach(var drift in item.Drifts)
+                                                {
+                                                    string highlightClass = drift.Severity == DriftSeverity.ExactMatch && drift.ResolutionStatus == DriftResolutionStatus.Open ? "table-warning border-warning" : "";
+
+                                                    <tr class="@highlightClass">
+                                                        <td class="font-monospace text-primary">@drift.FieldKey</td>
+                                                        <td>
+                                                            @if(drift.Severity == DriftSeverity.ExactMatch) { <span class="badge bg-success">@drift.Severity</span> }
+                                                            else if(drift.Severity == DriftSeverity.MinorDrift) { <span class="badge bg-warning text-dark">@drift.Severity</span> }
+                                                            else { <span class="badge bg-danger">@drift.Severity</span> }
+                                                        </td>
+                                                        <td class="text-end">@drift.LegacyValue?.ToString("N2")</td>
+                                                        <td class="text-end fw-bold text-success">@drift.DataFirstValue?.ToString("N2")</td>
+                                                        <td class="text-end text-danger fw-bold">@drift.AbsoluteDifference?.ToString("N2")</td>
+                                                        <td>
+                                                            <div>@drift.RootCauseCategory</div>
+                                                            <small class="text-muted">@drift.ReasonHint</small>
+                                                        </td>
+                                                        <td>
+                                                            @if(drift.ResolutionStatus == DriftResolutionStatus.Open) { <span class="badge bg-danger">@drift.ResolutionStatus</span> }
+                                                            else if(drift.ResolutionStatus == DriftResolutionStatus.Resolved || drift.ResolutionStatus == DriftResolutionStatus.AcceptedDifference || drift.ResolutionStatus == DriftResolutionStatus.FalsePositive) { <span class="badge bg-success">@drift.ResolutionStatus</span> }
+                                                            else { <span class="badge bg-warning text-dark">@drift.ResolutionStatus</span> }
+                                                        </td>
+                                                        <td>@drift.ResolutionNote</td>
+                                                        <td>
+                                                            @if(!string.IsNullOrEmpty(drift.ReviewedBy)){ 
+                                                                <div>@drift.ReviewedBy</div>
+                                                                <small class="text-muted">@drift.ReviewedAt?.ToString("dd.MM.yyyy HH:mm")</small>
+                                                            }
+                                                        </td>
+                                                        <td>
+                                                            <button class="btn btn-sm btn-outline-primary" onclick="openResolutionModal('@drift.Id', '@drift.FieldKey', '@drift.ResolutionStatus', '@(drift.ResolutionNote?.Replace("'", "\\'") ?? "")')">
+                                                                <i class="fas fa-edit"></i> Resolve
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                }
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Drift Resolution Modal -->
+<div class="modal fade" id="resolutionModal" tabindex="-1" aria-labelledby="resolutionModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content border-0 shadow">
+      <form asp-action="ResolveDrift" asp-controller="DataPilot" method="post" id="resolutionForm">
+          <div class="modal-header bg-primary text-white">
+            <h5 class="modal-title" id="resolutionModalLabel"><i class="fas fa-hammer me-2"></i>Drift Çözümleme</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" name="driftId" id="modalDriftId" value="" />
+            
+            <div class="mb-3">
+                <label class="form-label text-muted fw-bold">Alan / Anahtar</label>
+                <div id="modalFieldKey" class="font-monospace p-2 bg-light border rounded"></div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label text-muted fw-bold">Resolution Status</label>
+                <select class="form-select" name="status" id="modalStatus">
+                    @foreach(var opt in Enum.GetValues(typeof(DriftResolutionStatus)))
+                    {
+                        <option value="@opt">@opt</option>
+                    }
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label text-muted fw-bold">Resolution Note / Karar <span class="text-danger">*</span></label>
+                <textarea class="form-control" name="note" id="modalNote" rows="3" placeholder="Zorunlu alan. Bu farkı neden kabul ettik veya nasıl düzelttik?" required></textarea>
+                <div class="invalid-feedback">Resolution Note boş bırakılamaz.</div>
+            </div>
+            
+            <div class="alert alert-info py-2" style="font-size: 0.8rem;">
+                <i class="fas fa-info-circle me-1"></i> Kaydettiğinizde hesabınız (<strong>@User.Identity?.Name</strong>) ve zaman damgası otomatik olarak güncellenecektir.
+            </div>
+          </div>
+          <div class="modal-footer bg-light">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
+            <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Kararı Kaydet</button>
+          </div>
+      </form>
+    </div>
+  </div>
+</div>
+<!-- Faz 12: Manual Switch Simulation Modal -->
+<div class="modal fade" id="simulateSwitchModal" tabindex="-1" aria-labelledby="simulateSwitchModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-warning text-dark border-0">
+        <h5 class="modal-title fw-bold" id="simulateSwitchModalLabel"><i class="fas fa-bolt me-2"></i> Manual Switch Simulation</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body bg-light">
+          <div class="alert alert-danger px-3 py-2 mb-3" style="font-size: 0.85rem">
+              <strong><i class="fas fa-exclamation-circle me-1"></i> NOTICE:</strong> This is a simulation only. The system remains absolutely on LEGACY.
+          </div>
+          
+          <div class="text-center mb-4" id="simLoading">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+              <p class="mt-2 text-muted fw-bold">Evaluating strict policy and gate rules...</p>
+          </div>
+
+          <div id="simResults" class="d-none">
+              <div class="card shadow-sm border-0 mb-3">
+                  <div class="card-body">
+                      <div class="row text-center mb-3">
+                          <div class="col-6">
+                              <h6 class="text-muted mb-1 text-uppercase" style="font-size: 0.70rem; letter-spacing: 1px;">Would Switch?</h6>
+                              <div id="simWouldSwitch" class="fs-4 fw-bold"></div>
+                          </div>
+                          <div class="col-6 border-start">
+                              <h6 class="text-muted mb-1 text-uppercase" style="font-size: 0.70rem; letter-spacing: 1px;">Safe Window?</h6>
+                              <div id="simSafeWindow" class="fs-4 fw-bold"></div>
+                          </div>
+                      </div>
+                      
+                      <div class="p-3 rounded mb-3 text-center text-white shadow-sm" id="simDecisionBox">
+                          <h4 class="mb-1 fw-bold" id="simOptionText"></h4>
+                          <small id="simReasonText" class="opacity-75"></small>
+                      </div>
+
+                      <div class="row align-items-center">
+                          <div class="col-5 text-end">
+                              <span class="badge bg-secondary mb-1">LEGACY</span><br/>
+                              <span class="fw-bold font-monospace" id="simLegacyVal"></span>
+                          </div>
+                          <div class="col-2 text-center text-muted">
+                              <i class="fas fa-exchange-alt"></i>
+                          </div>
+                          <div class="col-5 text-start">
+                              <span class="badge bg-primary mb-1">DATAFIRST</span><br/>
+                              <span class="fw-bold font-monospace text-primary" id="simDFVal"></span>
+                          </div>
+                      </div>
+                      <div class="text-center mt-2">
+                          <small class="text-muted fw-bold">Difference: <span id="simDiffVal"></span></small>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      </div>
+      <div class="modal-footer bg-light border-0">
+        <button type="button" class="btn btn-secondary w-100" data-bs-dismiss="modal">Close Simulation</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+@section Scripts {
+    <script>
+        function openResolutionModal(id, key, status, note) {
+            document.getElementById('modalDriftId').value = id;
+            document.getElementById('modalFieldKey').innerText = key;
+            document.getElementById('modalStatus').value = status;
+            document.getElementById('modalNote').value = note;
+            
+            var modal = new bootstrap.Modal(document.getElementById('resolutionModal'));
+            modal.show();
+        }
+
+        document.getElementById('resolutionForm').addEventListener('submit', function(e) {
+            var note = document.getElementById('modalNote').value;
+            if(!note || note.trim() === '') {
+                e.preventDefault();
+                document.getElementById('modalNote').classList.add('is-invalid');
+            }
+        });
+        
+        document.getElementById('modalNote').addEventListener('input', function() {
+            this.classList.remove('is-invalid');
+        });
+
+        // Faz 12: Manual Switch Logic
+        function simulateSwitch(dateStr, kasaType) {
+            // Reset and show modal
+            document.getElementById('simLoading').classList.remove('d-none');
+            document.getElementById('simResults').classList.add('d-none');
+            var simModal = new bootstrap.Modal(document.getElementById('simulateSwitchModal'));
+            simModal.show();
+
+            // Fetch Evaluation
+            fetch(`/DataPilot/ManualSwitchCheck?dateStr=${dateStr}&kasaType=${kasaType}`)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('simLoading').classList.add('d-none');
+                    if(data.success && data.result) {
+                        var res = data.result;
+                        
+                        document.getElementById('simResults').classList.remove('d-none');
+                        
+                        // Gate Checks
+                        document.getElementById('simWouldSwitch').innerHTML = res.wouldSwitch ? "<span class='text-success'><i class='fas fa-check'></i> YES</span>" : "<span class='text-danger'><i class='fas fa-times'></i> NO</span>";
+                        document.getElementById('simSafeWindow').innerHTML = res.isSafeWindow ? "<span class='text-primary'><i class='fas fa-shield-alt'></i> YES</span>" : "<span class='text-secondary'><i class='fas fa-minus-circle'></i> NO</span>";
+                        
+                        // Final Decision Styling
+                        var decisionBox = document.getElementById('simDecisionBox');
+                        var optionText = document.getElementById('simOptionText');
+                        var reasonText = document.getElementById('simReasonText');
+
+                        decisionBox.classList.remove('bg-success', 'bg-danger');
+                        if (res.finalDecision === "SIMULATED_SWITCH") {
+                            decisionBox.classList.add('bg-success');
+                            optionText.innerHTML = "<i class='fas fa-power-off'></i> SIMULATED SWITCH";
+                        } else {
+                            decisionBox.classList.add('bg-danger');
+                            optionText.innerHTML = "<i class='fas fa-lock'></i> BLOCKED";
+                        }
+                        reasonText.innerText = res.reason;
+
+                        // Values Comparison
+                        document.getElementById('simLegacyVal').innerText = res.legacyValue.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        document.getElementById('simDFVal').innerText = res.dataFirstValue.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        document.getElementById('simDiffVal').innerText = res.diff.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+                        // Phase 12 Requirement: Console Audit Log Emulation
+                        console.log(`[Switch Simulation] Date: ${dateStr} | KasaType: ${kasaType} | Decision: ${res.finalDecision} | Diff: ${res.diff} | Reason: ${res.reason}`);
+                    } else {
+                        alert("Simulation encountered an error. See console for details.");
+                        simModal.hide();
+                    }
+                })
+                .catch(err => {
+                    document.getElementById('simLoading').classList.add('d-none');
+                    alert("A fatal error occurred during simulation fetch.");
+                    console.error(err);
+                });
+        }
+    </script>
+}

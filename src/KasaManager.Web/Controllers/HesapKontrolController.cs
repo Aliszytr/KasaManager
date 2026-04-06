@@ -18,7 +18,7 @@ public sealed class HesapKontrolController : Controller
     private static DateOnly? _lastAnalysisTarih;
     private static readonly object _analysisLock = new();
     private readonly IBankaHesapKontrolService _service;
-    private readonly IKasaRaporSnapshotService _snapshots;
+
     private readonly IHesapKontrolExportService _export;
     private readonly IFinansalIstisnaService _finansalIstisna;
     private readonly ILogger<HesapKontrolController> _log;
@@ -26,14 +26,12 @@ public sealed class HesapKontrolController : Controller
 
     public HesapKontrolController(
         IBankaHesapKontrolService service,
-        IKasaRaporSnapshotService snapshots,
         IHesapKontrolExportService export,
         IFinansalIstisnaService finansalIstisna,
         ILogger<HesapKontrolController> log,
         IWebHostEnvironment env)
     {
         _service = service;
-        _snapshots = snapshots;
         _export = export;
         _finansalIstisna = finansalIstisna;
         _log = log;
@@ -54,29 +52,13 @@ public sealed class HesapKontrolController : Controller
         string? arama,
         CancellationToken ct)
     {
-        // Snapshot tarihini tek seferde al
-        var lastSnapshotDate = await _snapshots.GetLastSnapshotDateAsync(
-            KasaManager.Domain.Reports.KasaRaporTuru.Genel, ct)
-            ?? DateOnly.FromDateTime(DateTime.Now);
-
-        // ── Kullanıcının seçtiği analiz tarihi (yoksa son snapshot tarihi) ──
+        // P4.3: Snapshot UI bağları koparıldı.
+        // Tarih verilmezse varsayılan olarak BUGÜN baz alınır.
         DateOnly analizTarihi;
         if (DateOnly.TryParse(analizTarihiStr, out var parsed))
             analizTarihi = parsed;
         else
-            analizTarihi = lastSnapshotDate;
-
-        // ── Mevcut snapshot tarihlerini getir (dropdown için) ──
-        List<DateOnly> snapshotTarihleri = new();
-        try
-        {
-            snapshotTarihleri = await _snapshots.GetAllSnapshotDatesAsync(
-                KasaManager.Domain.Reports.KasaRaporTuru.Genel, ct);
-        }
-        catch (Exception ex)
-        {
-            _log.LogWarning(ex, "Snapshot tarihleri alınamadı");
-        }
+            analizTarihi = DateOnly.FromDateTime(DateTime.Now);
 
         // ── Otomatik Analiz: Akıllı File-Change Detection ──
         // Dosyalar değişmediyse aynı tarih için analiz tekrar çalışmaz.
@@ -133,12 +115,15 @@ public sealed class HesapKontrolController : Controller
         HesapKontrolDashboard? dashboard = null;
         try
         {
-            dashboard = await _service.GetDashboardAsync(analizTarihi, ct);
+            // BUG-SYNC-1 FIX: Dashboard'a da hesapTuru filtresini geçir.
+            // ESKİ: GetDashboardAsync(analizTarihi) — hesapTuru parametresi yoktu.
+            // Bu, hesapTuru filtreli OpenItems ile uyumsuz sayılar üretiyordu.
+            // YENİ: hesapTuru parametresi de geçirilerek Dashboard ve OpenItems aynı
+            // filtreleme semantiğini kullanır.
+            dashboard = await _service.GetDashboardAsync(analizTarihi, hesapTuru, ct);
         }
-        catch (Exception ex)
-        {
-            _log.LogError(ex, "HesapKontrol dashboard verisi alınamadı");
-        }
+        catch (OperationCanceledException) { _log.LogInformation("HesapKontrol dashboard: istek iptal edildi (kullanıcı sayfadan ayrıldı)"); }
+        catch (Exception ex) { _log.LogError(ex, "HesapKontrol dashboard verisi alınamadı"); }
 
         var acikKayitlar = new List<HesapKontrolKaydi>();
         try
@@ -146,10 +131,8 @@ public sealed class HesapKontrolController : Controller
             acikKayitlar = await _service.GetOpenItemsAsync(
                 hesapTuru: hesapTuru, baslangic: analizTarihi, bitis: analizTarihi, ct: ct);
         }
-        catch (Exception ex)
-        {
-            _log.LogError(ex, "HesapKontrol açık kayıtlar alınamadı");
-        }
+        catch (OperationCanceledException) { _log.LogInformation("HesapKontrol açık kayıtlar: istek iptal edildi"); }
+        catch (Exception ex) { _log.LogError(ex, "HesapKontrol açık kayıtlar alınamadı"); }
 
         var takipteKayitlar = new List<HesapKontrolKaydi>();
         try
@@ -157,10 +140,8 @@ public sealed class HesapKontrolController : Controller
             takipteKayitlar = await _service.GetTrackedItemsAsync(
                 hesapTuru: hesapTuru, ct: ct);
         }
-        catch (Exception ex)
-        {
-            _log.LogError(ex, "HesapKontrol takipte kayıtlar alınamadı");
-        }
+        catch (OperationCanceledException) { _log.LogInformation("HesapKontrol takipte kayıtlar: istek iptal edildi"); }
+        catch (Exception ex) { _log.LogError(ex, "HesapKontrol takipte kayıtlar alınamadı"); }
 
         // Geçmiş tab için tarih aralığı
         var startDate = DateOnly.TryParse(baslangic, out var s) ? s : DateOnly.FromDateTime(DateTime.Now.AddDays(-7));
@@ -172,10 +153,8 @@ public sealed class HesapKontrolController : Controller
         {
             gecmis = await _service.GetHistoryAsync(startDate, endDate, hesapTuru, durum, ct);
         }
-        catch (Exception ex)
-        {
-            _log.LogError(ex, "HesapKontrol geçmiş kayıtlar alınamadı");
-        }
+        catch (OperationCanceledException) { _log.LogInformation("HesapKontrol geçmiş kayıtlar: istek iptal edildi"); }
+        catch (Exception ex) { _log.LogError(ex, "HesapKontrol geçmiş kayıtlar alınamadı"); }
 
         // Takip yaşam döngüsü — veritabanından SADECE takibe alınmış kayıtları getir
         var takipGecmisi = new List<HesapKontrolKaydi>();
@@ -186,10 +165,8 @@ public sealed class HesapKontrolController : Controller
                 takipGecmisi = await _service.GetTrackingLifecycleAsync(
                     startDate, endDate, hesapTuru, takipDurum, ct);
             }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "HesapKontrol takip geçmişi alınamadı");
-            }
+            catch (OperationCanceledException) { _log.LogInformation("HesapKontrol takip geçmişi: istek iptal edildi"); }
+            catch (Exception ex) { _log.LogError(ex, "HesapKontrol takip geçmişi alınamadı"); }
         }
 
         // Takip özeti — HER ZAMAN yükle (Dashboard + Takipte sekmesi)
@@ -198,10 +175,8 @@ public sealed class HesapKontrolController : Controller
         {
             takipOzeti = await _service.GetTrackingSummaryAsync(ct);
         }
-        catch (Exception ex)
-        {
-            _log.LogError(ex, "HesapKontrol takip özeti alınamadı");
-        }
+        catch (OperationCanceledException) { _log.LogInformation("HesapKontrol takip özeti: istek iptal edildi"); }
+        catch (Exception ex) { _log.LogError(ex, "HesapKontrol takip özeti alınamadı"); }
 
         // D2: Arama filtresi
         if (!string.IsNullOrWhiteSpace(arama))
@@ -233,9 +208,7 @@ public sealed class HesapKontrolController : Controller
             FilterBaslangic = startDate,
             FilterBitis = endDate,
             Arama = arama ?? "",
-            LastSnapshotDate = lastSnapshotDate,
-            AnalizTarihi = analizTarihi,
-            SnapshotTarihleri = snapshotTarihleri
+            AnalizTarihi = analizTarihi
         };
 
         // Potansiyel eşleşmeleri TempData'dan al (CrossDay analizi sırasında kaydedilir)
@@ -255,7 +228,7 @@ public sealed class HesapKontrolController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Confirm(Guid id, string? not)
+    public async Task<IActionResult> Confirm(Guid id, string? not, string? tarih = null)
     {
         var kullanici = User.Identity?.Name ?? "Anonim";
         var result = await _service.ConfirmMatchAsync(id, kullanici, not);
@@ -265,12 +238,14 @@ public sealed class HesapKontrolController : Controller
         else
             TempData["Error"] = "❌ Kayıt onaylanamadı. Kayıt bulunamadı veya zaten kapatılmış.";
 
+        // BUG-DATE-2 FIX: Status change — cache invalidation kaldırıldı.
+        if (!string.IsNullOrEmpty(tarih)) return RedirectToAction("Index", new { tab = "acik", analizTarihiStr = tarih });
         return RedirectToAction("Index", new { tab = "acik" });
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Cancel(Guid id, string? sebep)
+    public async Task<IActionResult> Cancel(Guid id, string? sebep, string? tarih = null)
     {
         var kullanici = User.Identity?.Name ?? "Anonim";
         var result = await _service.CancelAsync(id, kullanici, sebep);
@@ -280,12 +255,15 @@ public sealed class HesapKontrolController : Controller
         else
             TempData["Error"] = "❌ Kayıt iptal edilemedi. Kayıt bulunamadı veya zaten kapatılmış.";
 
+        // BUG-DATE-2 FIX: Status change ile cache invalidation ayrıldı.
+        // Kayıt iptal etmek dosya değişikliği değil — cache geçersizleme gereksiz ve re-analysis tetikler.
+        if (!string.IsNullOrEmpty(tarih)) return RedirectToAction("Index", new { tab = "acik", analizTarihiStr = tarih });
         return RedirectToAction("Index", new { tab = "acik" });
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> BulkCancel(List<Guid> ids)
+    public async Task<IActionResult> BulkCancel(List<Guid> ids, string? tarih = null)
     {
         var kullanici = User.Identity?.Name ?? "Anonim";
         var count = 0;
@@ -297,6 +275,8 @@ public sealed class HesapKontrolController : Controller
         }
 
         TempData["Info"] = $"🚫 {count} kayıt toplu olarak yok sayıldı.";
+        // BUG-DATE-2 FIX: Status change — cache invalidation kaldırıldı (dosya değişmedi).
+        if (!string.IsNullOrEmpty(tarih)) return RedirectToAction("Index", new { tab = "acik", analizTarihiStr = tarih });
         return RedirectToAction("Index", new { tab = "acik" });
     }
 
@@ -326,6 +306,9 @@ public sealed class HesapKontrolController : Controller
             ? $"🧹 {count} eski açık kayıt temizlendi ({gunSiniri}+ gün öncesi)."
             : "✅ Temizlenecek eski kayıt bulunamadı.";
 
+        // BUG-DATE-2 FIX: Status-only change — dosya değişmedi, cache invalidation kaldırıldı.
+        // Aksi halde redirect sonrası auto-analysis tetiklenir ve iptal edilen kayıtlar
+        // karşılaştırma dosyalarından tekrar oluşturulur.
         return RedirectToAction("Index", new { tab = "acik" });
     }
 
@@ -333,7 +316,7 @@ public sealed class HesapKontrolController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> StartTracking(Guid id, string? not)
+    public async Task<IActionResult> StartTracking(Guid id, string? not, string? tarih = null)
     {
         var kullanici = User.Identity?.Name ?? "Anonim";
         var result = await _service.StartTrackingAsync(id, kullanici, not);
@@ -343,12 +326,14 @@ public sealed class HesapKontrolController : Controller
         else
             TempData["Error"] = "❌ Kayıt takibe alınamadı. Kayıt bulunamadı veya zaten işlem görmüş.";
 
+        // BUG-DATE-2 FIX: Status change — cache invalidation kaldırıldı.
+        if (!string.IsNullOrEmpty(tarih)) return RedirectToAction("Index", new { tab = "acik", analizTarihiStr = tarih });
         return RedirectToAction("Index", new { tab = "acik" });
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Resolve(Guid id, string? not)
+    public async Task<IActionResult> Resolve(Guid id, string? not, string? tarih = null)
     {
         var kullanici = User.Identity?.Name ?? "Anonim";
         var result = await _service.ResolveTrackedAsync(id, kullanici, not);
@@ -358,12 +343,14 @@ public sealed class HesapKontrolController : Controller
         else
             TempData["Error"] = "❌ Kayıt çözülemedi. Kayıt takipte değil.";
 
+        // BUG-DATE-2 FIX: Status change — cache invalidation kaldırıldı.
+        if (!string.IsNullOrEmpty(tarih)) return RedirectToAction("Index", new { tab = "takipte", analizTarihiStr = tarih });
         return RedirectToAction("Index", new { tab = "takipte" });
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Revert(Guid id, string? sebep, string? returnTab)
+    public async Task<IActionResult> Revert(Guid id, string? sebep, string? returnTab, string? tarih = null)
     {
         var kullanici = User.Identity?.Name ?? "Anonim";
         var result = await _service.RevertAsync(id, kullanici, sebep);
@@ -373,14 +360,17 @@ public sealed class HesapKontrolController : Controller
         else
             TempData["Error"] = "❌ Kayıt geri alınamadı. Kayıt zaten Açık durumda.";
 
-        return RedirectToAction("Index", new { tab = returnTab ?? "acik" });
+        // BUG-DATE-2 FIX: Status change — cache invalidation kaldırıldı.
+        var hedefTab = returnTab ?? "acik";
+        if (!string.IsNullOrEmpty(tarih)) return RedirectToAction("Index", new { tab = hedefTab, analizTarihiStr = tarih });
+        return RedirectToAction("Index", new { tab = hedefTab });
     }
 
     // ─── CrossDay Kısmi Eşleşme Onay/Red ───
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> ApprovePotentialMatch(Guid eksikId, Guid fazlaId)
+    public async Task<IActionResult> ApprovePotentialMatch(Guid eksikId, Guid fazlaId, string? tarih = null)
     {
         var kullanici = User.Identity?.Name ?? "Anonim";
         var result = await _service.ApprovePotentialMatchAsync(eksikId, fazlaId, kullanici);
@@ -390,12 +380,14 @@ public sealed class HesapKontrolController : Controller
         else
             TempData["Error"] = "❌ Eşleşme onaylanamadı. Kayıtlar bulunamadı veya işlem görmüş.";
 
+        // BUG-DATE-2 FIX: Status change — cache invalidation kaldırıldı.
+        if (!string.IsNullOrEmpty(tarih)) return RedirectToAction("Index", new { tab = "takipte", analizTarihiStr = tarih });
         return RedirectToAction("Index", new { tab = "takipte" });
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> RejectPotentialMatch(Guid eksikId, Guid fazlaId)
+    public async Task<IActionResult> RejectPotentialMatch(Guid eksikId, Guid fazlaId, string? tarih = null)
     {
         var kullanici = User.Identity?.Name ?? "Anonim";
         var result = await _service.RejectPotentialMatchAsync(eksikId, fazlaId, kullanici);
@@ -405,6 +397,8 @@ public sealed class HesapKontrolController : Controller
         else
             TempData["Error"] = "❌ İşlem başarısız. Kayıt bulunamadı.";
 
+        // BUG-DATE-2 FIX: Status change — cache invalidation kaldırıldı.
+        if (!string.IsNullOrEmpty(tarih)) return RedirectToAction("Index", new { tab = "takipte", analizTarihiStr = tarih });
         return RedirectToAction("Index", new { tab = "takipte" });
     }
 
@@ -454,6 +448,9 @@ public sealed class HesapKontrolController : Controller
             TempData["Error"] = $"❌ İstisna oluşturulamadı: {ex.Message}";
         }
 
+        // BUG-DATE-2 FIX: Status change — cache invalidation kaldırıldı.
+        var t = DateOnly.TryParse(analizTarihi, out var pd) ? pd.ToString("yyyy-MM-dd") : null;
+        if (!string.IsNullOrEmpty(t)) return RedirectToAction("Index", new { tab = "acik", analizTarihiStr = t });
         return RedirectToAction("Index", new { tab = "acik" });
     }
 
@@ -471,9 +468,7 @@ public sealed class HesapKontrolController : Controller
         }
         else
         {
-            var lastSnapshot = await _snapshots.GetLastSnapshotDateAsync(
-                KasaManager.Domain.Reports.KasaRaporTuru.Genel, ct);
-            analizTarihi = lastSnapshot ?? DateOnly.FromDateTime(DateTime.Now);
+            analizTarihi = DateOnly.FromDateTime(DateTime.Now);
         }
         var uploadFolder = Path.Combine(_env.WebRootPath, "Data", "Raporlar");
 
@@ -488,32 +483,26 @@ public sealed class HesapKontrolController : Controller
             TempData["Error"] = $"❌ Analiz hatası: {ex.Message}";
         }
 
+        InvalidateAnalysisCache(); // BUG-CACHE-1 FIX: Yeniden analiz sonrası cache temizlenir
         return RedirectToAction("Index");
     }
 
     // ─── D1b: Tarih Bazlı Gelişmiş Sorgu ("Zaman Makinesi") ───
 
     [HttpGet]
-    public async Task<IActionResult> QueryDate(string tarih, CancellationToken ct)
+    public async Task<IActionResult> QueryDate(string tarih, string? tab, CancellationToken ct)
     {
         if (!DateOnly.TryParse(tarih, out var queryDate))
         {
-            TempData["Error"] = "❌ Geçersiz tarih formatı.";
-            return RedirectToAction("Index");
+            return BadRequest("Geçersiz tarih formatı. Lütfen 'yyyy-MM-dd' formatında geçerli bir tarih gönderin.");
         }
 
         try
         {
             var snapshot = await _service.GetDashboardForDateAsync(queryDate, ct);
 
-            // BUG-7 FIX: SnapshotTarihleri ve AnalizTarihi alanlarını doldur
-            List<DateOnly> snapshotTarihleri = new();
-            try
-            {
-                snapshotTarihleri = await _snapshots.GetAllSnapshotDatesAsync(
-                    KasaManager.Domain.Reports.KasaRaporTuru.Genel, ct);
-            }
-            catch (Exception ex2) { _log.LogDebug(ex2, "QueryDate: Snapshot tarihleri alınamadı"); }
+            // P4.3 Snapshot query kaldırıldı
+            DateOnly? realLastSnapshot = DateOnly.FromDateTime(DateTime.Now);
 
             var vm = new HesapKontrolViewModel
             {
@@ -522,15 +511,12 @@ public sealed class HesapKontrolController : Controller
                 TakipteKayitlar = snapshot.TakipteKayitlar,
                 GecmisKayitlar = snapshot.OnaylananKayitlar
                     .Concat(snapshot.CozulenKayitlar)
-                    .Concat(snapshot.IptalKayitlar)
                     .OrderByDescending(x => x.OlusturmaTarihi)
                     .ToList(),
-                ActiveTab = "ozet",
+                ActiveTab = tab ?? "ozet",
                 FilterBaslangic = queryDate,
                 FilterBitis = queryDate,
-                LastSnapshotDate = queryDate,
                 AnalizTarihi = queryDate,
-                SnapshotTarihleri = snapshotTarihleri,
                 Arama = ""
             };
 

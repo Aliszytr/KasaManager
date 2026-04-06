@@ -177,15 +177,61 @@ public sealed class KasaRaporlarController : Controller
             }
         }
 
+        // Tüm versiyonları yükle (versiyon geçmişi UI için)
+        var versiyonlar = await _service.GetAllVersionsAsync(snapshot.RaporTarihi, snapshot.KasaTuru, ct);
+
         var vm = new KasaRaporDetayViewModel
         {
             Snapshot = snapshot,
             Inputs = snapshot.GetInputs(),
             Outputs = snapshot.GetOutputs(),
-            RaporData = raporData
+            RaporData = raporData,
+            Versiyonlar = versiyonlar
         };
 
         return View(vm);
+    }
+
+    // ══════════════════════════════════════════════════════
+    // VERSİYONLAR — AJAX JSON (tarih+tip için tüm versiyonlar)
+    // ══════════════════════════════════════════════════════
+
+    [HttpGet]
+    public async Task<IActionResult> Versiyonlar(Guid id, CancellationToken ct)
+    {
+        var snapshot = await _service.GetByIdAsync(id, ct);
+        if (snapshot is null) return NotFound();
+
+        var versiyonlar = await _service.GetAllVersionsAsync(snapshot.RaporTarihi, snapshot.KasaTuru, ct);
+        var items = versiyonlar.Select(v => new
+        {
+            v.Id,
+            v.Name,
+            v.Version,
+            v.IsActive,
+            v.IsDeleted,
+            v.CalculatedBy,
+            CalculatedAt = v.CalculatedAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm"),
+            v.FormulaSetName
+        });
+        return Json(new { items });
+    }
+
+    // ══════════════════════════════════════════════════════
+    // VERSİYON AKTİF YAP — AJAX POST
+    // ══════════════════════════════════════════════════════
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> VersionuAktifYap(Guid id, CancellationToken ct)
+    {
+        var snapshot = await _service.GetByIdAsync(id, ct);
+        if (snapshot is null)
+            return Json(new { success = false, message = "Rapor bulunamadı." });
+
+        await _service.ActivateVersionAsync(id, ct);
+        _logger.LogInformation("Versiyon aktifleştirildi: Id={Id}, v{Version}", id, snapshot.Version);
+        return Json(new { success = true, message = $"v{snapshot.Version} aktif olarak ayarlandı." });
     }
 
     // ══════════════════════════════════════════════════════

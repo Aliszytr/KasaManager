@@ -83,17 +83,18 @@
     }
     .kasa-table {
         margin-bottom: 0;
-        font-size: 0.875rem;
+        font-size: 0.82rem;
+        table-layout: auto;
     }
     .kasa-table thead th {
         background: var(--kasa-bg, #f9fafb);
         border-bottom: 2px solid var(--kasa-border, #e5e7eb);
         font-weight: 600;
-        font-size: 0.75rem;
+        font-size: 0.7rem;
         text-transform: uppercase;
         letter-spacing: 0.5px;
         color: var(--kasa-text-secondary, #6b7280);
-        padding: 0.75rem 1rem;
+        padding: 0.6rem 0.6rem;
         white-space: nowrap;
         cursor: pointer;
         user-select: none;
@@ -101,13 +102,30 @@
     }
     .kasa-table thead th:hover { color: var(--kasa-primary, #6366f1); }
     .kasa-table tbody td {
-        padding: 0.75rem 1rem;
+        padding: 0.5rem 0.6rem;
         vertical-align: middle;
         border-bottom: 1px solid var(--kasa-border-light, #f3f4f6);
     }
     .kasa-table tbody tr { transition: background 0.15s; cursor: pointer; }
     .kasa-table tbody tr:hover { background: rgba(99,102,241,0.04); }
     .kasa-table tbody tr.deleted-row { opacity: 0.5; }
+
+    /* İşlem sütunu: sticky (her zaman görünür) */
+    .kasa-table th.sticky-action,
+    .kasa-table td.sticky-action {
+        position: sticky;
+        right: 0;
+        background: var(--kasa-surface, #fff);
+        z-index: 2;
+        box-shadow: -4px 0 8px rgba(0,0,0,0.04);
+    }
+    .kasa-table thead th.sticky-action {
+        background: var(--kasa-bg, #f9fafb);
+        z-index: 3;
+    }
+    .kasa-table tbody tr:hover td.sticky-action {
+        background: rgba(245,245,255,0.98);
+    }
 
     .kasa-report-name {
         font-weight: 600;
@@ -116,7 +134,9 @@
     .kasa-report-note {
         font-size: 0.8rem;
         color: var(--kasa-text-secondary, #6b7280);
-        max-width: 200px;
+        max-width: 120px;
+        display: inline-block;
+        vertical-align: middle;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -130,8 +150,9 @@
         font-weight: 600;
     }
     .kasa-badge-version {
-        background: var(--kasa-bg, #f3f4f6);
-        color: var(--kasa-text-secondary, #6b7280);
+        background: #e5e7eb;
+        color: #4b5563;
+        border: 1px solid #d1d5db;
         font-size: 0.7rem;
     }
     .kasa-badge-deleted {
@@ -274,22 +295,21 @@
             <thead>
                 <tr>
                     <th data-sort="RaporTarihi">Tarih <i class="fas fa-sort ms-1"></i></th>
-                    <th data-sort="KasaTuru">Kasa Tipi <i class="fas fa-sort ms-1"></i></th>
+                    <th data-sort="KasaTuru">Tip <i class="fas fa-sort ms-1"></i></th>
                     <th data-sort="Name">Rapor Adı <i class="fas fa-sort ms-1"></i></th>
-                    <th>Not / Açıklama</th>
-                    <th>Formül Seti</th>
+                    <th>Not</th>
                     <th>Hesaplayan</th>
-                    <th data-sort="CalculatedAtUtc">Kayıt Zamanı <i class="fas fa-sort ms-1"></i></th>
+                    <th data-sort="CalculatedAtUtc">Kayıt <i class="fas fa-sort ms-1"></i></th>
                     <th>Ver.</th>
                     <th>Durum</th>
-                    <th class="text-end">İşlem</th>
+                    <th class="text-end sticky-action">İşlem</th>
                 </tr>
             </thead>
             <tbody id="raporlarBody">
                 @if (Model.Results.Items.Count == 0)
                 {
                     <tr>
-                        <td colspan="10">
+                        <td colspan="9">
                             <div class="kasa-empty-state">
                                 <i class="fas fa-inbox d-block"></i>
                                 <h5>Kayıtlı rapor bulunamadı</h5>
@@ -321,7 +341,6 @@
                                     @(string.IsNullOrWhiteSpace(s.Notes) ? "—" : s.Notes)
                                 </span>
                             </td>
-                            <td class="text-muted small">@(s.FormulaSetName ?? "—")</td>
                             <td class="text-muted small">@(s.CalculatedBy ?? "—")</td>
                             <td class="text-muted small" style="white-space:nowrap;">
                                 @s.CalculatedAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
@@ -347,7 +366,7 @@
                                     <span class="kasa-badge-pill kasa-badge-version">Pasif</span>
                                 }
                             </td>
-                            <td class="text-end" style="white-space:nowrap;">
+                            <td class="text-end sticky-action" style="white-space:nowrap;">
                                 <a asp-action="Detay" asp-route-id="@s.Id"
                                    class="kasa-action-btn btn btn-sm btn-outline-primary" title="Detay Görüntüle">
                                     <i class="fas fa-eye"></i>

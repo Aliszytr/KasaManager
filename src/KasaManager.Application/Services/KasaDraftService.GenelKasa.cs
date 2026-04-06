@@ -42,13 +42,19 @@ public sealed partial class KasaDraftService
         var btPath = ResolveExistingFile(uploadFolderAbsolute, "BankaTahsilat.xlsx");
         if (btPath is not null)
         {
+            _log.LogInformation("[BankaTahsilat Source] resolved path: {Path}", btPath);
             var res = _import.ImportTrueSource(btPath, ImportFileKind.BankaTahsilat);
             if (res.Ok && res.Value is not null) bt = res.Value;
-            else issues.Add($"BankaTahsilat okunamadı: {res.Error}");
+            else 
+            {
+                issues.Add($"BankaTahsilat okunamadı: {res.Error}");
+                _log.LogWarning("[BankaTahsilat Source] okuma/çözümleme hatası: {Error}", res.Error);
+            }
         }
         else
         {
-            issues.Add("BankaTahsilat.xlsx bulunamadı.");
+            issues.Add("KRİTİK UYARI: BankaTahsilat.xlsx dosyasının hesaplanmak istenen güncel versiyonunu sisteme ekleyin. Dosya veya veri bulunamadığı için Banka Bakiye 0 kalacaktır.");
+            _log.LogWarning("[BankaTahsilat Source] missing file. Aranan klasör: {Folder}", uploadFolderAbsolute);
         }
 
         var mrPath = ResolveExistingFile(uploadFolderAbsolute, "MasrafveReddiyat.xlsx");
@@ -65,69 +71,20 @@ public sealed partial class KasaDraftService
 
         
 
-        // R12.5: Aralık çözümleme (Genel Kasa / mutabakat için) - SNAPSHOT ÖNCELİKLİ
-        // 1) DB'de "Genel Kasa" (hesaplanmış) snapshot varsa: start = son + 1 gün
-        // 2) yoksa seed başlangıç tarihi (Ayarlar)
-        // 3) yoksa fallback: start = end
-        var startDateSource = "fallback";
-        var devredenSource = "fallback";
-
-        var lastGenelKasaSnap = await _snapshots.GetLastGenelKasaSnapshotBeforeOrOnAsync(endDate, ct);
-        if (lastGenelKasaSnap is not null)
-        {
-            startDate = lastGenelKasaSnap.RaporTarihi.AddDays(1);
-            startDateSource = "snapshot";
-        }
-        else if (defaults.DefaultGenelKasaBaslangicTarihiSeed is not null)
-        {
-            startDate = DateOnly.FromDateTime(defaults.DefaultGenelKasaBaslangicTarihiSeed.Value);
-            startDateSource = "seed";
-        }
-
+        // SSOT Kuralı: Genel Kasa Devreden Kararı (R10)
+        var ssot = await DetermineGenelKasaDevredenSsotAsync(endDate, ct);
+        
+        startDate = ssot.RangeStart;
         if (startDate > endDate) startDate = endDate;
+        
+        DateOnly devSonTarih = ssot.DevredenSonTarihi;
+        decimal devreden = ssot.Devreden;
+        var devredenSource = ssot.Source;
+        var startDateSource = ssot.IsSnapshotActive ? "snapshot" : (ssot.Source == "seed" ? "seed" : "fallback");
+        var lastGenelKasaSnapId = ssot.LastSnapshotId;
 
         decimal bankaDevreden = 0m;
         decimal bankaBakiye = 0m;
-        // Dev.Son.Tarih, aralığın bir önceki gününü temsil eder (ayın 1'inden bir gün önce).
-        DateOnly devSonTarih = startDate.AddDays(-1);
-        if (bt is not null)
-        {
-            // Banka dosyasından: devreden ve bitiş bakiyesi.
-            // Dev.Son.Tarih alanı ise bankadan değil, aralığın bir önceki gününden gelir.
-            (bankaDevreden, bankaBakiye, _) = ComputeBankaBalances(bt, startDate, endDate, issues);
-        }
-
-        // R12.5: Devreden kuralı - SNAPSHOT ÖNCELİKLİ
-        // 1) DB'de "Genel Kasa" snapshot varsa: devreden = lastSnapshot.GenelKasa
-        // 2) yoksa seed devreden (Ayarlar)
-        // 3) yoksa 0
-        decimal devreden = 0m;
-        if (lastGenelKasaSnap is not null)
-        {
-            var fromSnap = TryReadDecimalFromSnapshotResults(lastGenelKasaSnap, new[] { "Genel Kasa", "GenelKasa" });
-            if (fromSnap is not null)
-            {
-                devreden = fromSnap.Value;
-                devredenSource = "snapshot";
-            }
-            else
-            {
-                // Snapshot var ama alan bulunamadıysa seed/0'a düş.
-                devreden = defaults.DefaultGenelKasaDevredenSeed ?? 0m;
-                devredenSource = defaults.DefaultGenelKasaDevredenSeed is not null ? "seed" : "fallback";
-                issues.Add("Uyarı: DB'de Genel Kasa snapshot bulundu ama Results içinde 'Genel Kasa' alanı okunamadı. Seed/0 kullanıldı.");
-            }
-        }
-        else if (defaults.DefaultGenelKasaDevredenSeed is not null)
-        {
-            devreden = defaults.DefaultGenelKasaDevredenSeed.Value;
-            devredenSource = "seed";
-        }
-        else
-        {
-            devreden = 0m;
-            devredenSource = "fallback";
-        }
 
         decimal toplamTahsilat = 0m;
         decimal toplamReddiyat = 0m;
@@ -141,6 +98,11 @@ public sealed partial class KasaDraftService
             toplamTahsilat = t.masraf;
             toplamReddiyat = t.reddiyat;
             kaydenTahsilat = t.kayden;
+            if (kaydenTahsilat == 0m)
+            {
+                _log.LogInformation("[KaydenTahsilat İzleme] MasrafVeReddiyat.xlsx içerisinde 'KAYDEN' içeren tip bulunamadığı için hesaplama 0'da kaldı.");
+                issues.Add("Bilgi: Yüklenen MasrafVeReddiyat raporunda 'Kayden' ibareli işlem türü bulunamadığı için tahsilat 0 kabul edildi.");
+            }
             masrafDebug = t.rawJson;
         }
 
@@ -203,7 +165,7 @@ public sealed partial class KasaDraftService
                 defaults.DefaultNakitPara,
                 defaults.DefaultBozukPara
             },
-            snapshot = new { lastGenelKasaSnapDate = lastGenelKasaSnap?.RaporTarihi, lastGenelKasaSnapId = lastGenelKasaSnap?.Id },
+            snapshot = new { lastGenelKasaSnapId = lastGenelKasaSnapId },
             banka = new { bankaDevreden, bankaBakiye, devSonTarih, file = btPath },
             masrafveReddiyat = new { toplamTahsilat, toplamReddiyat, kaydenTahsilat, file = mrPath, debug = masrafDebug },
             inputs = new { gelmeyenD },
@@ -220,8 +182,8 @@ public sealed partial class KasaDraftService
         return (fields, rawJson);
     }
 
-    private static (decimal devreden, decimal endBalance, DateOnly devSonTarih)
-        ComputeBankaBalances(ImportedTable table, DateOnly start, DateOnly end, List<string> issues)
+    private static (decimal devreden, decimal endBalance, DateOnly devSonTarih, BankaBakiyeDiagnosticInfo diag, BankaMismatchType mismatch)
+        ComputeBankaBalances(ImportedTable table, DateOnly start, DateOnly end, List<string> issues, string filePath)
     {
         var tarihCol = FindCanonical(table, "islem_tarihi") ?? FindCanonical(table, "tarih");
         var tutarCol = FindCanonical(table, "islem_tutari") ?? FindCanonical(table, "tutar") ?? FindCanonical(table, "miktar");
@@ -248,14 +210,40 @@ public sealed partial class KasaDraftService
         DateOnly endBalanceDate = end;
 
         var endRow = rows.LastOrDefault(x => DateOnly.FromDateTime(x.dt) <= end);
+        DateOnly? actualEnd = null;
+
+        var diag = new BankaBakiyeDiagnosticInfo
+        {
+            PathResolvedPath = filePath,
+            FileExists = true,
+            MatchedRowCount = rows.Count,
+            RequestedEndDate = end
+        };
+        var mismatch = BankaMismatchType.None;
+
         if (endRow.row is not null && bakiyeCol is not null && endRow.row.TryGetValue(bakiyeCol, out var rawB) && TryParseDecimal(rawB, out var b))
         {
             endBalance = b;
             endBalanceDate = DateOnly.FromDateTime(endRow.dt);
+            actualEnd = endBalanceDate;
+
+            diag.SelectedBalanceDate = actualEnd;
+            diag.LastAvailableBalanceDate = rows.Count > 0 ? DateOnly.FromDateTime(rows.Last().dt) : null;
+
+            if (actualEnd.Value < end) mismatch = BankaMismatchType.SourceDateOlderThanRequested;
+            else if (actualEnd.Value > end) mismatch = BankaMismatchType.SourceDateNewerThanRequested; // Though 'LastOrDefault(<= end)' prevents newer, but if the latest date overall is newer, we can check LastAvailableBalanceDate.
+            
+            if (diag.LastAvailableBalanceDate > end && actualEnd == end)
+            {
+               // This means we had a perfect match for `end`, but there's newer data. It's technically None since we found exactly what we asked for.
+               mismatch = BankaMismatchType.None; 
+            }
         }
         else
         {
-            issues.Add("BankaTahsilat: bitiş bakiyesi bulunamadı, 0 kabul edildi.");
+            diag.SelectedBalanceDate = null;
+            diag.LastAvailableBalanceDate = rows.Count > 0 ? DateOnly.FromDateTime(rows.Last().dt) : null;
+            mismatch = rows.Count == 0 ? BankaMismatchType.NoEligibleRowFound : BankaMismatchType.SourceDateMissing;
         }
 
         decimal devreden = 0m;
@@ -296,7 +284,7 @@ public sealed partial class KasaDraftService
                 issues.Add("BankaTahsilat: devreden bakiye bulunamadı, 0 kabul edildi.");
         }
 
-        return (devreden, endBalance, endBalanceDate);
+        return (devreden, endBalance, endBalanceDate, diag, mismatch);
     }
 
     private static (decimal masraf, decimal reddiyat, decimal kayden, string? rawJson)
@@ -358,77 +346,9 @@ public sealed partial class KasaDraftService
         return (masraf, reddiyat, kayden, rawJson);
     }
 
-    private static decimal? TryReadDevredenFromSnapshot(KasaManager.Domain.Reports.Snapshots.KasaRaporSnapshot? snap)
-    {
-        if (snap?.Results is null) return null;
-        var json = snap.Results.ValuesJson;
-        if (string.IsNullOrWhiteSpace(json)) return null;
 
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
 
-            var keys = new[] { "SonrayaDevredecek", "sonrayaDevredecek", "BankaBakiye", "bankaBakiye", "Devreden", "devreden" };
-            foreach (var k in keys)
-            {
-                if (!doc.RootElement.TryGetProperty(k, out var el)) continue;
-
-                if (el.ValueKind == JsonValueKind.Number && el.TryGetDecimal(out var n))
-                    return n;
-
-                if (el.ValueKind == JsonValueKind.String)
-                {
-                    var s = el.GetString();
-                    if (string.IsNullOrWhiteSpace(s)) continue;
-                    if (TryParseDecimal(s, out var d)) return d;
-                }
-            }
-
-            return null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
-    private static decimal? TryReadDecimalFromSnapshotResults(
-        KasaManager.Domain.Reports.Snapshots.KasaRaporSnapshot? snap,
-        IEnumerable<string> keys)
-    {
-        if (snap?.Results is null) return null;
-        var json = snap.Results.ValuesJson;
-        if (string.IsNullOrWhiteSpace(json)) return null;
-
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
-
-            foreach (var k in keys)
-            {
-                if (string.IsNullOrWhiteSpace(k)) continue;
-                if (!doc.RootElement.TryGetProperty(k, out var el)) continue;
-
-                if (el.ValueKind == JsonValueKind.Number && el.TryGetDecimal(out var n))
-                    return n;
-
-                if (el.ValueKind == JsonValueKind.String)
-                {
-                    var s = el.GetString();
-                    if (string.IsNullOrWhiteSpace(s)) continue;
-                    if (TryParseDecimal(s, out var d)) return d;
-                }
-            }
-
-            return null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
+    // Snapshot okuma metodları P4.2 (Stateless Engine) mimarisi gereği tamamen silinmiştir.
 
 private sealed record EksikFazlaChain(
     decimal OncekiTahsilat,
@@ -439,150 +359,6 @@ private sealed record EksikFazlaChain(
     decimal GuneHarc);
 
 /// <summary>
-/// R14G: Eksik/Fazla taşıma zinciri (carry-forward).
-/// Kural:
-/// - Bugün için guneAit = Excel formülü ile hesaplanır.
-/// - Dünden = bir önceki günün guneAit
-/// - Önceki gün = (bir önceki günün onceki + dünden)
-/// - Çözülen (Çözüldü/Onaylandı) takip kayıtları ilgili Dünden/Önceki'den düşülür.
-/// </summary>
-private async Task<EksikFazlaChain> ComputeEksikFazlaChainAsync(
-    DateOnly date,
-    string uploadFolderAbsolute,
-    CancellationToken ct)
-{
-    const int MaxDepthDays = 14;
-
-    async Task<EksikFazlaChain> RecurseAsync(DateOnly d, int depth)
-    {
-        if (depth > MaxDepthDays)
-            return new EksikFazlaChain(0m, 0m, 0m, 0m, 0m, 0m);
-
-        var snap = await _snapshots.GetAsync(d, KasaRaporTuru.Genel, ct);
-        if (snap is null)
-            return new EksikFazlaChain(0m, 0m, 0m, 0m, 0m, 0m);
-
-        var localIssues = new List<string>();
-
-        var bankaGun = ReadBankaTahsilatGun(d, uploadFolderAbsolute, localIssues, out _);
-        var bankaHarcGun = ReadBankaHarcGun(d, uploadFolderAbsolute, localIssues, out _);
-        var online = ReadOnlineReddiyatTotals(d, uploadFolderAbsolute, localIssues, out _);
-        var onlineHarc = ReadOnlineTotal(d, uploadFolderAbsolute, "onlineHarc.xlsx", ImportFileKind.OnlineHarcama, localIssues, out _);
-
-        var ust = ReadKasaUstRaporSummary(snap, localIssues);
-
-        // Bu hesap için yalnızca BankayaYatirilacakNakit ve ToplamHarc gerekiyor.
-        // Kullanıcı manuel girişleri / finalize burada devreye sokulmaz (0 varsayılır).
-        #pragma warning disable CS0618 // LEGACY parity/debug only – intentionally used
-        var calc = CalculateAksamLegacy(
-            devredenKasa: 0m,
-            isSabah: true,
-            bankaTahsilatGun: bankaGun,
-            bankaHarcGun: bankaHarcGun,
-            ust: ust,
-            online: online,
-            bankayaYatirilacakHarciDegistir: 0m,
-            bankayaYatirilacakTahsilatiDegistir: 0m,
-            kaydenTahsilat: 0m,
-            kaydenHarc: 0m,
-            vergiKasa: snap.SelectionTotal,
-            vergiGelenKasa: 0m,
-            bankadanCekilen: 0m,
-            cesitliNedenlerleBankadanCikamayanTahsilat: 0m,
-            bankayaGonderilmisDeger: 0m,
-            bozukPara: 0m);
-        #pragma warning restore CS0618
-
-        // Excel parity:
-        // Gün içi Ek.Faz T = BankayaGiren - ( (OnlineTahsilat - OnlineReddiyat) + (ToplamTahsilat - BankayaYatirilacakNakit) )
-        var guneTahsilat = bankaGun.Giren - ((ust.OnlineTahsilat - online.OnlineReddiyat) + (ust.Tahsilat - calc.BankayaYatirilacakNakit));
-
-        // Gün içi Ek.Faz H = BankaHarcGiren - (OnlineHarc_Dosya + ToplamHarc)
-        var guneHarc = bankaHarcGun.Giren - (onlineHarc + calc.NormalHarc);
-
-        var prev = await RecurseAsync(d.AddDays(-1), depth + 1);
-
-        var oncekiT = prev.OncekiTahsilat + prev.DundenTahsilat;
-        var dundenT = prev.GuneTahsilat;
-
-        var oncekiH = prev.OncekiHarc + prev.DundenHarc;
-        var dundenH = prev.GuneHarc;
-
-        return new EksikFazlaChain(
-            OncekiTahsilat: oncekiT,
-            DundenTahsilat: dundenT,
-            GuneTahsilat: guneTahsilat,
-            OncekiHarc: oncekiH,
-            DundenHarc: dundenH,
-            GuneHarc: guneHarc);
-    }
-
-    var rawChain = await RecurseAsync(date, 0);
-
-    // ═══════════════════════════════════════════════════════════════
-    // R14G+: Çözülen takip kayıtlarını zincirden düş.
-    // Takip sisteminde Çözüldü/Onaylandı durumuna geçmiş kayıtlar,
-    // ilgili Dünden/Önceki değerlerinden düşürülür.
-    // ═══════════════════════════════════════════════════════════════
-    try
-    {
-        var lookbackStart = date.AddDays(-MaxDepthDays);
-        var yesterday = date.AddDays(-1);
-
-        // Çözüldü + Onaylandı kayıtları — bugünden önceki analiz tarihli
-        var resolved = await _hesapKontrol.GetHistoryAsync(
-            lookbackStart, yesterday,
-            hesapTuru: null,
-            durum: KayitDurumu.Cozuldu, ct);
-
-        var approved = await _hesapKontrol.GetHistoryAsync(
-            lookbackStart, yesterday,
-            hesapTuru: null,
-            durum: KayitDurumu.Onaylandi, ct);
-
-        var allResolved = resolved.Concat(approved).ToList();
-
-        if (allResolved.Count > 0)
-        {
-            // Toplam çözülen tutarları hesapla (AnalizTarihi'ne bakmadan)
-            // Zincir carry-forward ile değerleri gün gün taşıdığı için,
-            // eski tarihlerdeki değerler Dünden/Önceki'ye dağılmış olabilir.
-            var totalResolvedTahsilat = allResolved
-                .Where(k => k.HesapTuru == BankaHesapTuru.Tahsilat && k.Yon == KayitYonu.Eksik)
-                .Sum(k => k.Tutar);
-
-            var totalResolvedHarc = allResolved
-                .Where(k => k.HesapTuru == BankaHesapTuru.Harc && k.Yon == KayitYonu.Eksik)
-                .Sum(k => k.Tutar);
-
-            // Önce Dünden'den düş, kalan varsa Önceki'den düş
-            var remainT = totalResolvedTahsilat;
-            var adjDundenT = Math.Max(0m, rawChain.DundenTahsilat - remainT);
-            remainT = Math.Max(0m, remainT - rawChain.DundenTahsilat);
-            var adjOncekiT = Math.Max(0m, rawChain.OncekiTahsilat - remainT);
-
-            var remainH = totalResolvedHarc;
-            var adjDundenH = Math.Max(0m, rawChain.DundenHarc - remainH);
-            remainH = Math.Max(0m, remainH - rawChain.DundenHarc);
-            var adjOncekiH = Math.Max(0m, rawChain.OncekiHarc - remainH);
-
-            return new EksikFazlaChain(
-                OncekiTahsilat: adjOncekiT,
-                DundenTahsilat: adjDundenT,
-                GuneTahsilat: rawChain.GuneTahsilat,
-                OncekiHarc: adjOncekiH,
-                DundenHarc: adjDundenH,
-                GuneHarc: rawChain.GuneHarc);
-        }
-    }
-    catch (Exception ex)
-    {
-        // KB-3 FIX: Sessiz hata yutma kaldırıldı — kontrollü degrade + loglama
-        _log.LogWarning(ex, "EksikFazla zinciri: HesapKontrol servisinden çözülen kayıtlar alınamadı — ham zincir kullanılacak");
-    }
-
-    return rawChain;
-}
 
     // ==============================
     // FAZ-2 / Adım-1 helpers (GenelKasa UI-only)
@@ -660,75 +436,27 @@ private static UnifiedPoolEntry CreateRawEntry(string key, decimal value, string
         }
     }
 
+    private async Task<(DateOnly RangeStart, DateOnly DevredenSonTarihi, decimal Devreden, string Source, bool IsSnapshotActive, Guid? LastSnapshotId)> DetermineGenelKasaDevredenSsotAsync(DateOnly endDate, CancellationToken ct)
+    {
+        var res = await _carryoverResolver.ResolveAsync(endDate, CarryoverScope.GenelKasa, ct);
+        
+        return (
+            res.RangeStart,
+            res.SourceDate ?? endDate.AddDays(-1),
+            res.Value,
+            res.SourceCode,
+            res.SourceCode == "CalculatedSnapshot" || res.SourceCode == "LegacySnapshotFallback",
+            res.SourceId
+        );
+    }
+
     private async Task<(DateOnly rangeStart, DateOnly devredenSonTarihi, decimal devreden)> ResolveGenelKasaRangeAndDevredenAsync(DateOnly endDate, CancellationToken ct)
     {
-        // R12.5 prensibi:
-        // - Ayarlarda DefaultGenelKasaBaslangicTarihiSeed varsa: o başlangıç (seed).
-        // - Yoksa: en son kaydedilmiş GenelKasa snapshot'ından "BitisTarihi" okunur ve +1 yapılır.
-        var defaults = await _globalDefaults.GetOrCreateAsync(ct);
-        if (defaults.DefaultGenelKasaBaslangicTarihiSeed is DateTime seedStartDt)
-        {
-            var baslangic = DateOnly.FromDateTime(seedStartDt);
-            var devSon = baslangic.AddDays(-1);
-            // Seed devreden: sadece DB boş senaryosunda kullanılır.
-            var dev = defaults.DefaultGenelKasaDevredenSeed ?? 0m;
-            return (baslangic, devSon, dev);
-        }
-
-        var last = await _snapshots.GetLastGenelKasaSnapshotBeforeOrOnAsync(endDate, ct);
-        if (last is null)
-        {
-            // Seed: hiç snapshot yoksa R10 başlangıcını endDate ile başlatıp devreden 0 kabul et.
-            var start = endDate;
-            return (start, start.AddDays(-1), 0m);
-        }
-
-        // Snapshot'tan bitiş tarihi ve devreden sonucunu JSON içinden oku.
-        // (Eski modelde BitisTarihi/GenelKasaSonuc doğrudan property değildi.)
-        var lastEnd = TryReadDateOnlyFromSnapshotInputs(last, "BitisTarihi") ?? last.RaporTarihi;
-        var devreden = TryReadDecimalFromSnapshotResults(last, "GenelKasaSonuc")
-            ?? TryReadDecimalFromSnapshotResults(last, KasaCanonicalKeys.GenelKasa)
-            ?? 0m;
-
-        var startDate = lastEnd.AddDays(1);
-        return (startDate, lastEnd, devreden);
+        var ssot = await DetermineGenelKasaDevredenSsotAsync(endDate, ct);
+        return (ssot.RangeStart, ssot.DevredenSonTarihi, ssot.Devreden);
     }
 
-    private static DateOnly? TryReadDateOnlyFromSnapshotInputs(KasaManager.Domain.Reports.Snapshots.KasaRaporSnapshot snap, string key)
-    {
-        try
-        {
-            var json = snap.Inputs?.ValuesJson;
-            if (string.IsNullOrWhiteSpace(json)) return null;
-            var dict = JsonSerializer.Deserialize<Dictionary<string, string?>>(json) ?? new();
-            if (!dict.TryGetValue(key, out var raw) || string.IsNullOrWhiteSpace(raw)) return null;
-            if (DateOnly.TryParse(raw, CultureInfo.GetCultureInfo("tr-TR"), DateTimeStyles.None, out var d)) return d;
-            if (DateTime.TryParse(raw, CultureInfo.GetCultureInfo("tr-TR"), DateTimeStyles.None, out var dt)) return DateOnly.FromDateTime(dt);
-            return null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
-    private static decimal? TryReadDecimalFromSnapshotResults(KasaManager.Domain.Reports.Snapshots.KasaRaporSnapshot snap, string key)
-    {
-        try
-        {
-            var json = snap.Results?.ValuesJson;
-            if (string.IsNullOrWhiteSpace(json)) return null;
-            var dict = JsonSerializer.Deserialize<Dictionary<string, string?>>(json) ?? new();
-            if (!dict.TryGetValue(key, out var raw) || string.IsNullOrWhiteSpace(raw)) return null;
-            if (decimal.TryParse(raw, NumberStyles.Any, CultureInfo.GetCultureInfo("tr-TR"), out var v)) return v;
-            if (decimal.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var vi)) return vi;
-            return null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
+    // KasaDraftService Snapshot fallbacks cleared.
 
     private Task<(decimal masraf, decimal reddiyat, decimal kayden, string? rawJson, bool ok)> ImportMasrafveReddiyatAggAsync(
         string uploadFolderAbsolute,
@@ -755,7 +483,7 @@ private static UnifiedPoolEntry CreateRawEntry(string key, decimal value, string
         return Task.FromResult((agg.Masraf, agg.Reddiyat, agg.Diger, rawJson, true));
     }
 
-    private Task<(decimal endBakiye, string? rawJson, bool ok)> ImportBankaBakiyeAsync(
+    private Task<(decimal endBakiye, string? rawJson, BankaMismatchType mismatch, BankaBakiyeDiagnosticInfo diag)> ImportBankaBakiyeAsync(
         string uploadFolderAbsolute,
         DateOnly start,
         DateOnly end,
@@ -765,14 +493,22 @@ private static UnifiedPoolEntry CreateRawEntry(string key, decimal value, string
         ct.ThrowIfCancellationRequested();
 
         var full = Path.Combine(uploadFolderAbsolute, "BankaTahsilat.xlsx");
+        
+        var diag = new BankaBakiyeDiagnosticInfo
+        {
+            PathResolvedPath = full,
+            FileExists = File.Exists(full),
+            RequestedEndDate = end
+        };
+
         var res = _import.ImportTrueSource(full, ImportFileKind.BankaTahsilat);
         if (!res.Ok || res.Value is null)
         {
-            issues.Add($"BankaTahsilat.xlsx okunamadı: {res.Error}");
-            return Task.FromResult((0m, (string?)null, false));
+            var mismatch = diag.FileExists ? BankaMismatchType.PathResolveFailed : BankaMismatchType.FileMissing;
+            return Task.FromResult((0m, (string?)null, mismatch, diag));
         }
 
-        var (devreden, endBalance, endBalanceDate) = ComputeBankaBalances(res.Value, start, end, issues);
+        var (devreden, endBalance, endBalanceDate, diagnostic, mismatchOut) = ComputeBankaBalances(res.Value, start, end, issues, full);
         string? rawJson = null;
         try
         {
@@ -784,7 +520,7 @@ private static UnifiedPoolEntry CreateRawEntry(string key, decimal value, string
             rawJson = $"{{\"error\": \"JSON serialize failed: {ex.Message}\"}}";
         }
 
-        return Task.FromResult<(decimal endBakiye, string? rawJson, bool ok)>((endBalance, rawJson, true));
+        return Task.FromResult<(decimal endBakiye, string? rawJson, BankaMismatchType mismatch, BankaBakiyeDiagnosticInfo diag)>((endBalance, rawJson, mismatchOut, diagnostic));
     }
 
 }

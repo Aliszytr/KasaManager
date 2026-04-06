@@ -71,9 +71,10 @@ public sealed class KasaSettingsViewModel
 
     public static List<string> TryParseSelected(string? json)
     {
+        if (string.IsNullOrWhiteSpace(json)) return new List<string>();
         try
         {
-            return JsonSerializer.Deserialize<List<string>>(json ?? "[]") ?? new List<string>();
+            return JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
         }
         catch
         {

@@ -200,7 +200,11 @@ public sealed partial class KasaPreviewController
             var tarih = model.SelectedDate ?? DateOnly.FromDateTime(DateTime.Today);
             var kasaType = model.KasaType ?? "Aksam";
             var result = await _vergiLedger.CalculateAsync(tarih, kasaType, ct);
+            
+            // Sadece display alanını set et — VergiKasaBakiyeToplam formdan gelmeli
+            // result.TotalVergiKasa kümülatif ledger toplamıdır, günlük vergiKasa değildir
             model.VergideBirikenKasa = result.VergideBiriken;
+
             ViewData["VergideBirikenSeed"] = result.InitialSeed;
             ViewData["VergideBirikenTotalVergiKasa"] = result.TotalVergiKasa;
             ViewData["VergideBirikenTotalVergidenGelen"] = result.TotalVergidenGelen;
@@ -298,7 +302,7 @@ public sealed partial class KasaPreviewController
             var eval = await _dateRules.EvaluateAsync(folder, ct);
             var proposed = eval.ProposedDate;
             var (veznedarCol, bakiyeCol) = GuessColumns(table);
-            var lastSnapshotDate = await _snapshots.GetLastSnapshotDateAsync(KasaRaporTuru.Genel, ct);
+
 
             var defaults = await _globalDefaults.GetAsync(ct);
             var defaultVergiList = new List<string>();
@@ -314,7 +318,6 @@ public sealed partial class KasaPreviewController
                 DateEval = eval, ProposedDate = proposed, FinalDate = proposed,
                 VeznedarColumn = veznedarCol, BakiyeColumn = bakiyeCol,
                 DefaultVergiKasaVeznedarlar = defaultVergiList,
-                HasExistingSnapshot = lastSnapshotDate.HasValue, LastSnapshotDate = lastSnapshotDate,
                 StartOpen = false, ShowSaveButton = false, Context = "kasapreview"
             };
         }

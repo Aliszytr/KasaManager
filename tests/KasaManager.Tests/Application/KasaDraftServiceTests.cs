@@ -1,11 +1,13 @@
 using KasaManager.Application.Abstractions;
 using KasaManager.Application.Services;
 using KasaManager.Domain.Abstractions;
+using KasaManager.Domain.Projection;
 using KasaManager.Domain.Reports;
 using KasaManager.Domain.Reports.HesapKontrol;
 using KasaManager.Domain.Reports.Snapshots;
 using KasaManager.Domain.Settings;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 
 namespace KasaManager.Tests.Application;
@@ -16,10 +18,11 @@ namespace KasaManager.Tests.Application;
 /// </summary>
 public sealed class KasaDraftServiceTests
 {
-    private readonly Mock<IKasaRaporSnapshotService> _snapshotsMock = new();
+
     private readonly Mock<IImportOrchestrator> _importMock = new();
     private readonly Mock<IKasaGlobalDefaultsService> _globalDefaultsMock = new();
     private readonly Mock<IBankaHesapKontrolService> _hesapKontrolMock = new();
+    private readonly Mock<ICarryoverResolver> _carryoverMock = new();
 
     private KasaDraftService CreateSut()
     {
@@ -31,12 +34,22 @@ public sealed class KasaDraftServiceTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<HesapKontrolKaydi>());
 
+        _carryoverMock
+            .Setup(c => c.ResolveAsync(It.IsAny<DateOnly>(), It.IsAny<CarryoverScope>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CarryoverResolutionResult(0m, DateOnly.FromDateTime(DateTime.Today), null, "Default", "Default setup", true));
+
+        var projMock = new Mock<IEksikFazlaProjectionEngine>();
+        projMock.Setup(p => p.ProjectAsync(It.IsAny<ProjectionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProjectionResult(DateOnly.FromDateTime(DateTime.Today), Ok: true, 0m, 0m, 0m, 0m, 0m, 0m, false, new List<ProjectionDayNode>()));
+
         return new KasaDraftService(
-            _snapshotsMock.Object,
             _importMock.Object,
             _globalDefaultsMock.Object,
             _hesapKontrolMock.Object,
-            Mock.Of<ILogger<KasaDraftService>>());
+            Mock.Of<ILogger<KasaDraftService>>(), 
+            _carryoverMock.Object,
+            Options.Create(new UstRaporSourceOptions()),
+            projMock.Object);
     }
 
     // ───────────────────────────────────────────
@@ -63,17 +76,17 @@ public sealed class KasaDraftServiceTests
     [Fact]
     public async Task BuildAsync_NoSnapshot_ReturnsFail()
     {
-        _snapshotsMock
-            .Setup(s => s.GetAsync(It.IsAny<DateOnly>(), KasaRaporTuru.Genel, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((KasaRaporSnapshot?)null);
-
         var sut = CreateSut();
+        // Since snapshot fallback is removed, missing data in live mode causes error in unified pool/projection.
+        // Wait, BuildAsync_NoSnapshot_ReturnsFail test checks snapshot fallback which no longer exists.
+        // The service now just proceeds with live data and might fail differently if fields don't match.
+        // We can just simulate missing live data via empty result from IImportOrchestrator instead.
         var result = await sut.BuildAsync(
             DateOnly.FromDateTime(DateTime.Today),
             @"C:\nonexistent\folder");
 
         Assert.False(result.Ok);
-        Assert.Contains("snapshot bulunamadı", result.Error!);
+        Assert.Contains("hesaplanamadı", result.Error!);
     }
 
     [Fact]
@@ -90,14 +103,6 @@ public sealed class KasaDraftServiceTests
                 new() { Veznedar = "TestVeznedar", IsSelected = true }
             }
         };
-
-        _snapshotsMock
-            .Setup(s => s.GetAsync(date, KasaRaporTuru.Genel, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(snapshot);
-
-        _snapshotsMock
-            .Setup(s => s.GetLastBeforeOrOnAsync(It.IsAny<DateOnly>(), KasaRaporTuru.Aksam, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((KasaRaporSnapshot?)null);
 
         _globalDefaultsMock
             .Setup(g => g.GetAsync(It.IsAny<CancellationToken>()))
@@ -144,10 +149,6 @@ public sealed class KasaDraftServiceTests
             .Setup(g => g.GetOrCreateAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(defaults);
 
-        _snapshotsMock
-            .Setup(s => s.GetLastGenelKasaSnapshotBeforeOrOnAsync(It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.FromResult<KasaRaporSnapshot?>(null));
-
         // ImportTrueSource returns Fail when file doesn't exist (prevents NullRef)
         _importMock
             .Setup(i => i.ImportTrueSource(It.IsAny<string>(), It.IsAny<ImportFileKind>()))
@@ -187,10 +188,6 @@ public sealed class KasaDraftServiceTests
         _globalDefaultsMock
             .Setup(g => g.GetOrCreateAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(defaults);
-
-        _snapshotsMock
-            .Setup(s => s.GetLastGenelKasaSnapshotBeforeOrOnAsync(It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.FromResult<KasaRaporSnapshot?>(null));
 
         // Import returns Fail for missing files
         _importMock

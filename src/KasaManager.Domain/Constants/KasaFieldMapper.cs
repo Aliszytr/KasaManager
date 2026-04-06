@@ -94,7 +94,7 @@ public static class KasaFieldMapper
         ["DundenDevredenBanka"] = KasaCanonicalKeys.DundenDevredenBanka,
         ["YarinaDeverecekBanka"] = KasaCanonicalKeys.YarinaDeverecekBanka,
         ["BankayaGiren"] = KasaCanonicalKeys.BankayaGiren,
-        ["BankadanCikan"] = KasaCanonicalKeys.BankadanCikan,
+        ["BankadanCikan"] = KasaCanonicalKeys.BankaCikanTahsilat,
         ["BankadanCekilen"] = KasaCanonicalKeys.BankadanCekilen,
         ["Bakiye"] = KasaCanonicalKeys.BankaBakiye,
 

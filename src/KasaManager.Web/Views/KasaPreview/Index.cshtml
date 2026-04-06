@@ -68,13 +68,76 @@
             </span>
         }
     </div>
-    @if (Model.IsAdminMode)
-    {
-        <span class="kasa-badge kasa-badge-danger">
-            <i class="fas fa-flask me-1"></i>Admin Designer Modu
-        </span>
-    }
+    <div class="d-flex align-items-center gap-2">
+        @if (Model.SelectedDate.HasValue && Model.HasResults)
+        {
+            <a href="/HesapKontrol/QueryDate?tarih=@Model.SelectedDate.Value.ToString("yyyy-MM-dd")" class="btn btn-sm btn-outline-info rounded-pill fw-semibold" title="Bu Kasa İçin Hesap Kontrol" style="box-shadow: 0 2px 4px rgba(14, 165, 233, 0.1);">
+                <i class="fas fa-list-check me-1"></i>Hesap Kontrol
+            </a>
+            
+            <div class="dropdown">
+                <button class="btn btn-sm btn-outline-warning rounded-pill fw-semibold dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Bu Kasa İçin Karşılaştırma" style="box-shadow: 0 2px 4px rgba(245, 158, 11, 0.1);">
+                    <i class="fas fa-balance-scale me-1"></i>Karşılaştırma
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow border-0" style="font-size: 0.85rem; border-radius: 0.5rem;">
+                    <li>
+                        <form action="/Comparison/CompareTahsilatMasraf" method="post">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="archiveDate" value="@Model.SelectedDate.Value.ToString("yyyy-MM-dd")" />
+                            <button type="submit" class="dropdown-item py-2"><i class="fas fa-arrow-down text-success me-2"></i>Tahsilat - Masraf</button>
+                        </form>
+                    </li>
+                    <li>
+                        <form action="/Comparison/CompareHarcamaHarc" method="post">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="archiveDate" value="@Model.SelectedDate.Value.ToString("yyyy-MM-dd")" />
+                            <button type="submit" class="dropdown-item py-2"><i class="fas fa-arrow-up text-primary me-2"></i>Harcama - Harç</button>
+                        </form>
+                    </li>
+                    <li>
+                        <form action="/Comparison/CompareReddiyatCikis" method="post">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="archiveDate" value="@Model.SelectedDate.Value.ToString("yyyy-MM-dd")" />
+                            <button type="submit" class="dropdown-item py-2"><i class="fas fa-arrow-right-from-bracket text-warning me-2"></i>Reddiyat - Çıkış</button>
+                        </form>
+                    </li>
+                </ul>
+            </div>
+        }
+        @if (Model.IsAdminMode)
+        {
+            <span class="kasa-badge kasa-badge-danger ms-2">
+                <i class="fas fa-flask me-1"></i>Admin Designer Modu
+            </span>
+        }
+    </div>
 </div>
+
+@if (Model.IsAdminMode && Model.HasResults)
+{
+    <div class="alert mt-2 mb-3 py-2 px-3 d-flex align-items-center justify-content-between flex-wrap gap-3" 
+         style="background: rgba(15,23,42,0.9); border-left: 4px solid #3b82f6; border-radius: 8px; color: #e2e8f0; font-size: 0.85rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+        <div class="d-flex align-items-center gap-3">
+            <span class="badge bg-primary rounded-pill"><i class="fas fa-robot me-1"></i>DataFirst Pilot</span>
+            
+            <span>Candidate: 
+                @if(Model.HasCandidate){ <strong class="text-success">Var</strong> } 
+                else { <strong class="text-muted">Yok</strong> }
+            </span>
+
+            <span>Durum: 
+                @if(Model.CandidateEligibility == "Eligible") { <strong class="text-success"><i class="fas fa-check-circle me-1"></i>Eligible</strong> }
+                else if (Model.HasDrift) { <strong class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i>Drift / @Model.CandidateEligibility</strong> }
+                else { <strong class="text-warning"><i class="fas fa-clock me-1"></i>@Model.CandidateEligibility</strong> }
+            </span>
+        </div>
+        <div>
+            <a href="/DataPilot" target="_blank" class="btn btn-sm btn-outline-light rounded-pill" style="font-size: 0.75rem;">
+                <i class="fas fa-external-link-alt me-1"></i>Pilot Merkezine Git
+            </a>
+        </div>
+    </div>
+}
 
 <!-- Draft Cache Bilgilendirme Banner -->
 @if (ViewData["DraftInfo"] is string draftInfo && !string.IsNullOrEmpty(draftInfo))
@@ -132,14 +195,7 @@
             </div>
             <div class="kasa-welcome-body">
                 <div class="kasa-welcome-title">
-                    @if (Model.LastSnapshotDate.HasValue)
-                    {
-                        <text>En son <strong>@Model.LastSnapshotDate.Value.ToString("dd.MM.yyyy")</strong> tarihli snapshot kaydedildi</text>
-                    }
-                    else
-                    {
-                        <text>Dosyalar mevcut — henüz snapshot kaydedilmedi</text>
-                    }
+                    <text>Yüklü rapor/dosyalar tespit edildi</text>
                 </div>
                 <div class="kasa-welcome-desc">
                     Rapor oluşturmak için tarih seçin ve "Verileri Getir" butonuna tıklayın
@@ -465,7 +521,6 @@
             <input type="hidden" asp-for="AksamMesaiSonuModu" />
             <input type="hidden" asp-for="SelectedDate" />
             <input type="hidden" asp-for="KasayiYapan" />
-            <input type="hidden" asp-for="HasSnapshot" />
             <input type="hidden" asp-for="IsDataLoaded" />
             <input type="hidden" name="GenelKasaStartDate" value="@(Model.GenelKasaStartDate?.ToString("yyyy-MM-dd"))" />
             <input type="hidden" name="GenelKasaEndDate" value="@(Model.GenelKasaEndDate?.ToString("yyyy-MM-dd"))" />
@@ -509,14 +564,22 @@
             </div>
 
             <!-- Accordion: Ek Girdiler -->
-            <div class="mt-3" x-data="{ open: false }">
-                <button type="button" class="kasa-accordion-toggle"
-                        @@click="open = !open"
+            <div class="mt-4" x-data="{ open: localStorage.getItem('kasaEkGirdiOpen') === 'true' }">
+                <button type="button" class="btn w-100 text-start d-flex justify-content-between align-items-center shadow-sm"
+                        style="background: linear-gradient(135deg, #1e293b, #334155); color: white; border-radius: 8px; padding: 14px 20px; font-weight: 600; border: none;"
+                        @@click="open = !open; localStorage.setItem('kasaEkGirdiOpen', open)"
                         :aria-expanded="open.toString()">
-                    <span><i class="fas fa-sliders-h me-2"></i>Ek Girdiler (Opsiyonel)</span>
-                    <i class="fas fa-chevron-down"></i>
+                    <span style="font-size: 1.05rem;">
+                        <i class="fas fa-sliders-h me-2" style="color: #38bdf8;"></i> Ek Girdiler (Opsiyonel)
+                    </span>
+                    <div class="d-flex align-items-center gap-3">
+                        <span class="badge bg-light text-dark shadow-sm" style="font-size: 0.75rem; border-radius: 6px;" title="Durumu hatırla">
+                            <i class="fas fa-thumbtack me-1" :class="open ? 'text-danger' : 'text-muted'"></i>İğnele
+                        </span>
+                        <i class="fas" :class="open ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                    </div>
                 </button>
-                <div x-show="open" x-transition class="mt-3">
+                <div x-show="open" x-transition class="mt-3 p-4 border shadow-sm" style="background: rgba(255,255,255,0.7); border-radius: 8px;">
                     <div class="row g-3">
                         <div class="col-md-4 col-lg-3">
                             <label class="kasa-form-label">Kayden Tahsilat</label>
@@ -568,14 +631,22 @@
             @if (kasaTypeClass == "sabah")
             {
             <!-- Accordion: Eksik/Fazla Girişleri (Sabah Kasa) -->
-            <div class="mt-3" x-data="{ openEF: false }">
-                <button type="button" class="kasa-accordion-toggle"
-                        @@click="openEF = !openEF"
+            <div class="mt-4" x-data="{ openEF: localStorage.getItem('kasaEskikFazlaOpen') === 'true' }">
+                <button type="button" class="btn w-100 text-start d-flex justify-content-between align-items-center shadow-sm"
+                        style="background: linear-gradient(135deg, #4c1d95, #6d28d9); color: white; border-radius: 8px; padding: 14px 20px; font-weight: 600; border: none;"
+                        @@click="openEF = !openEF; localStorage.setItem('kasaEskikFazlaOpen', openEF)"
                         :aria-expanded="openEF.toString()">
-                    <span><i class="fas fa-balance-scale me-2"></i>Eksik/Fazla Girişleri (Opsiyonel)</span>
-                    <i class="fas fa-chevron-down"></i>
+                    <span style="font-size: 1.05rem;">
+                        <i class="fas fa-balance-scale me-2" style="color: #d8b4fe;"></i> Eksik/Fazla Girişleri (Opsiyonel)
+                    </span>
+                    <div class="d-flex align-items-center gap-3">
+                        <span class="badge bg-light text-dark shadow-sm" style="font-size: 0.75rem; border-radius: 6px;" title="Durumu hatırla">
+                            <i class="fas fa-thumbtack me-1" :class="openEF ? 'text-danger' : 'text-muted'"></i>İğnele
+                        </span>
+                        <i class="fas" :class="openEF ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                    </div>
                 </button>
-                <div x-show="openEF" x-transition class="mt-3">
+                <div x-show="openEF" x-transition class="mt-3 p-4 border shadow-sm" style="background: rgba(255,255,255,0.7); border-radius: 8px;">
                     <div class="alert" style="background: rgba(8,145,178,0.06); border: 1px solid rgba(8,145,178,0.2); border-radius: var(--radius-md); padding: 8px 14px; margin-bottom: 12px;">
                         <small style="color: var(--kasa-info);">
                             <i class="fas fa-info-circle me-1"></i>
@@ -608,9 +679,9 @@
                                         }
                                     </div>
                                 </div>
-                                <a asp-controller="HesapKontrol" asp-action="Index" asp-route-tab="takipte"
+                                <a href="/HesapKontrol/QueryDate?tarih=@(Model.SelectedDate?.ToString("yyyy-MM-dd"))&tab=takipte"
                                    style="font-size: 0.8rem; color: #8e44ad; text-decoration: underline;">
-                                    <i class="fas fa-external-link-alt me-1"></i>Detay
+                                    <i class="fas fa-external-link-alt me-1"></i>Hesap Kontrol (Geçmiş Detay)
                                 </a>
                             </div>
                         </div>
@@ -1925,7 +1996,7 @@
                             @Model.CrossDayBildirim
                         </div>
                     </div>
-                    <a href="/HesapKontrol?tab=takipte" class="kasa-btn"
+                    <a href="/HesapKontrol/QueryDate?tarih=@(Model.SelectedDate?.ToString("yyyy-MM-dd"))&tab=takipte" class="kasa-btn"
                        style="font-size: 11px; padding: 6px 14px; border-radius: 8px;
                               background: rgba(34,197,94,0.1); color: #22c55e;
                               border: 1px solid rgba(34,197,94,0.3); white-space: nowrap; text-decoration: none;">
@@ -1967,7 +2038,7 @@
                             </div>
                         }
                     </div>
-                    <a href="/HesapKontrol?tab=takipte" class="kasa-btn"
+                    <a href="/HesapKontrol/QueryDate?tarih=@(Model.SelectedDate?.ToString("yyyy-MM-dd"))&tab=takipte" class="kasa-btn"
                        style="font-size: 11px; padding: 6px 14px; border-radius: 8px;
                               background: rgba(8,145,178,0.1); color: #0891b2;
                               border: 1px solid rgba(8,145,178,0.3); white-space: nowrap; text-decoration: none;">
@@ -2556,7 +2627,7 @@
                         <input type="hidden" asp-for="KasaType" />
                         <input type="hidden" asp-for="KasayiYapan" />
                         <input type="hidden" asp-for="IsDataLoaded" />
-                        <input type="hidden" asp-for="HasSnapshot" />
+
                         <input type="hidden" name="RptGunlukNot" class="rpt-gunluk-not" value="" />
                         <button type="submit" class="kasa-btn" style="font-size: 12px; padding: 8px 16px; border-radius: 8px; background: rgba(59,130,246,0.08); color: #2563eb; border: 1px solid rgba(59,130,246,0.2);" title="JSON Veri İndir">
                             <i class="fas fa-file-code me-1"></i>JSON
@@ -2659,7 +2730,7 @@
                 <input type="hidden" asp-for="KasaType" />
                 <input type="hidden" asp-for="KasayiYapan" />
                 <input type="hidden" asp-for="IsDataLoaded" />
-                <input type="hidden" asp-for="HasSnapshot" />
+
                 <button type="submit" class="kasa-btn kasa-btn-secondary">
                     <i class="fas fa-file-download"></i> JSON İndir
                 </button>
@@ -2869,21 +2940,18 @@
 }
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<!-- Günlük Kasa Notu: Textarea → Hidden Input Sync                    -->
+<!-- Günlük Kasa Notu: Textarea → Hidden Input Sync + Farklı Kaydet    -->
 <!-- ═══════════════════════════════════════════════════════════════════ -->
 <script>
 (function() {
-    // Her export formu submit edilmeden önce textarea değerini hidden input'lara kopyala
-    document.addEventListener('submit', function(e) {
-        // Sayfadaki tüm not textarea'larından değer al (Genel veya Sabah/Akşam hangisi varsa)
+    // ── Not Senkronizasyonu (ortak fonksiyon) ──
+    function syncNotesToForm(form) {
         var notInput = document.getElementById('kasaGunlukNot')
                     || document.getElementById('kasaGunlukNotSabahAksam');
         var notValue = notInput ? notInput.value : '';
-
-        // Bu formda .rpt-gunluk-not sınıflı hidden input varsa değerini güncelle
-        var hiddens = e.target.querySelectorAll('.rpt-gunluk-not');
+        var hiddens = form.querySelectorAll('.rpt-gunluk-not');
         hiddens.forEach(function(h) { h.value = notValue; });
-    });
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // File System Access API: "Farklı Kaydet" diyaloğu desteği
@@ -2950,42 +3018,73 @@
         return null; // Tanınmayan form — normal davranış
     }
 
-    // showSaveFilePicker desteği var mı?
-    var hasSaveFilePicker = typeof window.showSaveFilePicker === 'function';
+    // ── Blob URL ile fallback indirme (form.submit yerine daha güvenilir) ──
+    function downloadViaBlob(blob, fileName) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function() {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, 100);
+    }
 
-    if (hasSaveFilePicker) {
-        // Export formlarını intercept et
-        document.addEventListener('submit', function(e) {
-            var form = e.target;
-            var suggested = getSuggestedName(form);
-            if (!suggested) return; // Bu form export formu değil, normal devam et
+    // ── showSaveFilePicker desteği kontrolü ──
+    // Güvenli bağlam (HTTPS veya localhost) gerekir
+    var hasSaveFilePicker = window.isSecureContext
+                         && typeof window.showSaveFilePicker === 'function';
 
-            e.preventDefault(); // Normal submit'i durdur
+    console.log('[KasaExport] showSaveFilePicker desteği:', hasSaveFilePicker,
+                '| isSecureContext:', window.isSecureContext,
+                '| typeof showSaveFilePicker:', typeof window.showSaveFilePicker);
 
-            // Form verilerini hazırla
-            var formData = new FormData(form);
-            var actionUrl = form.getAttribute('action');
+    // ── Tek submit listener — hem not senkronizasyonu hem Farklı Kaydet ──
+    document.addEventListener('submit', function(e) {
+        var form = e.target;
 
-            // Buton durumunu göster
-            var submitBtn = form.querySelector('button[type="submit"]');
-            var originalBtnHTML = submitBtn ? submitBtn.innerHTML : '';
-            if (submitBtn) {
-                submitBtn.disabled = true;
-                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Hazırlanıyor...';
-            }
+        // 1) Her zaman not senkronizasyonunu yap
+        syncNotesToForm(form);
 
-            // Fetch ile dosyayı al
-            fetch(actionUrl, {
-                method: 'POST',
-                body: formData,
-                credentials: 'same-origin'
-            })
-            .then(function(response) {
-                if (!response.ok) throw new Error('Sunucu hatası: ' + response.status);
-                return response.blob();
-            })
-            .then(function(blob) {
-                // Farklı Kaydet diyaloğu
+        // 2) Export formu mu kontrol et
+        var suggested = getSuggestedName(form);
+        if (!suggested) return; // Export formu değil — normal submit devam etsin
+
+        // 3) showSaveFilePicker yoksa fetch+blob ile anlamlı isim ile indir
+        //    (normal form submit dosya adını sunucuya bırakır, biz istemci tarafında
+        //     daha anlamlı isim verebiliriz)
+        e.preventDefault();
+
+        // Form verilerini hazırla
+        var formData = new FormData(form);
+        var actionUrl = form.getAttribute('action');
+
+        // Buton durumunu göster
+        var submitBtn = form.querySelector('button[type="submit"]');
+        var originalBtnHTML = submitBtn ? submitBtn.innerHTML : '';
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Hazırlanıyor...';
+        }
+
+        console.log('[KasaExport] Dosya indiriliyor:', suggested.name,
+                    '| SaveFilePicker:', hasSaveFilePicker);
+
+        // Fetch ile dosyayı al
+        fetch(actionUrl, {
+            method: 'POST',
+            body: formData,
+            credentials: 'same-origin'
+        })
+        .then(function(response) {
+            if (!response.ok) throw new Error('Sunucu hatası: ' + response.status);
+            return response.blob();
+        })
+        .then(function(blob) {
+            if (hasSaveFilePicker) {
+                // ── Farklı Kaydet diyaloğu (Chrome / Edge) ──
                 var fileTypes = [];
                 if (suggested.ext === '.pdf') {
                     fileTypes.push({ description: 'PDF Belgesi', accept: { 'application/pdf': ['.pdf'] } });
@@ -3006,43 +3105,58 @@
                             return writable.close();
                         });
                     });
-                });
-            })
-            .then(function() {
-                // Başarılı kayıt bildirimi
-                if (submitBtn) {
-                    submitBtn.innerHTML = '<i class="fas fa-check me-1"></i>Kaydedildi!';
-                    submitBtn.style.background = 'rgba(16,185,129,0.15)';
-                    submitBtn.style.color = '#059669';
-                    setTimeout(function() {
-                        submitBtn.innerHTML = originalBtnHTML;
-                        submitBtn.disabled = false;
-                        submitBtn.style.background = '';
-                        submitBtn.style.color = '';
-                    }, 2000);
-                }
-            })
-            .catch(function(err) {
-                // Kullanıcı iptal ettiyse (AbortError) sessizce devam et
-                if (err && err.name === 'AbortError') {
-                    if (submitBtn) {
-                        submitBtn.innerHTML = originalBtnHTML;
-                        submitBtn.disabled = false;
+                }).catch(function(pickerErr) {
+                    // Kullanıcı iptal ettiyse sessizce çık
+                    if (pickerErr && pickerErr.name === 'AbortError') {
+                        console.log('[KasaExport] Kullanıcı kaydet diyaloğunu iptal etti');
+                        return 'cancelled';
                     }
-                    return;
-                }
-
-                // Gerçek hata — fallback olarak normal indirme yap
-                console.warn('Farklı Kaydet başarısız, normal indirme yapılıyor:', err);
+                    // Picker hatası — blob URL ile indir
+                    console.warn('[KasaExport] SaveFilePicker hatası, blob URL ile indiriliyor:', pickerErr);
+                    downloadViaBlob(blob, suggested.name);
+                    return 'fallback';
+                });
+            } else {
+                // ── showSaveFilePicker yok — blob URL ile anlamlı isimle indir ──
+                downloadViaBlob(blob, suggested.name);
+                return 'blob-download';
+            }
+        })
+        .then(function(result) {
+            if (result === 'cancelled') {
+                // İptal — butonu eski haline getir
                 if (submitBtn) {
                     submitBtn.innerHTML = originalBtnHTML;
                     submitBtn.disabled = false;
                 }
-                // Normal form submit ile devam et (fallback)
-                form.submit();
-            });
-        }, true); // capture phase — ilk bizim listener çalışsın
-    }
+                return;
+            }
+            // Başarılı kayıt/indirme bildirimi
+            if (submitBtn) {
+                submitBtn.innerHTML = '<i class="fas fa-check me-1"></i>Kaydedildi!';
+                submitBtn.style.background = 'rgba(16,185,129,0.15)';
+                submitBtn.style.color = '#059669';
+                setTimeout(function() {
+                    submitBtn.innerHTML = originalBtnHTML;
+                    submitBtn.disabled = false;
+                    submitBtn.style.background = '';
+                    submitBtn.style.color = '';
+                }, 2000);
+            }
+        })
+        .catch(function(err) {
+            // Fetch hatası — formu normal submit et
+            console.error('[KasaExport] Fetch hatası:', err);
+            if (submitBtn) {
+                submitBtn.innerHTML = originalBtnHTML;
+                submitBtn.disabled = false;
+            }
+            // Hata durumunda normal form submit ile dene
+            // (e.preventDefault zaten çağrılmıştı, bu yüzden
+            //  programatik submit — submit event'i tekrar tetiklemez)
+            form.submit();
+        });
+    }); // bubble phase — capture:true kaldırıldı
 })();
 </script>
 
@@ -3547,6 +3661,10 @@
                     html += '<td style="padding:8px 12px; text-align:center;"><span style="font-size:10px; font-weight:600; background:#eef2ff; color:#4338ca; padding:1px 6px; border-radius:10px;">v' + item.version + '</span></td>';
                     html += '<td style="padding:8px 12px; text-align:center; font-size:11px; color:#6b7280;">' + item.calculatedAt + '</td>';
                     html += '<td style="padding:8px 12px; text-align:center; white-space:nowrap;">';
+                    html += '<a href="/KasaRaporlar/Detay/' + item.id + '" style="font-size:10px; padding:3px 8px; background:#f0f0f0; color:#374151; border:1px solid #d1d5db; text-decoration:none; border-radius:4px; margin-right:3px; display:inline-block;" title="Detay görüntüle">';
+                    html += '<i class="fas fa-eye"></i></a>';
+                    html += '<button type="button" onclick="editFromPanel(\'' + item.id + '\', this)" style="font-size:10px; padding:3px 8px; background:#eef2ff; color:#4338ca; border:1px solid #c7d2fe; cursor:pointer; border-radius:4px; margin-right:3px;" title="Adı/notu düzenle">';
+                    html += '<i class="fas fa-edit"></i></button>';
                     if (isLoaded) {
                         html += '<span style="font-size:10px; color:#6366f1; font-weight:600;">Yüklü</span>';
                     } else {
@@ -3689,6 +3807,35 @@
             });
     };
 
+    // Paneldeki rapor satırından doğrudan ad/not düzenleme
+    window.editFromPanel = function(snapshotId, btnEl) {
+        var newName = prompt('Rapor adını girin (boş bırakılabilir):');
+        if (newName === null) return; // İptal
+        var newNotes = prompt('Rapor notunu girin (boş bırakılabilir):');
+        if (newNotes === null) return; // İptal
+
+        var token = getAntiForgeryToken();
+        var fd = new FormData();
+        fd.append('id', snapshotId);
+        fd.append('name', newName);
+        fd.append('notes', newNotes);
+        fd.append('__RequestVerificationToken', token);
+
+        fetch('/KasaRaporlar/Update', {
+            method: 'POST',
+            headers: { 'RequestVerificationToken': token },
+            body: new URLSearchParams({ id: snapshotId, name: newName, notes: newNotes })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            showToast(data.message || 'Güncellendi', data.success ? 'success' : 'error');
+            if (data.success) loadReports(); // Panel'i yenile
+        })
+        .catch(function(err) {
+            showToast('Güncelleme hatası: ' + err.message, 'error');
+        });
+    };
+
     function showToast(message, type) {
         var area = document.getElementById('actionAlertArea');
         if (!area) return;
@@ -3736,7 +3883,7 @@
             <input type="hidden" asp-for="IsAdminMode" />
             <input type="hidden" asp-for="SelectedDate" />
             <input type="hidden" asp-for="KasayiYapan" />
-            <input type="hidden" asp-for="HasSnapshot" />
+
             <input type="hidden" asp-for="IsDataLoaded" />
             <input type="hidden" asp-for="BozukPara" />
             <input type="hidden" asp-for="NakitPara" />

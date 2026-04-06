@@ -2,6 +2,7 @@ using KasaManager.Application.Abstractions;
 using KasaManager.Domain.Reports;
 using KasaManager.Web.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace KasaManager.Web.Controllers;
 
@@ -14,70 +15,73 @@ namespace KasaManager.Web.Controllers;
 public sealed class KasaSettingsController : Controller
 {
     private readonly IKasaGlobalDefaultsService _globalDefaults;
-    private readonly IKasaRaporSnapshotService _snapshots;
+
     private readonly IDocumentTemplateService _templateService;
+    private readonly ILogger<KasaSettingsController> _log;
 
     public KasaSettingsController(
         IKasaGlobalDefaultsService globalDefaults,
-        IKasaRaporSnapshotService snapshots,
-        IDocumentTemplateService templateService)
+        IDocumentTemplateService templateService,
+        ILogger<KasaSettingsController> log)
     {
         _globalDefaults = globalDefaults;
-        _snapshots = snapshots;
         _templateService = templateService;
+        _log = log;
     }
 
     [HttpGet]
     public async Task<IActionResult> Index(CancellationToken ct)
     {
-        var defaults = await _globalDefaults.GetAsync(ct);
+        var vm = new KasaSettingsViewModel();
 
-        var vm = new KasaSettingsViewModel
+        // 1. Ayarları oku — patlarsa sayfa yine de açılsın
+        try
         {
-            SelectedVergiKasaVeznedarlar = KasaSettingsViewModel.TryParseSelected(defaults.SelectedVeznedarlarJson),
-            DefaultNakitPara = defaults.DefaultNakitPara,
-            DefaultBozukPara = defaults.DefaultBozukPara,
-            DefaultKasaEksikFazla = defaults.DefaultKasaEksikFazla,
-            DefaultGenelKasaDevredenSeed = defaults.DefaultGenelKasaDevredenSeed,
-            DefaultGenelKasaBaslangicTarihiSeed = defaults.DefaultGenelKasaBaslangicTarihiSeed is null ? null : DateOnly.FromDateTime(defaults.DefaultGenelKasaBaslangicTarihiSeed.Value),
-            DefaultKaydenTahsilat = defaults.DefaultKaydenTahsilat,
-            DefaultDundenDevredenKasaNakit = defaults.DefaultDundenDevredenKasaNakit,
+            var defaults = await _globalDefaults.GetAsync(ct);
+
+            vm.SelectedVergiKasaVeznedarlar = KasaSettingsViewModel.TryParseSelected(defaults.SelectedVeznedarlarJson);
+            vm.DefaultNakitPara = defaults.DefaultNakitPara;
+            vm.DefaultBozukPara = defaults.DefaultBozukPara;
+            vm.DefaultKasaEksikFazla = defaults.DefaultKasaEksikFazla;
+            vm.DefaultGenelKasaDevredenSeed = defaults.DefaultGenelKasaDevredenSeed;
+            vm.DefaultGenelKasaBaslangicTarihiSeed = defaults.DefaultGenelKasaBaslangicTarihiSeed is null ? null : DateOnly.FromDateTime(defaults.DefaultGenelKasaBaslangicTarihiSeed.Value);
+            vm.DefaultKaydenTahsilat = defaults.DefaultKaydenTahsilat;
+            vm.DefaultDundenDevredenKasaNakit = defaults.DefaultDundenDevredenKasaNakit;
             // IBAN bilgileri
-            HesapAdiStopaj = defaults.HesapAdiStopaj,
-            IbanStopaj = defaults.IbanStopaj,
-            HesapAdiMasraf = defaults.HesapAdiMasraf,
-            IbanMasraf = defaults.IbanMasraf,
-            HesapAdiHarc = defaults.HesapAdiHarc,
-            IbanHarc = defaults.IbanHarc,
-            IbanPostaPulu = defaults.IbanPostaPulu
-        };
-
-        // Banka Yazıları Şablonları
-        var templates = await _templateService.GetAllAsync(ct);
-        vm.DocumentTemplates = templates.ToList();
-
-        // Checkbox seçenekleri için en son Genel snapshot'tan veznedarları topla
-        var last = await _snapshots.GetLastSnapshotDateAsync(KasaRaporTuru.Genel, ct);
-        if (last is null)
+            vm.HesapAdiStopaj = defaults.HesapAdiStopaj;
+            vm.IbanStopaj = defaults.IbanStopaj;
+            vm.HesapAdiMasraf = defaults.HesapAdiMasraf;
+            vm.IbanMasraf = defaults.IbanMasraf;
+            vm.HesapAdiHarc = defaults.HesapAdiHarc;
+            vm.IbanHarc = defaults.IbanHarc;
+            vm.IbanPostaPulu = defaults.IbanPostaPulu;
+        }
+        catch (Exception ex)
         {
-            vm.Warnings.Add("Henüz Genel snapshot yok. Veznedar listesi boş görünebilir.");
-            return View(vm);
+            _log.LogError(ex, "[KasaSettings.Index] Ayarlar DB'den okunamadı");
+            vm.Errors ??= new List<string>();
+            vm.SelectedVergiKasaVeznedarlar ??= new List<string>();
+            vm.Errors.Add($"Ayarlar veritabanından okunamadı: {ex.Message}");
         }
 
-        vm.OptionsSourceDate = last;
-        var snap = await _snapshots.GetAsync(last.Value, KasaRaporTuru.Genel, ct);
-        if (snap?.Rows is null || snap.Rows.Count == 0)
+        // 2. Banka Yazıları Şablonları — patlarsa sadece şablonlar boş kalır
+        try
         {
-            vm.Warnings.Add("En son Genel snapshot okunamadı. Veznedar listesi boş görünebilir.");
-            return View(vm);
+            var templates = await _templateService.GetAllAsync(ct);
+            vm.DocumentTemplates = templates.ToList();
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "[KasaSettings.Index] Banka yazıları şablonları okunamadı");
+            vm.Warnings ??= new List<string>();
+            vm.DocumentTemplates ??= new List<KasaManager.Domain.Reports.DocumentTemplate>();
+            vm.Warnings.Add($"Banka yazıları şablonları yüklenemedi: {ex.Message}");
         }
 
-        vm.VeznedarOptions = snap.Rows
-            .Where(r => !r.IsSummaryRow && !string.IsNullOrWhiteSpace(r.Veznedar))
-            .Select(r => r.Veznedar!.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(x => x)
-            .ToList();
+        // 3. Veznedar Listesi Snapshot ile toplanıyordu (P4.4: İptal edildi)
+        vm.Warnings ??= new List<string>();
+        vm.Warnings.Add("Veznedar listesi (otomatik önerme) Snapshot sistemi ile birlikte deaktif edilmiştir.");
+        vm.VeznedarOptions = new List<string>();
 
         return View(vm);
     }

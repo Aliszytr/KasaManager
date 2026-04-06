@@ -39,6 +39,11 @@ public sealed class CalculationRun
     public List<CalculationExplainItem> Explain { get; init; } = new();
 
     public List<GuardResult> GuardResults { get; init; } = new();
+
+    /// <summary>
+    /// P1(C): Hesaplama sırasında üretilen uyarılar (undefined variable → 0, vb.)
+    /// </summary>
+    public List<string>? Warnings { get; set; }
 }
 
 public sealed class CalculationExplainItem

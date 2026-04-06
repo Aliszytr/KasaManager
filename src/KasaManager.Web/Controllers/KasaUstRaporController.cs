@@ -25,7 +25,7 @@ public sealed class KasaUstRaporController : Controller
     private readonly IFileStorage _storage;
     private readonly IImportOrchestrator _orchestrator;
     private readonly IKasaReportDateRulesService _dateRules;
-    private readonly IKasaRaporSnapshotService _snapshots;
+
     private readonly IKasaGlobalDefaultsService _globalDefaults;
     private readonly IExportService _exportService;
     private readonly IConfiguration _cfg;
@@ -34,7 +34,6 @@ public sealed class KasaUstRaporController : Controller
         IFileStorage storage,
         IImportOrchestrator orchestrator,
         IKasaReportDateRulesService dateRules,
-        IKasaRaporSnapshotService snapshots,
         IKasaGlobalDefaultsService globalDefaults,
         IExportService exportService,
         IConfiguration cfg)
@@ -42,7 +41,6 @@ public sealed class KasaUstRaporController : Controller
         _storage = storage;
         _orchestrator = orchestrator;
         _dateRules = dateRules;
-        _snapshots = snapshots;
         _globalDefaults = globalDefaults;
         _exportService = exportService;
         _cfg = cfg;
@@ -126,7 +124,6 @@ public sealed class KasaUstRaporController : Controller
             var folder0 = GetUploadFolderAbsolute(sub0);
             var eval0 = await _dateRules.EvaluateAsync(folder0, ct);
             finalDate = eval0.ProposedDate
-                     ?? eval0.DbExpectedNextDate
                      ?? DateOnly.FromDateTime(DateTime.Today);
         }
 
@@ -205,9 +202,10 @@ public sealed class KasaUstRaporController : Controller
             Rows = rows
         };
 
-        var saved = await _snapshots.SaveAsync(snapshot, ct);
+        // KasaUstRapor snapshot save işlemi P4.1 ile iptal edilmiştir (Stateless)
+        // var saved = await _snapshots.SaveAsync(snapshot, ct);
 
-        TempData["Info"] = $"✅ Snapshot başarıyla kaydedildi — {saved.RaporTarihi:dd.MM.yyyy} ({saved.Rows.Count} satır)";
+        TempData["Info"] = $"✅ KasaÜstRapor doğrulandı (Snapshot DB Kaydı Kapatıldı) — {finalDate.Value:dd.MM.yyyy} ({snapshot.Rows.Count} satır okundu)";
         return RedirectToAction("Index", "Import");
     }
 

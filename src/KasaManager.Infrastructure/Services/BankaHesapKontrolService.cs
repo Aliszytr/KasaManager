@@ -145,20 +145,26 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
         var adayNonStopaj = adayKayitlar.Where(k => k.HesapTuru != BankaHesapTuru.Stopaj).ToList();
         var adayStopaj = adayKayitlar.Where(k => k.HesapTuru == BankaHesapTuru.Stopaj).ToList();
 
-        // ─ Mevcut Acik kayıtlar (TÜM tarihler — global dedup) ─
-        // Aynı fingerprint'e sahip kayıt herhangi bir tarihte Acik ise tekrar eklenmez.
+        // ─ Mevcut Acik kayıtlar (AYNI analiz tarihi — günlük bağımsızlık) ─
+        // DÜZELTME: Eski kod TÜM tarihlerden çekiyordu → farklı günlerdeki aynı
+        // fingerprint'li kayıtlar (örn. her gün gelen EFT iade) yeni günde baskılanıyordu.
+        // Her günün banka karşılaştırması bağımsız işlemler üretir:
+        // 26.03'teki 540₺ EFT ve 27.03'teki 540₺ EFT ayrı banka hareketidir.
+        // Aynı gün tekrar analiz çalıştırıldığında mevcutlar korunur (idempotent).
         var mevcutAcik = await _db.HesapKontrolKayitlari
-            .Where(x => x.Durum == KayitDurumu.Acik
+            .Where(x => x.AnalizTarihi == analizTarihi
+                     && x.Durum == KayitDurumu.Acik
                      && x.HesapTuru != BankaHesapTuru.Stopaj)
             .ToListAsync(ct);
 
-        // ─ Tüm kullanıcı etkileşimli kayıtlar (global duplicate kontrolü) ─
-        // Takipte, Onaylandi, Cozuldu, Iptal → kullanıcı bunları işlemiş, aynısı tekrar eklenmemeli.
-        // Özellikle Iptal (Yok Say): kullanıcı bilinçli olarak reddetmiş,
-        // analiz tekrar çalıştığında aynı kayıt yeniden oluşturulmamalı.
-        // TÜM tarihler kontrol ediliyor — farklı günde işlenmiş aynı kayıt tekrar eklenmez.
+        // ─ Aynı gün kullanıcı etkileşimli kayıtlar ─
+        // DÜZELTME: Eski kod TÜM tarihlerdeki işlenmiş kayıtları çekiyordu.
+        // Bu, önceki günlerde Yok Say/Çözüldü yapılan kayıtların yeni günde
+        // oluşturulmasını engelliyordu → karşılaştırma ekranında 6, HesapKontrol'de 4 kayıt.
+        // Aynı gün içinde: analiz tekrar çalıştığında, o gün işlenmiş kayıtlar korunur.
         var kullaniciIslemliKayitlar = await _db.HesapKontrolKayitlari
-            .Where(x => x.Durum != KayitDurumu.Acik
+            .Where(x => x.AnalizTarihi == analizTarihi
+                      && x.Durum != KayitDurumu.Acik
                       && x.HesapTuru != BankaHesapTuru.Stopaj)
             .ToListAsync(ct);
 

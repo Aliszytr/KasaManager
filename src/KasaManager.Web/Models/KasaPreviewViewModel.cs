@@ -21,6 +21,13 @@ public sealed class KasaPreviewViewModel
     /// </summary>
     public bool IsAdminMode { get; set; }
 
+    // ===== Faz 5: DataFirst Pilot Visibility =====
+    public bool HasCandidate { get; set; }
+    public string? CandidateEligibility { get; set; }
+    public string? ParityStatus { get; set; }
+    public bool HasDrift { get; set; }
+    // =============================================
+
     /// <summary>
     /// Akşam Kasa: Mesai Sonu modunda sadece 4 dosya okunur (OnlineMasraf, OnlineHarc, MasrafveReddiyat atlanır).
     /// Tam Gün modunda (false) tüm 7 dosya okunur (geriye dönük analiz için).
@@ -54,10 +61,8 @@ public sealed class KasaPreviewViewModel
     /// </summary>
     public bool IsDataLoaded { get; set; }
 
-    /// <summary>
-    /// R9: Seçilen gün için snapshot bulunup bulunmadığı.
-    /// </summary>
-    public bool HasSnapshot { get; set; }
+    // P4.3: Snapshot durumu UI bazlı karar mekanizmasından tamamen kaldırıldı
+    // public bool HasSnapshot { get; set; }
 
     // Dropdown options (KasaUstRapor snapshot'ından)
     public List<string> VeznedarOptions { get; set; } = new();
@@ -256,8 +261,8 @@ public sealed class KasaPreviewViewModel
     // ===== KasaÜstRapor Panel (tüm kasa tipleri için) =====
     public KasaUstRaporPanelViewModel? UstRaporPanel { get; set; }
 
-    // ===== Karşılama kartı verileri =====
-    public DateOnly? LastSnapshotDate { get; set; }
+    // P4.3: Snapshot son tarih referansı silindi
+    // public DateOnly? LastSnapshotDate { get; set; }
     public bool HasUploadedFiles { get; set; }
 
     // ===== IBAN Bilgileri (Bankaya Götürülecek Kartlarda Gösterim) =====

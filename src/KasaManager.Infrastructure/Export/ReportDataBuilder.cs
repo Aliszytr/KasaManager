@@ -43,7 +43,7 @@ public sealed class ReportDataBuilder : IReportDataBuilder
 
             // ══ ROW 2: Reddiyat + Bankadan Çıkan + Stopaj ══
             OnlineReddiyat = Get(run, KasaCanonicalKeys.ToplamReddiyat),
-            BankadanCikan = Get(run, KasaCanonicalKeys.BankadanCikan),
+            BankadanCikan = Get(run, KasaCanonicalKeys.BankaCikanTahsilat),
             ToplamStopaj = Get(run, KasaCanonicalKeys.ToplamStopaj),
 
             // ══ ROW 3: Bankaya Götürülecek ══

@@ -1,6 +1,7 @@
 using System.Globalization;
 using KasaManager.Application.Abstractions;
 using KasaManager.Domain.Reports;
+using KasaManager.Domain.Constants;
 namespace KasaManager.Application.Services;
 
 // Mapping: BuildSabahFields, BuildAksamFields — Fields dictionary oluşturma
@@ -11,8 +12,8 @@ public sealed partial class KasaDraftService
     /// </summary>
     private static Dictionary<string, string> BuildSabahFields(
         DateOnly raporTarihi,
-        List<string?> selectedVeznedarlar,
-        Domain.Reports.Snapshots.KasaRaporSnapshot genSnap,
+        List<string> selectedVeznedarlar,
+
         decimal? bankaBakiye,
         BankaGunAgg bankaGun,
         BankaTahsilatExtraInflowAgg bankaExtra,
@@ -45,7 +46,7 @@ public sealed partial class KasaDraftService
         {
             ["RaporTarihi"] = raporTarihi.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture),
             ["SeciliVeznedarlar"] = selectedVeznedarlar.Count > 0 ? string.Join(", ", selectedVeznedarlar) : "-",
-            ["KasaUstRaporSecimToplami"] = genSnap.SelectionTotal.ToString("N2", CultureInfo.InvariantCulture),
+            ["KasaUstRaporSecimToplami"] = "0.00", // P4.4: Snapshot retired
             ["BankaBakiye"] = bankaBakiye.HasValue ? bankaBakiye.Value.ToString("N2", CultureInfo.InvariantCulture) : "-",
 
             ["BankaTahsilat.BDevreden"] = bankaGun.Devreden.ToString("N2", CultureInfo.InvariantCulture),
@@ -61,19 +62,19 @@ public sealed partial class KasaDraftService
             ["BankaHarc.BCekilen"] = 0m.ToString("N2", CultureInfo.InvariantCulture),
 
             ["dunden_devreden_kasa"] = devredenKasa.ToString("N2", CultureInfo.InvariantCulture),
-            ["banka_devreden_tahsilat"] = bankaGun.Devreden.ToString("N2", CultureInfo.InvariantCulture),
-            ["banka_yarina_devredecek_tahsilat"] = bankaGun.Yarina.ToString("N2", CultureInfo.InvariantCulture),
-            ["bankaya_giren_tahsilat"] = bankaGun.Giren.ToString("N2", CultureInfo.InvariantCulture),
-            ["bankadan_cikan_tahsilat"] = bankaGun.Cikan.ToString("N2", CultureInfo.InvariantCulture),
-            ["eft_otomatik_iade"] = bankaExtra.EftOtomatikIade.ToString("N2", CultureInfo.InvariantCulture),
-            ["gelen_havale"] = bankaExtra.GelenHavale.ToString("N2", CultureInfo.InvariantCulture),
-            ["iade_kelimesi_giris"] = bankaExtra.IadeKelimesiGiris.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.DundenDevredenBankaTahsilat] = bankaGun.Devreden.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.YarinaDeverecekBankaTahsilat] = bankaGun.Yarina.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.BankaGirenTahsilat] = bankaGun.Giren.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.BankaCikanTahsilat] = bankaGun.Cikan.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.EftOtomatikIade] = bankaExtra.EftOtomatikIade.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.GelenHavale] = bankaExtra.GelenHavale.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.IadeKelimesiGiris] = bankaExtra.IadeKelimesiGiris.ToString("N2", CultureInfo.InvariantCulture),
             ["islem_disi_yansiyan"] = bankaExtra.IslemDisiToplam.ToString("N2", CultureInfo.InvariantCulture),
 
-            ["banka_devreden_harc"] = bankaHarcGun.Devreden.ToString("N2", CultureInfo.InvariantCulture),
-            ["banka_yarina_devredecek_harc"] = bankaHarcGun.Yarina.ToString("N2", CultureInfo.InvariantCulture),
-            ["bankaya_giren_harc"] = bankaHarcGun.Giren.ToString("N2", CultureInfo.InvariantCulture),
-            ["bankadan_cikan_harc"] = bankaHarcGun.Cikan.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.DundenDevredenBankaHarc] = bankaHarcGun.Devreden.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.YarinaDeverecekBankaHarc] = bankaHarcGun.Yarina.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.BankaGirenHarc] = bankaHarcGun.Giren.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.BankaCikanHarc] = bankaHarcGun.Cikan.ToString("N2", CultureInfo.InvariantCulture),
 
             ["pos_tahsilat"] = ust.PosTahsilat.ToString("N2", CultureInfo.InvariantCulture),
             ["online_tahsilat"] = ust.OnlineTahsilat.ToString("N2", CultureInfo.InvariantCulture),
@@ -155,8 +156,8 @@ public sealed partial class KasaDraftService
     /// </summary>
     private static Dictionary<string, string> BuildAksamFields(
         DateOnly raporTarihi,
-        List<string?> selectedVeznedarlar,
-        Domain.Reports.Snapshots.KasaRaporSnapshot genSnap,
+        List<string> selectedVeznedarlar,
+
         decimal? bankaBakiye,
         BankaGunAgg bankaGun,
         BankaTahsilatExtraInflowAgg bankaExtra,
@@ -192,7 +193,7 @@ public sealed partial class KasaDraftService
 
             ["RaporTarihi"] = raporTarihi.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture),
             ["SeciliVeznedarlar"] = selectedVeznedarlar.Count > 0 ? string.Join(", ", selectedVeznedarlar) : "-",
-            ["KasaUstRaporSecimToplami"] = genSnap.SelectionTotal.ToString("N2", CultureInfo.InvariantCulture),
+            ["KasaUstRaporSecimToplami"] = "0.00", // P4.4: Snapshot retired
             ["BankaBakiye"] = bankaBakiye.HasValue ? bankaBakiye.Value.ToString("N2", CultureInfo.InvariantCulture) : "-",
 
             ["BankaTahsilat.BDevreden"] = bankaGun.Devreden.ToString("N2", CultureInfo.InvariantCulture),
@@ -208,19 +209,19 @@ public sealed partial class KasaDraftService
             ["BankaHarc.BCekilen"] = 0m.ToString("N2", CultureInfo.InvariantCulture),
 
             ["dunden_devreden_kasa"] = devredenKasa.ToString("N2", CultureInfo.InvariantCulture),
-            ["banka_devreden_tahsilat"] = bankaGun.Devreden.ToString("N2", CultureInfo.InvariantCulture),
-            ["banka_yarina_devredecek_tahsilat"] = bankaGun.Yarina.ToString("N2", CultureInfo.InvariantCulture),
-            ["bankaya_giren_tahsilat"] = bankaGun.Giren.ToString("N2", CultureInfo.InvariantCulture),
-            ["bankadan_cikan_tahsilat"] = bankaGun.Cikan.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.DundenDevredenBankaTahsilat] = bankaGun.Devreden.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.YarinaDeverecekBankaTahsilat] = bankaGun.Yarina.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.BankaGirenTahsilat] = bankaGun.Giren.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.BankaCikanTahsilat] = bankaGun.Cikan.ToString("N2", CultureInfo.InvariantCulture),
 
-            ["eft_otomatik_iade"] = bankaExtra.EftOtomatikIade.ToString("N2", CultureInfo.InvariantCulture),
-            ["gelen_havale"] = bankaExtra.GelenHavale.ToString("N2", CultureInfo.InvariantCulture),
-            ["iade_kelimesi_giris"] = bankaExtra.IadeKelimesiGiris.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.EftOtomatikIade] = bankaExtra.EftOtomatikIade.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.GelenHavale] = bankaExtra.GelenHavale.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.IadeKelimesiGiris] = bankaExtra.IadeKelimesiGiris.ToString("N2", CultureInfo.InvariantCulture),
             ["islem_disi_yansiyan"] = bankaExtra.IslemDisiToplam.ToString("N2", CultureInfo.InvariantCulture),
-            ["banka_devreden_harc"] = bankaHarcGun.Devreden.ToString("N2", CultureInfo.InvariantCulture),
-            ["banka_yarina_devredecek_harc"] = bankaHarcGun.Yarina.ToString("N2", CultureInfo.InvariantCulture),
-            ["bankaya_giren_harc"] = bankaHarcGun.Giren.ToString("N2", CultureInfo.InvariantCulture),
-            ["bankadan_cikan_harc"] = bankaHarcGun.Cikan.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.DundenDevredenBankaHarc] = bankaHarcGun.Devreden.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.YarinaDeverecekBankaHarc] = bankaHarcGun.Yarina.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.BankaGirenHarc] = bankaHarcGun.Giren.ToString("N2", CultureInfo.InvariantCulture),
+            [KasaCanonicalKeys.BankaCikanHarc] = bankaHarcGun.Cikan.ToString("N2", CultureInfo.InvariantCulture),
 
             ["pos_tahsilat"] = ust.PosTahsilat.ToString("N2", CultureInfo.InvariantCulture),
             ["online_tahsilat"] = ust.OnlineTahsilat.ToString("N2", CultureInfo.InvariantCulture),

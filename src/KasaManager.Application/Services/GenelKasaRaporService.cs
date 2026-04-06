@@ -31,10 +31,10 @@ public sealed class GenelKasaRaporService : IGenelKasaRaporService
     /// <inheritdoc />
     public async Task<(CalculationRun? Run, string? Error)> BuildCalculationRunAsync(
         DateOnly? selectedEndDate, decimal? gelmeyenD,
-        string uploadFolder, CancellationToken ct)
+        string uploadFolder, bool confirmBankaDiagnosticOverride = false, CancellationToken ct = default)
     {
         var inputsRes = await _drafts.BuildGenelKasaR10EngineInputsAsync(
-            selectedEndDate, gelmeyenD, uploadFolder, ct);
+            selectedEndDate, gelmeyenD, uploadFolder, confirmBankaDiagnosticOverride, ct);
 
         if (!inputsRes.Ok || inputsRes.Value is null)
             return (null, inputsRes.Error ?? "GenelKasa engine inputları üretilemedi.");
@@ -58,9 +58,9 @@ public sealed class GenelKasaRaporService : IGenelKasaRaporService
     /// <inheritdoc />
     public async Task<GenelKasaRaporData> BuildReportDataAsync(
         DateOnly? selectedEndDate, decimal? gelmeyenD,
-        string uploadFolder, CancellationToken ct)
+        string uploadFolder, bool confirmBankaDiagnosticOverride = false, CancellationToken ct = default)
     {
-        var (run, error) = await BuildCalculationRunAsync(selectedEndDate, gelmeyenD, uploadFolder, ct);
+        var (run, error) = await BuildCalculationRunAsync(selectedEndDate, gelmeyenD, uploadFolder, confirmBankaDiagnosticOverride, ct);
         if (run is null)
         {
             return new GenelKasaRaporData
@@ -70,7 +70,7 @@ public sealed class GenelKasaRaporService : IGenelKasaRaporService
         }
 
         var inputsRes = await _drafts.BuildGenelKasaR10EngineInputsAsync(
-            selectedEndDate, gelmeyenD, uploadFolder, ct);
+            selectedEndDate, gelmeyenD, uploadFolder, confirmBankaDiagnosticOverride, ct);
         var bundle = inputsRes.Value!;
 
         var issues = bundle.Issues.ToList();
@@ -98,6 +98,9 @@ public sealed class GenelKasaRaporService : IGenelKasaRaporService
             SonrayaDevredecek = IGenelKasaRaporService.GetDecimal(run, KasaCanonicalKeys.SonrayaDevredecek, issues) ?? 0m,
             MutabakatFarki = IGenelKasaRaporService.GetDecimal(run, KasaCanonicalKeys.MutabakatFarki, issues) ?? 0m,
             GenelKasa = IGenelKasaRaporService.GetDecimal(run, KasaCanonicalKeys.GenelKasa, issues) ?? 0m,
+
+            BankaBakiyeDiagnostic = bundle.BankaBakiyeDiagnostic,
+            BankaMismatchType = bundle.BankaMismatchType,
 
             Issues = issues,
         };

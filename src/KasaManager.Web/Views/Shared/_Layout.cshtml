@@ -164,6 +164,8 @@
 
             <li class="kasa-sidebar-section">Yönetim</li>
 
+            @if (User.IsInRole("Admin"))
+            {
             <li>
                 <a class="kasa-sidebar-link @ActiveClass("KasaSettings")"
                    asp-controller="KasaSettings" asp-action="Index">
@@ -171,6 +173,7 @@
                     <span class="link-text">Ayarlar</span>
                 </a>
             </li>
+            }
             @if (User.IsInRole("Admin"))
             {
             <li>

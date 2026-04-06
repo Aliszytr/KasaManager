@@ -3,11 +3,14 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using KasaManager.Application.Abstractions;
+using KasaManager.Domain.Projection;
 using KasaManager.Domain.Abstractions;
 using KasaManager.Domain.Constants;
 using KasaManager.Domain.FormulaEngine;
 using KasaManager.Domain.Reports;
+using KasaManager.Domain.Settings;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace KasaManager.Application.Services;
 
@@ -17,24 +20,30 @@ namespace KasaManager.Application.Services;
 /// </summary>
 public sealed partial class KasaDraftService : IKasaDraftService
 {
-    private readonly IKasaRaporSnapshotService _snapshots;
     private readonly IImportOrchestrator _import;
     private readonly IKasaGlobalDefaultsService _globalDefaults;
     private readonly IBankaHesapKontrolService _hesapKontrol;
     private readonly ILogger<KasaDraftService> _log;
+    private readonly ICarryoverResolver _carryoverResolver;
+    private readonly UstRaporSourceOptions _ustRaporOpts;
+    private readonly IEksikFazlaProjectionEngine _projectionEngine;
 
     public KasaDraftService(
-        IKasaRaporSnapshotService snapshots,
         IImportOrchestrator import,
         IKasaGlobalDefaultsService globalDefaults,
         IBankaHesapKontrolService hesapKontrol,
-        ILogger<KasaDraftService> log)
+        ILogger<KasaDraftService> log,
+        ICarryoverResolver carryoverResolver,
+        IOptions<UstRaporSourceOptions> ustRaporOpts,
+        IEksikFazlaProjectionEngine projectionEngine)
     {
-        _snapshots = snapshots;
         _import = import;
         _globalDefaults = globalDefaults;
         _hesapKontrol = hesapKontrol;
         _log = log;
+        _carryoverResolver = carryoverResolver;
+        _ustRaporOpts = ustRaporOpts.Value;
+        _projectionEngine = projectionEngine;
     }
 
     public async Task<Result<KasaDraftBundle>> BuildAsync(
@@ -48,31 +57,30 @@ public sealed partial class KasaDraftService : IKasaDraftService
 
         var issues = new List<string>();
 
-        // R7 Snapshot kaynağı: KasaÜstRapor snapshot'ı (Genel)
-        var genSnap = await _snapshots.GetAsync(raporTarihi, KasaRaporTuru.Genel, ct);
-        if (genSnap == null)
-        {
-            return Result<KasaDraftBundle>.Fail($"{raporTarihi:dd.MM.yyyy} tarihli Genel snapshot bulunamadı. Önce KasaÜstRapor ekranından kaydedin.");
-        }
-
-        var selectedVeznedarlar = genSnap.Rows
-            .Where(r => r.IsSelected)
-            .Select(r => r.Veznedar)
-            .Where(v => !string.IsNullOrWhiteSpace(v))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (selectedVeznedarlar.Count == 0)
-            issues.Add("KasaÜstRapor snapshot'ında seçili veznedar bulunamadı (selectedRows boş olabilir).");
+        // Snapshot kullanımı P4.4 itibarıyla kaldırılmıştır. Tüm veriler Live Source'dan gelir.
+        var selectedVeznedarlar = new List<string>();
 
         finalizeInputs ??= new KasaDraftFinalizeInputs();
 
         // Banka bakiye kuralı (KİLİTLİ): kaynak = BankaTahsilat, son satır "islem_sonrasi_bakiye"
         var bankaBakiye = TryReadBankaBakiye(uploadFolderAbsolute, issues, out var bankaRawJson);
 
-        // ===== R8 (Akşam) - Legacy benzeri mapping =====
-        // KasaÜstRapor TOPLAMLAR satırı (snapshot'tan): Pos/Online/Toplam Tahsilat + Harç + Reddiyat + Stopaj/Vergiler
-        var ust = ReadKasaUstRaporSummary(genSnap, issues);
+        // -- SHADOW PARITY P1(A) ----------------------------------------------------
+        var liveProvider = new IntermediateLiveUstRaporProvider(_import);
+        var liveSummaryRes = liveProvider.GetSummary(raporTarihi, uploadFolderAbsolute, issues);
+        KasaUstSummary? ustLive = null;
+
+        if (liveSummaryRes.Ok && liveSummaryRes.Value != null)
+        {
+            var l = liveSummaryRes.Value;
+            ustLive = new KasaUstSummary(l.PosTahsilat, l.OnlineTahsilat, l.PostTahsilat, l.Tahsilat, l.Reddiyat, l.PosHarc, l.OnlineHarc, l.PostHarc, l.GelmeyenPost, l.Harc, l.GelirVergisi, l.DamgaVergisi, l.Stopaj);
+        }
+
+        if (ustLive == null)
+            return Result<KasaDraftBundle>.Fail($"{raporTarihi:dd.MM.yyyy} tarihli KasaÜstRapor verileri hesaplanamadı.");
+
+        var ust = ustLive;
+        // -------------------------------------------------------------------------
 
         // OnlineReddiyat: Online Reddiyat + Online Stopaj (Gelir Ver + Damga Ver)
         var online = ReadOnlineReddiyatTotals(raporTarihi, uploadFolderAbsolute, issues, out var onlineRawJson);
@@ -190,7 +198,56 @@ var aksamCalc = CalculateAksamLegacy(
             bozukPara: bozukPara);
         #pragma warning restore CS0618
 
-        var efChain = await ComputeEksikFazlaChainAsync(raporTarihi, uploadFolderAbsolute, ct);
+        // ═══════════════════════════════════════════════════════════════
+        // P3.1: EksikFazla Engine (Legacy Katmanı Tamamen Kaldırıldı)
+        // ═══════════════════════════════════════════════════════════════
+        EksikFazlaChain? efChain = null;
+
+        try
+        {
+            DayInputProvider inputProvider = async (DateOnly d, CancellationToken innerCt) =>
+            {
+                // Snapshot kalmadığı için her zaman data fail olur veya external input provider kullanılır
+                return null;
+            };
+
+            var projReq = new ProjectionRequest(raporTarihi, uploadFolderAbsolute, InputProvider: inputProvider);
+            var projResult = await _projectionEngine.ProjectAsync(projReq, ct);
+
+            if (projResult.Ok)
+            {
+                efChain = new EksikFazlaChain(
+                    OncekiTahsilat: projResult.OncekiTahsilat,
+                    DundenTahsilat: projResult.DundenTahsilat,
+                    GuneTahsilat: projResult.GuneTahsilat,
+                    OncekiHarc: projResult.OncekiHarc,
+                    DundenHarc: projResult.DundenHarc,
+                    GuneHarc: projResult.GuneHarc);
+
+                EksikFazlaMetrics.RecordClean();
+                _log.LogInformation(
+                    "P3.1 EksikFazla Engine date={Date} PROJECTION BAŞARILI (chain: {ChainLen} gün, HK: {HK})",
+                    raporTarihi, projResult.Chain.Count,
+                    projResult.HesapKontrolApplied ? "uygulandı" : "yok");
+            }
+            else
+            {
+                EksikFazlaMetrics.RecordFallback();
+                _log.LogError(
+                    "P3.1 EksikFazla Engine date={Date} Ok=false: {Error}. LEGACY FALLBACK KALDIRILDIĞI İÇİN İŞLEM DURDURULDU.",
+                    raporTarihi, projResult.ErrorMessage);
+                return Result<KasaDraftBundle>.Fail($"Eksik/Fazla hesaplanamadı: {projResult.ErrorMessage}");
+            }
+        }
+        catch (Exception ex)
+        {
+            EksikFazlaMetrics.RecordException();
+            _log.LogError(ex, "P3.1 EksikFazla Engine date={Date} exception aldı. LEGACY FALLBACK KALDIRILDIĞI İÇİN İŞLEM DURDURULDU.", raporTarihi);
+            return Result<KasaDraftBundle>.Fail($"Eksik/Fazla motor hatası: {ex.Message}");
+        }
+
+        if (efChain == null)
+            return Result<KasaDraftBundle>.Fail("EksikFazlaChain nesnesi oluşturulamadı.");
 
         // ✅ R10.8 FIX PACK:
         // Genel sekmesi artık KasaÜstRapor (günlük) değil, R10 "True Source" mantığı ile dolar:
@@ -210,12 +267,12 @@ var aksamCalc = CalculateAksamLegacy(
         var sabah = new KasaDraftResult
         {
             Title = "Sabah Kasa (Draft)",
-            RawJson = BuildRawJson(genSnap, bankaRawJson, onlineRawJson, bankaGunRawJson, bankaExtraRawJson, bankaHarcGunRawJson, onlineHarcRawJson, onlineMasrafRawJson, masrafReddiyatRawJson),
+            RawJson = BuildRawJson(null, bankaRawJson, onlineRawJson, bankaGunRawJson, bankaExtraRawJson, bankaHarcGunRawJson, onlineHarcRawJson, onlineMasrafRawJson, masrafReddiyatRawJson),
 #pragma warning disable CS0618 // Intentional: Legacy method for parity
             InlineFormulas = BuildSabahInlineFormulas(devredenKasa, ust, online, vergiKasa, kaydenTahsilat, kaydenHarc, bankayaYatirilacakHarciDegistir, bankayaYatirilacakTahsilatiDegistirAuto, bankayaYatirilacakTahsilatiDegistirManual, bankayaYatirilacakTahsilatiDegistir, (finalizeInputs.KasadaKalacakHedef ?? 0m), cesitliNedenlerleBankadanCikamayanTahsilat, bankadanCekilen, vergiGelenKasa, bankayaGonderilmisDeger, bozukPara, sabahCalc),
 #pragma warning restore CS0618
             Fields = BuildSabahFields(
-                raporTarihi, selectedVeznedarlar, genSnap, bankaBakiye,
+                raporTarihi, selectedVeznedarlar, bankaBakiye,
                 bankaGun, bankaExtra, bankaHarcGun, ust, online,
                 onlineHarc, onlineMasraf, masrafReddiyat,
                 devredenKasa, vergiKasa, vergiGelenKasa,
@@ -233,13 +290,13 @@ var aksamCalc = CalculateAksamLegacy(
         var aksam = new KasaDraftResult
         {
             Title = "Akşam Kasa (Draft)",
-            RawJson = BuildRawJson(genSnap, bankaRawJson, onlineRawJson, bankaGunRawJson, bankaExtraRawJson, bankaHarcGunRawJson, onlineHarcRawJson, onlineMasrafRawJson, masrafReddiyatRawJson),
+            RawJson = BuildRawJson(null, bankaRawJson, onlineRawJson, bankaGunRawJson, bankaExtraRawJson, bankaHarcGunRawJson, onlineHarcRawJson, onlineMasrafRawJson, masrafReddiyatRawJson),
             #pragma warning disable CS0618 // LEGACY parity/debug only – intentionally used
             InlineFormulas = BuildAksamInlineFormulas(devredenKasa, ust, online, vergiKasa, kaydenTahsilat, kaydenHarc, bankayaYatirilacakHarciDegistir, bankayaYatirilacakTahsilatiDegistirAuto, bankayaYatirilacakTahsilatiDegistirManual, bankayaYatirilacakTahsilatiDegistir, (finalizeInputs.KasadaKalacakHedef ?? 0m), cesitliNedenlerleBankadanCikamayanTahsilat, bankadanCekilen, vergiGelenKasa, bankayaGonderilmisDeger, bozukPara, aksamCalc),
             #pragma warning restore CS0618
 
             Fields = BuildAksamFields(
-                raporTarihi, selectedVeznedarlar, genSnap, bankaBakiye,
+                raporTarihi, selectedVeznedarlar, bankaBakiye,
                 bankaGun, bankaExtra, bankaHarcGun, ust, online,
                 onlineHarc, onlineMasraf, masrafReddiyat,
                 devredenKasa, normalTahsilat, vergiKasa, vergiGelenKasa,
@@ -301,6 +358,7 @@ var aksamCalc = CalculateAksamLegacy(
         DateOnly? selectedBitisTarihi,
         decimal? gelmeyenD,
         string uploadFolderAbsolute,
+        bool confirmBankaDiagnosticOverride = false,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(uploadFolderAbsolute))
@@ -318,7 +376,33 @@ var aksamCalc = CalculateAksamLegacy(
 
         // 3) True Source hesapları: Masraf/Reddiyat toplamları + Banka bakiye
         var (toplamTahsilat, toplamReddiyat, kaydenTahsilat, masrafRawJson, masrafOk) = await ImportMasrafveReddiyatAggAsync(uploadFolderAbsolute, rangeStart, endDate.Value, issues, ct);
-        var (bankaBakiye, bankaRawJson, bankaOk) = await ImportBankaBakiyeAsync(uploadFolderAbsolute, rangeStart, endDate.Value, issues, ct);
+        var (bankaBakiye, bankaRawJson, bankaMismatch, bankaDiag) = await ImportBankaBakiyeAsync(uploadFolderAbsolute, rangeStart, endDate.Value, issues, ct);
+
+        if (bankaMismatch != BankaMismatchType.None)
+        {
+            if (!confirmBankaDiagnosticOverride)
+            {
+                // UI'ye dönmek üzere warning
+                issues.Add($"DIAGNOSTIC_WARNING: Banka bakiye hesaplaması doğrulanamadı. (Neden: {bankaMismatch})");
+            }
+            else
+            {
+                // Bypass confirmed => Server-side Audit Log
+                var auditLogObj = new
+                {
+                    Event = "BankaTahsilat_Diagnostic_Bypass",
+                    Timestamp = DateTime.UtcNow.ToString("O"),
+                    RequestedDate = endDate.Value.ToString("yyyy-MM-dd"),
+                    SourceDate = bankaDiag.SelectedBalanceDate?.ToString("yyyy-MM-dd"),
+                    MatchedRowCount = bankaDiag.MatchedRowCount,
+                    MismatchType = bankaMismatch.ToString(),
+                    ActionContext = "BuildGenelKasaR10EngineInputsAsync"
+                };
+                
+                _log.LogWarning("AUDIT_TRAIL: {@AuditData}", auditLogObj);
+                issues.Add($"BİLGİ: Sistemdeki bakiye problemi ({bankaMismatch}) kullanıcı tarafından bypass edildi ve hesaplamaya devam edildi.");
+            }
+        }
 
         // 4) Defaults (Ayarlar)
         var defaults = await _globalDefaults.GetOrCreateAsync(ct);
@@ -333,7 +417,7 @@ var aksamCalc = CalculateAksamLegacy(
             CreateRawEntry(KasaCanonicalKeys.ToplamTahsilat, toplamTahsilat, "MasrafveReddiyat", "MasrafveReddiyat.xlsx", $"{rangeStart:dd.MM.yyyy}-{endDate:dd.MM.yyyy} toplam", includeInCalculations: masrafOk, notes: masrafOk ? null : "MISSING_SOURCE: MasrafveReddiyat.xlsx okunamadı; hesaplamaya dahil edilmedi."),
             CreateRawEntry(KasaCanonicalKeys.ToplamReddiyat, toplamReddiyat, "MasrafveReddiyat", "MasrafveReddiyat.xlsx", $"{rangeStart:dd.MM.yyyy}-{endDate:dd.MM.yyyy} toplam", includeInCalculations: masrafOk, notes: masrafOk ? null : "MISSING_SOURCE: MasrafveReddiyat.xlsx okunamadı; hesaplamaya dahil edilmedi."),
             CreateRawEntry(KasaCanonicalKeys.KaydenTahsilat, kaydenTahsilat, "MasrafveReddiyat", "MasrafveReddiyat.xlsx", $"{rangeStart:dd.MM.yyyy}-{endDate:dd.MM.yyyy} toplam", includeInCalculations: masrafOk, notes: masrafOk ? null : "MISSING_SOURCE: MasrafveReddiyat.xlsx okunamadı; hesaplamaya dahil edilmedi."),
-            CreateRawEntry(KasaCanonicalKeys.BankaBakiye, bankaBakiye, "BankaTahsilat", "BankaTahsilat.xlsx", $"{rangeStart:dd.MM.yyyy}-{endDate:dd.MM.yyyy} bakiye", includeInCalculations: bankaOk, notes: bankaOk ? null : "MISSING_SOURCE: BankaTahsilat.xlsx okunamadı; hesaplamaya dahil edilmedi."),
+            CreateRawEntry(KasaCanonicalKeys.BankaBakiye, bankaBakiye, "BankaTahsilat", "BankaTahsilat.xlsx", $"{rangeStart:dd.MM.yyyy}-{endDate:dd.MM.yyyy} bakiye", includeInCalculations: bankaDiag.FileExists, notes: bankaDiag.FileExists ? null : "MISSING_SOURCE: BankaTahsilat.xlsx eksik/okunamadı."),
 
             CreateOverrideEntry(KasaCanonicalKeys.Devreden, devreden, "GenelKasa snapshot/seed devreden"),
             CreateOverrideEntry(KasaCanonicalKeys.GelmeyenD, gelmeyenD ?? 0m, "UI manuel"),
@@ -347,7 +431,7 @@ var aksamCalc = CalculateAksamLegacy(
             RangeStart = rangeStart,
             EndDate = endDate,
             Masraf = new { toplamTahsilat, toplamReddiyat, kaydenTahsilat, masrafRawJson, masrafOk },
-            Banka = new { bankaBakiye, bankaRawJson, bankaOk },
+            Banka = new { bankaBakiye, bankaRawJson, bankaMismatch, bankaDiag },
             BankaBakiye = bankaBakiye,
             Devreden = devreden,
             GelmeyenD = gelmeyenD ?? 0m,
@@ -363,9 +447,12 @@ var aksamCalc = CalculateAksamLegacy(
             DevredenSonTarihi = devredenSonTarihi,
             PoolEntries = pool,
             RawJson = rawJson,
-            Issues = issues
+            Issues = issues,
+            BankaBakiyeDiagnostic = bankaDiag,
+            BankaMismatchType = bankaMismatch
         };
 
         return Result<GenelKasaR10EngineInputBundle>.Success(bundle);
     }
+
 }

@@ -4,6 +4,9 @@ using KasaManager.Domain.Abstractions;
 using KasaManager.Domain.Reports;
 using Moq;
 
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+
 namespace KasaManager.Tests.Application;
 
 /// <summary>
@@ -13,11 +16,13 @@ namespace KasaManager.Tests.Application;
 public sealed class ImportOrchestratorTests
 {
     private readonly Mock<IExcelTableReader> _excelMock = new();
+    private readonly Mock<IServiceScopeFactory> _scopeFactoryMock = new();
+    private readonly Mock<ILogger<ImportOrchestrator>> _loggerMock = new();
     private readonly ImportOrchestrator _sut;
 
     public ImportOrchestratorTests()
     {
-        _sut = new ImportOrchestrator(_excelMock.Object);
+        _sut = new ImportOrchestrator(_excelMock.Object, _scopeFactoryMock.Object, _loggerMock.Object);
     }
 
     // ───────────────────────────────────────────

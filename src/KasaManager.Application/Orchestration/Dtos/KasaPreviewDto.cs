@@ -29,7 +29,7 @@ public sealed class KasaPreviewDto
     public string? GenelKasaEndDateSource { get; set; }
 
     public bool IsDataLoaded { get; set; }
-    public bool HasSnapshot { get; set; }
+    // P4.3: HasSnapshot removed
 
     // Options
     public List<string> VeznedarOptions { get; set; } = new();

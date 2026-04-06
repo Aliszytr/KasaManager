@@ -69,7 +69,7 @@ public sealed class FormulaEngineService : IFormulaEngineService
                     Id = "v1.normal_stopaj",
                     Name = "Normal Stopaj (max(0, Toplam - Online))",
                     TargetKey = "normal_stopaj",
-                    Expression = "Max(0, toplam_stopaj - online_stopaj)",
+                    Expression = "Max(0.0, toplam_stopaj - online_stopaj)",
                     Category = FormulaCategory.Stopaj,
                     AppliesTo = AppliesToKasa.Any,
                     Version = "1.0.0"
@@ -265,6 +265,7 @@ public sealed class FormulaEngineService : IFormulaEngineService
                 var expr = new Expression(t.Expression);
                 
                 // Parametre Çözümleyici (EvaluateFunction / EvaluateParameter)
+                var missingVariables = new List<string>();
                 expr.EvaluateParameter += (name, args) =>
                 {
                     var key = NormalizeIdentifier(name);
@@ -273,7 +274,11 @@ public sealed class FormulaEngineService : IFormulaEngineService
                     if (outputs.TryGetValue(key, out var val)) args.Result = val;
                     else if (overrideMap.TryGetValue(key, out val)) args.Result = val;
                     else if (inputMap.TryGetValue(key, out val)) args.Result = val;
-                    else args.Result = 0m; // Bulunamayan değişken 0 kabul edilir (Excel davranışı)
+                    else
+                    {
+                        args.Result = 0m; // Bulunamayan değişken 0 kabul edilir (Excel davranışı)
+                        missingVariables.Add(key);
+                    }
 
                     usedVariables[key] = (decimal)args.Result; 
                 };
@@ -310,6 +315,15 @@ public sealed class FormulaEngineService : IFormulaEngineService
                     ResolvedVariables = new Dictionary<string, decimal>(inputMap), // İyileştirilebilir
                     Result = resultDecimal
                 });
+
+                // P1(C) MADDE 2.3: Undefined → 0 guards visibility
+                if (missingVariables.Count > 0)
+                {
+                    var missingList = string.Join(", ", missingVariables);
+                    run.Warnings ??= new List<string>();
+                    run.Warnings.Add($"[FormulaEngine] '{t.TargetKey}' formülünde tanımsız değişken(ler) 0 kabul edildi: [{missingList}]");
+                    System.Diagnostics.Debug.WriteLine($"[FormulaEngine MISSING] Target={t.TargetKey} Missing=[{missingList}] Expression={t.Expression}");
+                }
 
             }
             catch (Exception ex)

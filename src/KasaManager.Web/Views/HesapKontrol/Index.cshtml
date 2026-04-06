@@ -16,6 +16,11 @@
     var filterBitis = Model.FilterBitis;
     var arama = Model.Arama;
     var takipOzeti = Model.TakipOzeti;
+
+    // P4.3: Snapshot UI baglantisi ve LastSnapshotDate sokuldu.
+    // Tarihsel inceleme (Bugünden farklı bir gün ise) kontrolü eklendi.
+    bool isHistoricalTabs = Model.AnalizTarihi < DateOnly.FromDateTime(DateTime.Now);
+    string tarihStrTabs = Model.AnalizTarihi.ToString("yyyy-MM-dd");
 }
 
 
@@ -35,38 +40,40 @@
             </div>
 
             <!-- ═══════ Tarih Seçici (Geriye Dönük Analiz) ═══════ -->
-            @if (Model.SnapshotTarihleri.Count > 0)
-            {
-                <div class="d-flex align-items-center gap-2 p-2 rounded-3"
-                     style="background: var(--kasa-surface); border: 1px solid var(--kasa-border);">
-                    <i class="fas fa-calendar-alt text-kasa-primary"></i>
-                    <label class="small fw-semibold text-muted mb-0">Analiz Tarihi:</label>
-                    <select id="analizTarihiSelect" class="form-select form-select-sm"
-                            style="width: auto; min-width: 160px; font-weight: 600;"
-                            onchange="window.location.href='@Url.Action("Index", "HesapKontrol")?analizTarihiStr=' + this.value">
-                        @foreach (var tarih in Model.SnapshotTarihleri)
-                        {
-                            var label = tarih.ToString("dd.MM.yyyy") + (tarih == Model.LastSnapshotDate ? " (Son)" : "");
-                            if (tarih == Model.AnalizTarihi)
-                            {
-                                <option value="@tarih.ToString("yyyy-MM-dd")" selected>@label</option>
-                            }
-                            else
-                            {
-                                <option value="@tarih.ToString("yyyy-MM-dd")">@label</option>
-                            }
-                        }
-                    </select>
-                    @if (Model.AnalizTarihi != Model.LastSnapshotDate)
-                    {
-                        <span class="badge bg-warning text-dark ms-1">
-                            <i class="fas fa-history me-1"></i>Geriye Dönük
-                        </span>
-                    }
-                </div>
-            }
+            <div class="d-flex align-items-center gap-2 p-2 rounded-3"
+                 style="background: var(--kasa-surface); border: 1px solid var(--kasa-border);">
+                <i class="fas fa-calendar-alt text-kasa-primary"></i>
+                <label class="small fw-semibold text-muted mb-0">Analiz Tarihi:</label>
+                <input type="date" id="analizTarihiSelect" class="form-control form-control-sm"
+                       style="width: auto; min-width: 140px; font-weight: 600;"
+                       value="@Model.AnalizTarihi.ToString("yyyy-MM-dd")"
+                       onchange="window.location.href='@Url.Action("Index", "HesapKontrol")?analizTarihiStr=' + this.value" />
+                @if (isHistoricalTabs)
+                {
+                    <span class="badge bg-warning text-dark ms-1">
+                        <i class="fas fa-history me-1"></i>Geriye Dönük
+                    </span>
+                }
+            </div>
         </div>
     </div>
+
+    <!-- ═══════ UX Context Banner (Kasa Raporu Entry Point) ═══════ -->
+    @if (ViewData["QueryDate"] != null)
+    {
+        <div class="alert alert-info border-0 shadow-sm mb-4" style="background: rgba(14, 165, 233, 0.08); border-left: 5px solid #0ea5e9 !important;">
+            <div class="d-flex align-items-center">
+                <i class="fas fa-info-circle fa-2x me-3" style="color: #0ea5e9;"></i>
+                <div>
+                    <h6 class="mb-1" style="color: #0369a1; font-weight: 700;">Tarihsel Bağlam (Historical Context) Aktif</h6>
+                    <div class="small">
+                        Şu anda <strong>@(((DateOnly)ViewData["QueryDate"]!).ToString("dd.MM.yyyy"))</strong> tarihli banka hesap kontrol raporunu görüntülüyorsunuz. Yapacağınız işlemler ve sekme geçişleri bu tarihe sadık kalacaktır.
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
     <!-- ═══════ CrossDay Bildirim Banner'ı ═══════ -->
     @if (TempData["CrossDay"] is string crossDayMsg)
     {
@@ -170,7 +177,7 @@
                                         }
                                     </div>
                                 </div>
-                                <a asp-action="Index" asp-route-tab="takipte" class="btn btn-outline-secondary btn-sm">
+                                <a asp-action="Index" asp-route-tab="takipte" asp-route-analizTarihiStr="@tarihStrTabs" class="btn btn-outline-secondary btn-sm">
                                     <i class="fas fa-external-link-alt me-1"></i>Detay
                                 </a>
                             </div>
@@ -277,36 +284,84 @@
     <!-- ═══════ Tab Navigation ═══════ -->
     <ul class="nav nav-tabs mb-4">
         <li class="nav-item">
-            <a class="nav-link @(activeTab == "ozet" ? "active" : "")"
-               asp-action="Index" asp-route-tab="ozet">
-                <i class="fas fa-th-large me-1"></i> Özet
-            </a>
+            @if (isHistoricalTabs)
+            {
+                <a class="nav-link @(activeTab == "ozet" ? "active" : "")"
+                   href="@Url.Action("QueryDate", "HesapKontrol", new { tarih = tarihStrTabs, tab = "ozet" })">
+                    <i class="fas fa-th-large me-1"></i> Özet
+                </a>
+            }
+            else
+            {
+                <a class="nav-link @(activeTab == "ozet" ? "active" : "")"
+                   asp-action="Index" asp-route-tab="ozet" asp-route-analizTarihiStr="@tarihStrTabs">
+                    <i class="fas fa-th-large me-1"></i> Özet
+                </a>
+            }
         </li>
         <li class="nav-item">
-            <a class="nav-link @(activeTab == "acik" ? "active" : "")"
-               asp-action="Index" asp-route-tab="acik">
-                <i class="fas fa-exclamation-circle me-1"></i> Açık Kayıtlar
-                @if (acikKayitlar.Count > 0)
-                {
-                    <span class="badge bg-danger ms-1">@acikKayitlar.Count</span>
-                }
-            </a>
+            @if (isHistoricalTabs)
+            {
+                <a class="nav-link @(activeTab == "acik" ? "active" : "")"
+                   href="@Url.Action("QueryDate", "HesapKontrol", new { tarih = tarihStrTabs, tab = "acik" })">
+                    <i class="fas fa-exclamation-circle me-1"></i> Açık Kayıtlar
+                    @if (acikKayitlar.Count > 0)
+                    {
+                        <span class="badge bg-danger ms-1">@acikKayitlar.Count</span>
+                    }
+                </a>
+            }
+            else
+            {
+                <a class="nav-link @(activeTab == "acik" ? "active" : "")"
+                   asp-action="Index" asp-route-tab="acik" asp-route-analizTarihiStr="@tarihStrTabs">
+                    <i class="fas fa-exclamation-circle me-1"></i> Açık Kayıtlar
+                    @if (acikKayitlar.Count > 0)
+                    {
+                        <span class="badge bg-danger ms-1">@acikKayitlar.Count</span>
+                    }
+                </a>
+            }
         </li>
         <li class="nav-item">
-            <a class="nav-link @(activeTab == "takipte" ? "active" : "")"
-               asp-action="Index" asp-route-tab="takipte">
-                <i class="fas fa-binoculars me-1"></i> Takipte
-                @if (takipteKayitlar.Count > 0)
-                {
-                    <span class="badge ms-1" style="background: #8e44ad;">@takipteKayitlar.Count</span>
-                }
-            </a>
+            @if (isHistoricalTabs)
+            {
+                <a class="nav-link @(activeTab == "takipte" ? "active" : "")"
+                   href="@Url.Action("QueryDate", "HesapKontrol", new { tarih = tarihStrTabs, tab = "takipte" })">
+                    <i class="fas fa-binoculars me-1"></i> Takipte
+                    @if (takipteKayitlar.Count > 0)
+                    {
+                        <span class="badge ms-1" style="background: #8e44ad;">@takipteKayitlar.Count</span>
+                    }
+                </a>
+            }
+            else
+            {
+                <a class="nav-link @(activeTab == "takipte" ? "active" : "")"
+                   asp-action="Index" asp-route-tab="takipte" asp-route-analizTarihiStr="@tarihStrTabs">
+                    <i class="fas fa-binoculars me-1"></i> Takipte
+                    @if (takipteKayitlar.Count > 0)
+                    {
+                        <span class="badge ms-1" style="background: #8e44ad;">@takipteKayitlar.Count</span>
+                    }
+                </a>
+            }
         </li>
         <li class="nav-item">
-            <a class="nav-link @(activeTab == "gecmis" ? "active" : "")"
-               asp-action="Index" asp-route-tab="gecmis">
-                <i class="fas fa-history me-1"></i> Geçmiş
-            </a>
+            @if (isHistoricalTabs)
+            {
+                <a class="nav-link @(activeTab == "gecmis" ? "active" : "")"
+                   href="@Url.Action("QueryDate", "HesapKontrol", new { tarih = tarihStrTabs, tab = "gecmis" })">
+                    <i class="fas fa-history me-1"></i> Geçmiş
+                </a>
+            }
+            else
+            {
+                <a class="nav-link @(activeTab == "gecmis" ? "active" : "")"
+                   asp-action="Index" asp-route-tab="gecmis" asp-route-analizTarihiStr="@tarihStrTabs">
+                    <i class="fas fa-history me-1"></i> Geçmiş
+                </a>
+            }
         </li>
     </ul>
 
@@ -379,7 +434,7 @@
                             @if (acikKayitlar.Count > 10)
                             {
                                 <div class="text-center py-2">
-                                    <a asp-action="Index" asp-route-tab="acik" class="btn btn-outline-primary btn-sm">
+                                    <a asp-action="Index" asp-route-tab="acik" asp-route-analizTarihiStr="@tarihStrTabs" class="btn btn-outline-primary btn-sm">
                                         Tümünü Gör (@acikKayitlar.Count kayıt)
                                     </a>
                                 </div>
@@ -407,13 +462,13 @@
                         <h6 class="card-title"><i class="fas fa-bolt text-warning me-2"></i>Hızlı İşlemler</h6>
                         <form asp-action="RunAnalysis" method="post" class="mb-2">
                             @Html.AntiForgeryToken()
-                            <input type="hidden" name="tarih" value="@Model.LastSnapshotDate.ToString("yyyy-MM-dd")" />
+                            <input type="hidden" name="tarih" value="@Model.AnalizTarihi.ToString("yyyy-MM-dd")" />
                             <button type="submit" class="btn btn-success btn-sm w-100"
                                     onclick="this.disabled=true; this.innerHTML='<i class=\'fas fa-spinner fa-spin me-1\'></i> Analiz çalışıyor...'; this.form.submit();">
                                 <i class="fas fa-sync-alt me-1"></i> Yeniden Analiz Et
                             </button>
                         </form>
-                        <a asp-action="Index" asp-route-tab="acik" class="btn btn-outline-danger btn-sm w-100 mb-2">
+                        <a asp-action="Index" asp-route-tab="acik" asp-route-analizTarihiStr="@tarihStrTabs" class="btn btn-outline-danger btn-sm w-100 mb-2">
                             <i class="fas fa-exclamation-circle me-1"></i> Açık Kayıtları Yönet
                         </a>
                         <a asp-action="ExportPdf"
@@ -442,6 +497,7 @@
             <div class="card-body py-2">
                 <form method="get" class="row g-2 align-items-end">
                     <input type="hidden" name="tab" value="acik" />
+                    <input type="hidden" name="analizTarihiStr" value="@tarihStrTabs" />
                     <div class="col-auto">
                         <label class="form-label small mb-0">Hesap Türü</label>
                         <select name="hesapTuru" class="form-select form-select-sm">
@@ -610,6 +666,22 @@
 
     <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // BUG FIX: POST isteklerine analiz tarihi ekleme
+        var isHistorical = @(isHistoricalTabs ? "true" : "false");
+        var tarihStr = '@Model.AnalizTarihi.ToString("yyyy-MM-dd")';
+        if (isHistorical) {
+            document.querySelectorAll('form[method="post"]').forEach(function(f) {
+                // "tarih" isminde gizli eleman ekle, ama RunAnalysis zaten bir tanesine sahip, çakışmayı önle
+                if (!f.querySelector('input[name="tarih"]')) {
+                    var inp = document.createElement('input');
+                    inp.type = 'hidden';
+                    inp.name = 'tarih';
+                    inp.value = tarihStr;
+                    f.appendChild(inp);
+                }
+            });
+        }
+
         var selectAll = document.getElementById('selectAll');
         var btnBulk = document.getElementById('btnBulkCancel');
         if (!selectAll || !btnBulk) return;
@@ -852,6 +924,7 @@
                 <p class="small">Açık Kayıtlar sekmesinden "Takibe Al" butonunu kullanabilirsiniz.</p>
                 @* Son takip durumuna kısayol *@
                 <a asp-action="Index" asp-route-tab="takipte"
+                   asp-route-analizTarihiStr="@tarihStrTabs"
                    asp-route-baslangic="@DateOnly.FromDateTime(DateTime.Now.AddDays(-7)).ToString("yyyy-MM-dd")"
                    asp-route-bitis="@DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd")"
                    class="btn btn-outline-secondary btn-sm mt-2">
@@ -1365,10 +1438,63 @@
                             <td class="small text-truncate" style="max-width: 150px;" title="@k.Notlar">
                                 @(k.Notlar ?? "-")
                             </td>
-                            <td>
-                                @if (k.Durum != KayitDurumu.Acik)
+                            <td class="text-nowrap">
+                                @if (k.Durum == KayitDurumu.Acik)
                                 {
+                                    @* Açık kayıtlar: Takibe Al, Yok Say, Çözüldü *@
+                                    <div class="btn-group btn-group-sm">
+                                        <form method="post" asp-action="Confirm" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@k.Id" />
+                                            <button type="submit" class="btn btn-outline-success btn-sm" title="Onayla">
+                                                <i class="fas fa-check"></i>
+                                            </button>
+                                        </form>
+                                        <form method="post" asp-action="StartTracking" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@k.Id" />
+                                            <button type="submit" class="btn btn-outline-info btn-sm" title="Takibe Al">
+                                                <i class="fas fa-thumbtack"></i>
+                                            </button>
+                                        </form>
+                                        <form method="post" asp-action="Cancel" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@k.Id" />
+                                            <input type="hidden" name="sebep" value="Geçmiş kayıtlardan yok sayıldı" />
+                                            <button type="submit" class="btn btn-outline-secondary btn-sm" title="Yok Say"
+                                                    onclick="return confirm('Bu kaydı yok saymak istiyor musunuz?');">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                }
+                                else if (k.Durum == KayitDurumu.Takipte)
+                                {
+                                    @* Takipte kayıtlar: Çözüldü, Geri Al *@
+                                    <div class="btn-group btn-group-sm">
+                                        <form method="post" asp-action="Resolve" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@k.Id" />
+                                            <button type="submit" class="btn btn-outline-success btn-sm" title="Çözüldü">
+                                                <i class="fas fa-check"></i>
+                                            </button>
+                                        </form>
+                                        <form method="post" asp-action="Revert" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@k.Id" />
+                                            <input type="hidden" name="returnTab" value="gecmis" />
+                                            <button type="submit" class="btn btn-outline-warning btn-sm" title="Geri Al"
+                                                    onclick="return confirm('Takibi bırakıp Açık Kayıtlara geri almak istiyor musunuz?');">
+                                                <i class="fas fa-undo"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                }
+                                else if (k.Durum != KayitDurumu.Acik)
+                                {
+                                    @* Çözüldü/Onaylandı/İptal kayıtlar: Geri Al *@
                                     <form method="post" asp-action="Revert" class="d-inline">
+                                        @Html.AntiForgeryToken()
                                         <input type="hidden" name="id" value="@k.Id" />
                                         <input type="hidden" name="returnTab" value="gecmis" />
                                         <button type="submit" class="btn btn-outline-warning btn-sm" title="Geri Al"

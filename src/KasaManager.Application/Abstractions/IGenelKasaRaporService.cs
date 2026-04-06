@@ -15,14 +15,14 @@ public interface IGenelKasaRaporService
     /// </summary>
     Task<(CalculationRun? Run, string? Error)> BuildCalculationRunAsync(
         DateOnly? selectedEndDate, decimal? gelmeyenD,
-        string uploadFolder, CancellationToken ct);
+        string uploadFolder, bool confirmBankaDiagnosticOverride = false, CancellationToken ct = default);
 
     /// <summary>
     /// Tam rapor verisi üretir (GenelKasaRaporData).
     /// </summary>
     Task<GenelKasaRaporData> BuildReportDataAsync(
         DateOnly? selectedEndDate, decimal? gelmeyenD,
-        string uploadFolder, CancellationToken ct);
+        string uploadFolder, bool confirmBankaDiagnosticOverride = false, CancellationToken ct = default);
 
     /// <summary>
     /// CalculationRun içinden Outputs → Overrides → Inputs sırasıyla değer okur.

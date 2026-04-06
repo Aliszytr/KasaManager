@@ -41,4 +41,8 @@ public sealed class KasaRaporDetayViewModel
     
     // KasaRaporData (varsa)
     public KasaRaporData? RaporData { get; set; }
+    
+    // Aynı tarih+kasa tipi için tüm versiyonlar (audit trail)
+    public List<CalculatedKasaSnapshot> Versiyonlar { get; set; } = new();
 }
+

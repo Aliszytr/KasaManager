@@ -22,6 +22,371 @@ namespace KasaManager.Infrastructure.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("KasaManager.Domain.Calculation.Data.CalculationParityDrift", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("AbsoluteDifference")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("DataFirstValue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("DetectedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FieldKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("KasaScope")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<decimal?>("LegacyValue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("ReasonHint")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ResolutionNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("ResolutionStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ReviewedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("RootCauseCategory")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("TargetDate")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TargetDate", "KasaScope", "FieldKey")
+                        .HasDatabaseName("IX_ParityDrift_Date_Scope_Key");
+
+                    b.ToTable("CalculationParityDrifts", (string)null);
+                });
+
+            modelBuilder.Entity("KasaManager.Domain.Calculation.Data.DailyCalculationHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ArchivedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ArchivedBy")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<Guid>("DailyCalculationResultId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ForDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("InputsFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("KasaTuru")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ResultsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("VersionNumber")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DailyCalculationResultId")
+                        .HasDatabaseName("IX_DailyCalcHistory_ResultId");
+
+                    b.HasIndex("ForDate", "KasaTuru", "VersionNumber")
+                        .HasDatabaseName("IX_DailyCalcHistory_Date_Type_Ver");
+
+                    b.ToTable("DailyCalculationHistories", (string)null);
+                });
+
+            modelBuilder.Entity("KasaManager.Domain.Calculation.Data.DailyCalculationResult", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CalculatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("CalculatedVersion")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CalculationEngineVersion")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("CarryOverPolicyVersion")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("ForDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("FormulaSetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("InputsFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<bool>("IsLocked")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsStale")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("KasaTuru")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("NormalizationVersion")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid?>("PreviousResultId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ResultsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PreviousResultId")
+                        .HasDatabaseName("IX_DailyCalcResults_PrevId");
+
+                    b.HasIndex("ForDate", "KasaTuru")
+                        .HasDatabaseName("IX_DailyCalcResults_Date_Type");
+
+                    b.ToTable("DailyCalculationResults", (string)null);
+                });
+
+            modelBuilder.Entity("KasaManager.Domain.Calculation.Data.DailyFact", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CanonicalKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<decimal>("Confidence")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("decimal(5,4)");
+
+                    b.Property<DateTime?>("DateValue")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ForDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("ImportBatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("NumericValue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("RawValue")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int?>("SourceColumnNo")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SourceFileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int?>("SourceRowNo")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TextValue")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ForDate", "CanonicalKey")
+                        .HasDatabaseName("IX_DailyFacts_Date_Key");
+
+                    b.ToTable("DailyFacts", (string)null);
+                });
+
+            modelBuilder.Entity("KasaManager.Domain.Calculation.Data.DailyOverride", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CanonicalKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTime>("ForDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal?>("NumericValue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("TextValue")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ForDate", "CanonicalKey")
+                        .HasDatabaseName("IX_DailyOverrides_Date_Key");
+
+                    b.ToTable("DailyOverrides", (string)null);
+                });
+
+            modelBuilder.Entity("KasaManager.Domain.Calculation.Data.DataFirstTrustSnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CalculatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("ConfidenceScore")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<int>("DriftCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ExactMatchCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("KasaType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("StaleCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("TargetDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("TotalCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TrustLevel")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TargetDate", "KasaType")
+                        .IsUnique()
+                        .HasDatabaseName("IX_TrustSnapshots_Date_Scope");
+
+                    b.ToTable("DataFirstTrustSnapshots", (string)null);
+                });
+
+            modelBuilder.Entity("KasaManager.Domain.Calculation.Data.ImportBatch", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FileHash")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("ImportProfileVersion")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("ImportedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ImportedBy")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("SourceFileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTime>("TargetDate")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TargetDate")
+                        .HasDatabaseName("IX_ImportBatches_TargetDate");
+
+                    b.ToTable("ImportBatches", (string)null);
+                });
+
             modelBuilder.Entity("KasaManager.Domain.Entities.ComparisonDecision", b =>
                 {
                     b.Property<int>("Id")
@@ -620,6 +985,9 @@ namespace KasaManager.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<bool>("IsSuperseded")
+                        .HasColumnType("bit");
+
                     b.Property<DateTime>("RaporTarihi")
                         .HasColumnType("datetime2");
 
@@ -631,6 +999,9 @@ namespace KasaManager.Infrastructure.Migrations
                     b.Property<decimal>("SelectionTotal")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("SourceEvidenceJson")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("Version")
                         .HasColumnType("int");
@@ -839,6 +1210,15 @@ namespace KasaManager.Infrastructure.Migrations
                         .HasDatabaseName("IX_DismissedValidations_Date_Kasa_Rule");
 
                     b.ToTable("DismissedValidations", (string)null);
+                });
+
+            modelBuilder.Entity("KasaManager.Domain.FinancialExceptions.FinansalIstisnaHistory", b =>
+                {
+                    b.HasOne("KasaManager.Domain.FinancialExceptions.FinansalIstisna", null)
+                        .WithMany()
+                        .HasForeignKey("FinansalIstisnaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("KasaManager.Domain.FormulaEngine.Authoring.PersistedFormulaLine", b =>

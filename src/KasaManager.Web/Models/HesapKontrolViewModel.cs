@@ -23,13 +23,13 @@ public sealed class HesapKontrolViewModel
     public DateOnly FilterBaslangic { get; set; } = DateOnly.FromDateTime(DateTime.Now.AddDays(-30));
     public DateOnly FilterBitis { get; set; } = DateOnly.FromDateTime(DateTime.Now);
     public string Arama { get; set; } = "";
-    public DateOnly LastSnapshotDate { get; set; } = DateOnly.FromDateTime(DateTime.Now);
+    // P4.3: DB Snapshot bağları koparıldı
+    // public DateOnly LastSnapshotDate { get; set; } = DateOnly.FromDateTime(DateTime.Now);
 
     /// <summary>Kullanıcının seçtiği analiz tarihi (geriye dönük kasa düzeltmeleri için)</summary>
     public DateOnly AnalizTarihi { get; set; } = DateOnly.FromDateTime(DateTime.Now);
 
-    /// <summary>Snapshot'larda bulunan tüm tarihler (dropdown için)</summary>
-    public List<DateOnly> SnapshotTarihleri { get; set; } = new();
+    // public List<DateOnly> SnapshotTarihleri { get; set; } = new();
 
     /// <summary>CrossDay kısmi eşleşmeler — onay bekleyen potansiyel eşleşmeler</summary>
     public List<CrossDayMatch> PotansiyelEslesmeler { get; set; } = new();

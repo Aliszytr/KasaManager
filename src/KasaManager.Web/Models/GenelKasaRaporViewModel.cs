@@ -79,6 +79,11 @@ public sealed class GenelKasaRaporViewModel
     public List<string> Issues { get; set; } = new();
     public string? RawJson { get; set; }
 
+    // ===== Tarih Uyuşmazlık Uyarıları =====
+    public KasaManager.Domain.Reports.BankaBakiyeDiagnosticInfo? BankaBakiyeDiagnostic { get; set; }
+    public KasaManager.Domain.Reports.BankaMismatchType BankaMismatchType { get; set; }
+    public bool ConfirmBankaDiagnosticOverride { get; set; }
+
     // Form input
     [DataType(DataType.Date)]
     public DateOnly? SelectedBitisTarihi { get; set; }

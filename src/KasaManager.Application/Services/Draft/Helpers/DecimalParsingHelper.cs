@@ -41,10 +41,10 @@ public static class DecimalParsingHelper
 
         var normalized = borcAlacak.Trim().ToUpperInvariant();
 
-        if (normalized.Contains("BORÇ") || normalized.Contains("BORC"))
+        if (normalized.Contains("BORÇ") || normalized.Contains("BORC") || normalized == "B")
             return -Math.Abs(amount);
 
-        if (normalized.Contains("ALACAK"))
+        if (normalized.Contains("ALACAK") || normalized == "A")
             return Math.Abs(amount);
 
         return amount;

@@ -48,4 +48,10 @@ public sealed class GenelKasaRaporData
     // ══════════════════════════════════════════════════════
     public string? Hazirlayan { get; set; }
     public List<string> Issues { get; set; } = new();
+
+    // ══════════════════════════════════════════════════════
+    // UYARI BİLGİLERİ (DATE MISMATCH & DIAGNOSTICS)
+    // ══════════════════════════════════════════════════════
+    public BankaBakiyeDiagnosticInfo? BankaBakiyeDiagnostic { get; set; }
+    public BankaMismatchType BankaMismatchType { get; set; }
 }

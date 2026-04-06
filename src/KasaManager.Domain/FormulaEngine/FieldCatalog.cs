@@ -481,7 +481,7 @@ public static class FieldCatalog
                 DefaultVisibleIn = ["Sabah"]
             },
             new() { 
-                Key = "banka_cikan_tahsilat", 
+                Key = "bankadan_cikan_tahsilat", 
                 DisplayName = "Bankadan Çıkan Tahsilat", 
                 Category = "Banka", 
                 SortOrder = 63,
@@ -517,7 +517,7 @@ public static class FieldCatalog
                 DefaultVisibleIn = ["Sabah"]
             },
             new() { 
-                Key = "banka_cikan_harc", 
+                Key = "bankadan_cikan_harc", 
                 DisplayName = "Bankadan Çıkan Harç", 
                 Category = "Banka", 
                 SortOrder = 68,

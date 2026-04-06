@@ -102,23 +102,81 @@ public partial class KasaOrchestrator
         {
             "aksam" => new()
             {
-                ("genel_kasa", "banka_tahsilat + online_tahsilat + nakit_para + bozuk_para - banka_harc"),
-                ("tahsil_red_fark", "kayden_tahsilat - banka_tahsilat"),
-                ("harc_red_fark", "kayden_harc - banka_harc"),
+                // ═══ P1(C)-R3: Legacy CalculateAksamLegacy parity ═══
+                // Dependency order: önce bağımsız, sonra bağımlı formüller.
+                // Her formül, KasaDraftService.Calculation.cs:260-365 ile birebir eşleşir.
+
+                // 1) Ara değerler (diğer formüller tarafından kullanılacak)
+                ("normal_reddiyat", "Max(0.0, toplam_reddiyat - online_reddiyat)"),
+                // Legacy: normalReddiyat = Max(0, ust.Reddiyat - online.OnlineReddiyat)  [line 303-304]
+                
+                ("normal_stopaj", "Max(0.0, toplam_stopaj - online_stopaj)"),
+                // Legacy: normalStopaj = Max(0, toplamStopaj - onlineStopaj)  [line 309-310]  ✅ zaten doğruydu
+
+                // 2) Bankaya yatırılacak kalemler
+                ("bankaya_yatirilacak_harc", "Max(0.0, toplam_harc + bankaya_yatirilacak_harci_degistir - kayden_harc)"),
+                // Legacy: Max(0, normalHarc + bankayaYatirilacakHarciDegistir - kaydenHarc)  [line 316-317]
+                // normalHarc = ust.Harc = toplam_harc (pool key)
+
+                ("bankaya_yatirilacak_tahsilat", "Max(0.0, Max(0.0, toplam_tahsilat - normal_reddiyat) + bankaya_yatirilacak_tahsilati_degistir - vergi_kasa - kayden_tahsilat)"),
+                // Legacy: Max(0, baseMasraf + ytDegistir - (vergiKasa + kaydenTahsilat))  [line 323-328]  ✅ zaten doğruydu
+
+                ("bankaya_yatirilacak_toplam", "Max(0.0, bankaya_yatirilacak_tahsilat + bankaya_yatirilacak_harc + normal_stopaj - bankaya_gonderilmis_deger)"),
+                // Legacy: Max(0, (harc + nakit + stopaj) - bankayaGonderilmisDeger)  [line 342-344]
+
+                // 3) Kontrol alanları
+                ("stopaj_kontrol", "bankadan_cikan_tahsilat - online_reddiyat"),
+                // Legacy Aksam: bankaTahsilatGun.Cikan - online.OnlineReddiyat  [line 333]
+
+                // 4) Final hesaplar (ara değerlere bağımlı)
+                ("genel_kasa", "dunden_devreden_kasa_nakit + bankadan_cekilen + vergiden_gelen + toplam_tahsilat + normal_stopaj + cesitli_nedenlerle_bankadan_cikamayan_tahsilat - normal_reddiyat - bankaya_yatirilacak_tahsilat - kayden_tahsilat"),
+                // Legacy: (devredenKasa + bankadanCekilen + vergiGelenKasa + normalTahsilat + normalStopaj + cesitliNedenler)
+                //         - (normalReddiyat + bankayaYatirilacakNakit + kaydenTahsilat)  [line 336-339]
+                // normalTahsilat = toplam_tahsilat, bankayaYatirilacakNakit = bankaya_yatirilacak_tahsilat
+
+                ("bozuk_para_haric_kasa", "genel_kasa - bozuk_para"),
+                // Legacy: genelKasa - bozukPara  [line 347]
+
+                // 5) Muhasebe fark kontrolleri (değişmedi)
+                ("tahsil_red_fark", "kayden_tahsilat - bankaya_giren_tahsilat"),
+                ("harc_red_fark", "kayden_harc - bankaya_giren_harc"),
                 ("muhasebe_fark_tahsilat", "bankaya_giren_tahsilat - bankaya_yatirilacak_tahsilat - online_tahsilat - eft_otomatik_iade - gelen_havale - iade_kelimesi_giris - dunden_eksik_fazla_gelen_tahsilat"),
                 ("muhasebe_fark_harc", "bankaya_giren_harc - bankaya_yatirilacak_harc - online_harc - dunden_eksik_fazla_gelen_harc"),
-                ("normal_stopaj", "Max(0, toplam_stopaj - online_stopaj)"),
-                ("bankaya_yatirilacak_harc", "banka_harc + bankaya_yatirilacak_harci_degistir"),
-                ("bankaya_yatirilacak_tahsilat", "banka_tahsilat + bankaya_yatirilacak_tahsilati_degistir"),
-                ("bankaya_yatirilacak_toplam", "bankaya_yatirilacak_tahsilat + bankaya_yatirilacak_harc + normal_stopaj"),
-                ("stopaj_kontrol", "online_reddiyat - bankadan_cikan_tahsilat - toplam_stopaj"),
                 ("kasa_toplam", "nakit_para + bozuk_para + vergiden_gelen")
             },
             "sabah" => new()
             {
+                // ═══ P1(C)-R3: Legacy CalculateAksamLegacy (isSabah=true) parity ═══
+                // Sabah, Akşam ile aynı formül setini kullanır.
+                // TEK FARK: stopajKontrol = 0 (legacy line 331-332: isSabah ? 0m : ...)
+
+                // 1) Ara değerler
+                ("normal_reddiyat", "Max(0.0, toplam_reddiyat - online_reddiyat)"),
+                ("normal_stopaj", "Max(0.0, toplam_stopaj - online_stopaj)"),
+
+                // 2) Bankaya yatırılacak kalemler
+                ("bankaya_yatirilacak_harc", "Max(0.0, toplam_harc + bankaya_yatirilacak_harci_degistir - kayden_harc)"),
+                ("bankaya_yatirilacak_tahsilat", "Max(0.0, Max(0.0, toplam_tahsilat - normal_reddiyat) + bankaya_yatirilacak_tahsilati_degistir - vergi_kasa - kayden_tahsilat)"),
+                ("bankaya_yatirilacak_toplam", "Max(0.0, bankaya_yatirilacak_tahsilat + bankaya_yatirilacak_harc + normal_stopaj - bankaya_gonderilmis_deger)"),
+
+                // 3) Kontrol alanları — SABAH sabit 0
+                ("stopaj_kontrol", "0"),
+                // Legacy: isSabah ? 0m : ...  [line 331-332]
+
+                // 4) Final hesaplar
+                ("genel_kasa", "dunden_devreden_kasa_nakit + bankadan_cekilen + vergiden_gelen + toplam_tahsilat + normal_stopaj + cesitli_nedenlerle_bankadan_cikamayan_tahsilat - normal_reddiyat - bankaya_yatirilacak_tahsilat - kayden_tahsilat"),
+                ("bozuk_para_haric_kasa", "genel_kasa - bozuk_para"),
+
+                // 5) Muhasebe fark kontrolleri
+                ("tahsil_red_fark", "kayden_tahsilat - bankaya_giren_tahsilat"),
+                ("harc_red_fark", "kayden_harc - bankaya_giren_harc"),
+                ("muhasebe_fark_tahsilat", "bankaya_giren_tahsilat - bankaya_yatirilacak_tahsilat - online_tahsilat - eft_otomatik_iade - gelen_havale - iade_kelimesi_giris - dunden_eksik_fazla_gelen_tahsilat"),
+                ("muhasebe_fark_harc", "bankaya_giren_harc - bankaya_yatirilacak_harc - online_harc - dunden_eksik_fazla_gelen_harc"),
+                ("kasa_toplam", "nakit_para + bozuk_para + vergiden_gelen"),
+
+                // Eksik/Fazla alanları (mevcut — değişmedi)
                 ("sabah_kasa_devir", "dunden_devreden_kasa_nakit + dunden_eksik_veya_fazla_tahsilat"),
-                ("sabah_toplam", "sabah_kasa_devir + banka_tahsilat + online_tahsilat"),
-                ("gune_ait_tahsilat_farki", "kayden_tahsilat - banka_tahsilat"),
+                ("gune_ait_tahsilat_farki", "kayden_tahsilat - bankaya_giren_tahsilat"),
                 ("dunden_eksik_veya_fazla_tahsilat", "0"),
                 ("gune_ait_eksik_veya_fazla_tahsilat", "0")
             },
@@ -130,7 +188,7 @@ public partial class KasaOrchestrator
                 ("genel_kasa_toplam", "genel_kasa_devreden_seed + toplam_tahsilat - toplam_harc + kasa_nakit"),
                 ("genel_kasa_devir", "genel_kasa_toplam - bankaya_yatirilacak_tahsilat"),
                 ("banka_tahsilat", "banka_cekilen_tahsilat + online_tahsilat"),
-                ("bankaya_yatirilacak_tahsilat", "banka_tahsilat + bankaya_yatirilacak_tahsilati_degistir"),
+                ("bankaya_yatirilacak_tahsilat", "Max(0.0, Max(0.0, toplam_tahsilat - normal_reddiyat) + bankaya_yatirilacak_tahsilati_degistir - vergi_kasa - kayden_tahsilat)"),
                 ("banka_harc", "banka_cekilen_harc"),
                 ("banka_yarina_devredecek_tahsilat", "genel_kasa_devir"),
                 ("tahsil_red_fark", "kayden_tahsilat - banka_tahsilat"),
@@ -157,23 +215,16 @@ public partial class KasaOrchestrator
 
     private async Task<bool> HydrateFromSnapshotAndDefaultsInternalAsync(KasaPreviewDto dto, DateOnly date, CancellationToken ct)
     {
-        var snap = await _snapshots.GetAsync(date, KasaRaporTuru.Genel, ct);
-        if (snap?.Rows is null || snap.Rows.Count == 0)
-        {
-            dto.HasSnapshot = false;
-            dto.IsDataLoaded = false;
-            dto.Errors.Add($"{date:dd.MM.yyyy} için Genel snapshot bulunamadı.");
-            return false;
-        }
-
-        dto.HasSnapshot = true;
-        dto.VeznedarOptions = snap.Rows.Where(r => !r.IsSummaryRow && !string.IsNullOrWhiteSpace(r.Veznedar))
-            .Select(r => r.Veznedar!.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x=>x).ToList();
-
-        dto.VergiKasaVeznedarlar = snap.Rows.Where(r => !r.IsSummaryRow && r.IsSelected && !string.IsNullOrWhiteSpace(r.Veznedar))
-            .Select(r => r.Veznedar!.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x=>x).ToList();
+        // P4.4: Snapshot dependency completely removed.
+        // Veznedar selection and legacy UI state are no longer mapped from snapshot.
+        dto.IsDataLoaded = true;
+        dto.VeznedarOptions = new List<string>();
+        dto.VergiKasaVeznedarlar = new List<string>();
             
-        dto.VergiKasaBakiyeToplam = snap.Rows.Where(r => !r.IsSummaryRow && r.IsSelected).Sum(r => r.Bakiye ?? 0m);
+        if (dto.VergiKasaBakiyeToplam == 0)
+        {
+            dto.VergiKasaBakiyeToplam = 0m;
+        }
 
         // DRY: Tek kaynak üzerinden varsayılan hydration
         var defaults = await _globalDefaults.GetAsync(ct);
@@ -277,7 +328,11 @@ public partial class KasaOrchestrator
              existing.Add(key);
          }
          
-         Add("genel_kasa_devreden_seed", dto.DefaultGenelKasaDevredenSeed, "Ayarlar");
+         // SSOT FIX: Seed 0/null ise pool'daki mevcut SSOT/fallback değerini ezme.
+         // Sadece kullanıcı pozitif seed verdiyse override et.
+         // DetermineGenelKasaDevredenSsotAsync() ile uyumlu davranış.
+         if (dto.DefaultGenelKasaDevredenSeed.HasValue && dto.DefaultGenelKasaDevredenSeed.Value > 0m)
+             Add("genel_kasa_devreden_seed", dto.DefaultGenelKasaDevredenSeed, "Ayarlar (Explicit Seed)");
          Add("kayden_tahsilat_ayar", dto.DefaultKaydenTahsilat, "Ayarlar");
          Add("vergiden_gelen", dto.VergidenGelen, "Manual");
          Add("gelmeyen_d", dto.GelmeyenD, "Manual");

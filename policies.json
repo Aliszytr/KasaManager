@@ -1,0 +1,165 @@
+{
+   "chromeMetadata": {
+      "OS": "Windows 11 Version 24H2 (Build 26100.8037)",
+      "application": "Microsoft Edge",
+      "revision": "036e0022778373fc93112789887128ab55acd7a1",
+      "version": "146.0.3856.78 (Resmi derleme)  (64 bit)"
+   },
+   "policyValues": {
+      "chrome": {
+         "name": "Microsoft Edge Policies",
+         "policies": {
+            "BlockExternalExtensions": {
+               "level": "mandatory",
+               "scope": "user",
+               "source": "platform",
+               "value": true
+            },
+            "DefaultSearchProviderEnabled": {
+               "level": "mandatory",
+               "scope": "user",
+               "source": "platform",
+               "value": true
+            },
+            "DefaultSearchProviderImageURL": {
+               "level": "mandatory",
+               "scope": "user",
+               "source": "platform",
+               "value": "{google:baseURL}searchbyimage/upload"
+            },
+            "DefaultSearchProviderImageURLPostParams": {
+               "level": "mandatory",
+               "scope": "user",
+               "source": "platform",
+               "value": "encoded_image={google:imageThumbnail},image_url={google:imageURL},sbisrc={google:imageSearchSource},original_width={google:imageOriginalWidth},original_height={google:imageOriginalHeight}"
+            },
+            "DefaultSearchProviderKeyword": {
+               "level": "mandatory",
+               "scope": "user",
+               "source": "platform",
+               "value": "google.com"
+            },
+            "DefaultSearchProviderName": {
+               "level": "mandatory",
+               "scope": "user",
+               "source": "platform",
+               "value": "Google"
+            },
+            "DefaultSearchProviderSearchURL": {
+               "level": "mandatory",
+               "scope": "user",
+               "source": "platform",
+               "value": "{google:baseURL}search?q={searchTerms}&{google:RLZ}{google:originalQueryForSuggestion}{google:assistedQueryStats}{google:searchFieldtrialParameter}{google:searchClient}{google:sourceId}ie={inputEncoding}"
+            },
+            "DefaultSearchProviderSuggestURL": {
+               "level": "mandatory",
+               "scope": "user",
+               "source": "platform",
+               "value": "{google:baseURL}complete/search?output=chrome&q={searchTerms}"
+            },
+            "HideFirstRunExperience": {
+               "level": "mandatory",
+               "scope": "user",
+               "source": "platform",
+               "value": true
+            },
+            "HomepageLocation": {
+               "level": "mandatory",
+               "scope": "user",
+               "source": "platform",
+               "value": "https://portal.uyap.gov.tr"
+            },
+            "NewTabPageContentEnabled": {
+               "level": "mandatory",
+               "scope": "user",
+               "source": "platform",
+               "value": false
+            },
+            "NewTabPageHideDefaultTopSites": {
+               "level": "mandatory",
+               "scope": "user",
+               "source": "platform",
+               "value": false
+            },
+            "NewTabPageQuickLinksEnabled": {
+               "level": "mandatory",
+               "scope": "user",
+               "source": "platform",
+               "value": false
+            },
+            "PinningWizardAllowed": {
+               "level": "mandatory",
+               "scope": "user",
+               "source": "platform",
+               "value": true
+            },
+            "ProxyMode": {
+               "deprecated": true,
+               "level": "mandatory",
+               "scope": "user",
+               "source": "platform",
+               "value": "system"
+            },
+            "RestoreOnStartup": {
+               "level": "mandatory",
+               "scope": "user",
+               "source": "platform",
+               "value": 4
+            },
+            "RestoreOnStartupURLs": {
+               "level": "mandatory",
+               "scope": "user",
+               "source": "platform",
+               "value": [ "https://portal.uyap.gov.tr" ]
+            },
+            "ShowHomeButton": {
+               "level": "mandatory",
+               "scope": "user",
+               "source": "platform",
+               "value": true
+            }
+         }
+      },
+      "extensions": {
+      },
+      "precedence": {
+         "name": "Policy Precedence",
+         "policies": {
+         },
+         "precedenceOrder": [ "Platform makinesi", "Bulut makinesi", "Platform kullanıcısı", "Bulut kullanıcısı" ]
+      },
+      "updater": {
+         "name": "Microsoft EdgeUpdate Policies",
+         "policies": {
+            "InstallPolicy": {
+               "level": "mandatory",
+               "scope": "machine",
+               "source": "platform",
+               "value": "1"
+            },
+            "UpdatePolicy": {
+               "level": "mandatory",
+               "scope": "machine",
+               "source": "platform",
+               "value": "1"
+            },
+            "UpdaterExperimentationAndConfigurationServiceControl": {
+               "level": "mandatory",
+               "scope": "machine",
+               "source": "platform",
+               "value": "false"
+            }
+         }
+      }
+   },
+   "status": {
+      "updater": {
+         "domain": "adalet.gov.tr",
+         "policyDescriptionKey": "statusUpdater",
+         "timeSinceLastRefresh": "2 saat önce",
+         "version": "1.3.225.7"
+      },
+      "user": {
+      }
+   }
+}

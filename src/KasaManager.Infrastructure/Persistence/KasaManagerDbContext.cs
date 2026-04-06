@@ -11,7 +11,7 @@ using KasaManager.Domain.Entities;
 using KasaManager.Domain.FinancialExceptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-
+using KasaManager.Domain.Calculation.Data;
 namespace KasaManager.Infrastructure.Persistence
 {
     /// <summary>
@@ -58,6 +58,15 @@ namespace KasaManager.Infrastructure.Persistence
     public DbSet<FinansalIstisna> FinansalIstisnalar => Set<FinansalIstisna>();
     public DbSet<FinansalIstisnaHistory> FinansalIstisnaHistory => Set<FinansalIstisnaHistory>();
 
+    // ===== Data-First Architecture (Faz 1) =====
+    public DbSet<ImportBatch> ImportBatches => Set<ImportBatch>();
+    public DbSet<DailyFact> DailyFacts => Set<DailyFact>();
+    public DbSet<DailyOverride> DailyOverrides => Set<DailyOverride>();
+    public DbSet<DailyCalculationResult> DailyCalculationResults => Set<DailyCalculationResult>();
+    public DbSet<DailyCalculationHistory> DailyCalculationHistories => Set<DailyCalculationHistory>();
+    public DbSet<CalculationParityDrift> CalculationParityDrifts => Set<CalculationParityDrift>();
+    public DbSet<DataFirstTrustSnapshot> DataFirstTrustSnapshots => Set<DataFirstTrustSnapshot>();
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -67,6 +76,18 @@ namespace KasaManager.Infrastructure.Persistence
                 .HasIndex(d => new { d.ComparisonType, d.OnlineDosyaNo, d.OnlineMiktar, d.OnlineBirimAdi })
                 .IsUnique()
                 .HasDatabaseName("IX_ComparisonDecisions_UniqueRecord");
+
+            // DataFirst Trust Snapshot - Unique per Date + KasaType
+            modelBuilder.Entity<DataFirstTrustSnapshot>(b =>
+            {
+                b.ToTable("DataFirstTrustSnapshots");
+                b.HasKey(x => x.Id);
+                b.Property(x => x.ConfidenceScore).HasPrecision(5, 2);
+                b.HasIndex(x => new { x.TargetDate, x.KasaType })
+                 .IsUnique()
+                 .HasDatabaseName("IX_TrustSnapshots_Date_Scope");
+            });
+
 
             // DateOnly -> DateTime converter (SQLite)
             var dateOnlyConverter = new ValueConverter<DateOnly, DateTime>(
@@ -401,6 +422,105 @@ b.Property(x => x.ColumnsJson)
                 .HasDatabaseName("IX_FinExHistory_IstisnaId");
             b.HasIndex(x => x.EventTarihiUtc)
                 .HasDatabaseName("IX_FinExHistory_EventTarihi");
+        });
+
+        // ===== Faz 1: Data-First Architecture Entities =====
+        modelBuilder.Entity<ImportBatch>(b =>
+        {
+            b.ToTable("ImportBatches");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.TargetDate).HasConversion(dateOnlyConverter);
+            b.Property(x => x.SourceFileName).HasMaxLength(255);
+            b.Property(x => x.FileHash).HasMaxLength(255);
+            b.Property(x => x.ImportedBy).HasMaxLength(255);
+            b.Property(x => x.ImportProfileVersion).HasMaxLength(50);
+            
+            b.HasIndex(x => x.TargetDate).HasDatabaseName("IX_ImportBatches_TargetDate");
+        });
+
+        modelBuilder.Entity<DailyFact>(b =>
+        {
+            b.ToTable("DailyFacts");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.ForDate).HasConversion(dateOnlyConverter);
+            b.Property(x => x.CanonicalKey).HasMaxLength(200).IsRequired();
+            b.Property(x => x.RawValue).HasMaxLength(2000);
+            b.Property(x => x.TextValue).HasColumnType("nvarchar(max)");
+            b.Property(x => x.SourceFileName).HasMaxLength(255);
+            b.Property(x => x.NumericValue).HasPrecision(18, 2);
+            b.Property(x => x.Confidence).HasPrecision(5, 4);
+
+            b.HasIndex(x => new { x.ForDate, x.CanonicalKey })
+                .HasDatabaseName("IX_DailyFacts_Date_Key");
+        });
+
+        modelBuilder.Entity<DailyOverride>(b =>
+        {
+            b.ToTable("DailyOverrides");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.ForDate).HasConversion(dateOnlyConverter);
+            b.Property(x => x.CanonicalKey).HasMaxLength(200).IsRequired();
+            b.Property(x => x.TextValue).HasColumnType("nvarchar(max)");
+            b.Property(x => x.Reason).HasMaxLength(1000);
+            b.Property(x => x.CreatedBy).HasMaxLength(255);
+            b.Property(x => x.NumericValue).HasPrecision(18, 2);
+            
+            b.HasIndex(x => new { x.ForDate, x.CanonicalKey })
+                .HasDatabaseName("IX_DailyOverrides_Date_Key");
+        });
+
+        modelBuilder.Entity<DailyCalculationResult>(b =>
+        {
+            b.ToTable("DailyCalculationResults");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.ForDate).HasConversion(dateOnlyConverter);
+            b.Property(x => x.KasaTuru).HasMaxLength(50).IsRequired();
+            b.Property(x => x.NormalizationVersion).HasMaxLength(50);
+            b.Property(x => x.CalculationEngineVersion).HasMaxLength(50);
+            b.Property(x => x.CarryOverPolicyVersion).HasMaxLength(50);
+            b.Property(x => x.InputsFingerprint).HasMaxLength(255);
+            b.Property(x => x.ResultsJson).HasColumnType("nvarchar(max)");
+            b.HasIndex(x => new { x.ForDate, x.KasaTuru })
+                .HasDatabaseName("IX_DailyCalcResults_Date_Type");
+            b.HasIndex(x => x.PreviousResultId)
+                .HasDatabaseName("IX_DailyCalcResults_PrevId");
+        });
+
+        modelBuilder.Entity<DailyCalculationHistory>(b =>
+        {
+            b.ToTable("DailyCalculationHistories");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.ForDate).HasConversion(dateOnlyConverter);
+            b.Property(x => x.KasaTuru).HasMaxLength(50).IsRequired();
+            b.Property(x => x.InputsFingerprint).HasMaxLength(255);
+            b.Property(x => x.ArchivedBy).HasMaxLength(255);
+            b.Property(x => x.ResultsJson).HasColumnType("nvarchar(max)");
+            
+            b.HasIndex(x => new { x.ForDate, x.KasaTuru, x.VersionNumber })
+                .HasDatabaseName("IX_DailyCalcHistory_Date_Type_Ver");
+            b.HasIndex(x => x.DailyCalculationResultId)
+                .HasDatabaseName("IX_DailyCalcHistory_ResultId");
+        });
+        modelBuilder.Entity<CalculationParityDrift>(b =>
+        {
+            b.ToTable("CalculationParityDrifts");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.TargetDate).HasConversion(dateOnlyConverter);
+            b.Property(x => x.KasaScope).HasMaxLength(50).IsRequired();
+            b.Property(x => x.FieldKey).HasMaxLength(200).IsRequired();
+            b.Property(x => x.Severity).HasConversion<string>().HasMaxLength(50);
+            b.Property(x => x.ReasonHint).HasMaxLength(100);
+            b.Property(x => x.RootCauseCategory).HasMaxLength(100);
+            b.Property(e => e.LegacyValue).HasPrecision(18, 2);
+            b.Property(e => e.DataFirstValue).HasPrecision(18, 2);
+            b.Property(e => e.AbsoluteDifference).HasPrecision(18, 2);
+            
+            b.Property(x => x.ReviewedBy).HasMaxLength(100);
+            b.Property(x => x.ResolutionStatus).HasMaxLength(50);
+            b.Property(x => x.ResolutionNote).HasMaxLength(500);
+
+            b.HasIndex(x => new { x.TargetDate, x.KasaScope, x.FieldKey })
+                .HasDatabaseName("IX_ParityDrift_Date_Scope_Key");
         });
         }
     }

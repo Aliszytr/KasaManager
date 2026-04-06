@@ -69,6 +69,16 @@ public class DecimalParsingHelperTests
         Assert.Equal(expected, DecimalParsingHelper.ApplyDebitCreditSign(amount, direction));
     }
 
+    [Theory]
+    [InlineData(-1000, null, -1000)]
+    [InlineData(1000, "B", -1000)]
+    [InlineData(-1000, "A", 1000)]
+    [InlineData(1000, null, 1000)]
+    public void ApplyDebitCreditSign_SpecificRequirements_CorrectlyAppliesSign(decimal amount, string? direction, decimal expected)
+    {
+        Assert.Equal(expected, DecimalParsingHelper.ApplyDebitCreditSign(amount, direction));
+    }
+
     // ── FormatDecimal ──
 
     [Fact]
