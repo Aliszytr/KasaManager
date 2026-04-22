@@ -403,7 +403,12 @@ public sealed partial class ComparisonService
     internal static bool ContainsCancelKeyword(string? aciklama)
     {
         if (string.IsNullOrWhiteSpace(aciklama)) return false;
-        var lower = aciklama.ToLower(TurkishCulture);
+        
+        // Linux ortamlarında (özellikle GitHub Actions ubuntu-latest) 
+        // tr-TR kültür ayarı tam yüklenmemişse ToLower hatalı sonuç (örn: İ -> i yerine farklı karakter) verebiliyor.
+        // Bu nedenle manuel değiştirip Invariant ile küçültüyoruz.
+        var lower = aciklama.Replace('İ', 'i').Replace('I', 'ı').ToLowerInvariant();
+        
         foreach (var keyword in CancelKeywords)
         {
             if (lower.Contains(keyword))
