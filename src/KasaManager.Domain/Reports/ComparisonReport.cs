@@ -1,4 +1,7 @@
 #nullable enable
+using System;
+using System.Collections.Generic;
+
 namespace KasaManager.Domain.Reports;
 
 /// <summary>
@@ -107,7 +110,7 @@ public sealed class ComparisonReport
     /// Stopaj durumu enum değeri (UI renk/ikon mapping için).
     /// CheckStopajFromAllVirmans / DetermineStopajDurum tarafından set edilir.
     /// </summary>
-    public HesapKontrol.StopajStatus StopajDurum { get; set; } = HesapKontrol.StopajStatus.Ok;
+    public KasaManager.Domain.Reports.HesapKontrol.StopajStatus StopajDurum { get; set; } = KasaManager.Domain.Reports.HesapKontrol.StopajStatus.Ok;
     
     /// <summary>
     /// Stopaj durumu detay mesajı (enum ile birlikte kullanılır).

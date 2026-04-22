@@ -1,4 +1,6 @@
 #nullable enable
+using System;
+
 namespace KasaManager.Domain.Reports;
 
 /// <summary>
