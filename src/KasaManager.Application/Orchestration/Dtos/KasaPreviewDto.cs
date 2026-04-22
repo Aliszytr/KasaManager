@@ -29,7 +29,7 @@ public sealed class KasaPreviewDto
     public string? GenelKasaEndDateSource { get; set; }
 
     public bool IsDataLoaded { get; set; }
-    // P4.3: HasSnapshot removed
+    public bool HasSnapshot { get; set; }
 
     // Options
     public List<string> VeznedarOptions { get; set; } = new();
@@ -56,6 +56,13 @@ public sealed class KasaPreviewDto
     public decimal? BankayaGonderilmisDeger { get; set; }
     public decimal? BankayaYatirilacakHarciDegistir { get; set; }
     public decimal? BankayaYatirilacakTahsilatiDegistir { get; set; }
+
+    // İptal edilen işlem tutarı (Virman, Masraf vb.) — ComparisonService'ten beslenir.
+    // KasaPreview'da bankadan_cikan_tahsilat'tan düşülerek stopaj farkını düzeltir.
+    public decimal IptalEdilenCikisTutar { get; set; } = 0m;
+
+    // Commit 5.1: Sadece Virman türündeki iptal toplamı — banka_virman_tahsilat düzeltmesi için.
+    public decimal IptalEdilenVirmanTutar { get; set; } = 0m;
 
     // Eksik/Fazla Kullanıcı Girişleri
     public decimal? GuneAitEksikFazlaTahsilat { get; set; }

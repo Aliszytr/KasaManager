@@ -59,6 +59,22 @@ public enum KayitDurumu
     Takipte = 4
 }
 
+/// <summary>
+/// Stopaj virman kontrolü sonuç durumu.
+/// UI tarafında uyarı kutusu rengini ve mesaj tonunu belirler.
+/// </summary>
+public enum StopajStatus
+{
+    /// <summary>✅ Normal başarılı — virman tutarı beklenenle uyuşuyor (Yeşil)</summary>
+    Ok = 0,
+    /// <summary>ℹ️ İptal edilmiş virman var, yerine doğru tutarla yenisi yapılmış (Yeşil/Bilgi)</summary>
+    OkWithNote = 1,
+    /// <summary>⚠️ İptal edilmiş virman var, ancak yerine yeni virman yapılmamış (Sarı)</summary>
+    WarningPending = 2,
+    /// <summary>❌ Gerçek uyuşmazlık — eksik veya hatalı virman (Kırmızı)</summary>
+    Error = 3
+}
+
 // ─────────────────────────────────────────────────────────────
 // Entity
 // ─────────────────────────────────────────────────────────────

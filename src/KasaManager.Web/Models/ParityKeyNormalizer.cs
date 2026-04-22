@@ -116,50 +116,5 @@ public static class ParityKeyNormalizer
         return normalized.Trim('_');
     }
 
-    public static bool TryParseDecimal(string? s, out decimal value)
-    {
-        value = 0m;
-        if (string.IsNullOrWhiteSpace(s)) return false;
 
-        var raw = s.Trim();
-
-        // N2 invariant (1,234.56) ve tr-TR (1.234,56) karışabiliyor.
-        // Önce en "serbest" temizliği yapalım.
-        raw = raw.Replace(" ", string.Empty);
-
-        // Parantezli negatif: (1.234,56)
-        var isNegParen = raw.StartsWith("(") && raw.EndsWith(")");
-        if (isNegParen) raw = raw[1..^1];
-
-        // Eğer hem '.' hem ',' varsa hangisi decimal ayırıcı?
-        // Heuristik: son görünen ayırıcı decimal kabul edilir.
-        var lastDot = raw.LastIndexOf('.');
-        var lastComma = raw.LastIndexOf(',');
-        if (lastDot >= 0 && lastComma >= 0)
-        {
-            if (lastDot > lastComma)
-            {
-                // '.' decimal, ',' group
-                raw = raw.Replace(",", string.Empty);
-            }
-            else
-            {
-                // ',' decimal, '.' group
-                raw = raw.Replace(".", string.Empty);
-                raw = raw.Replace(",", ".");
-            }
-        }
-        else if (lastComma >= 0)
-        {
-            // Sadece ',' varsa decimal olabilir
-            raw = raw.Replace(".", string.Empty);
-            raw = raw.Replace(",", ".");
-        }
-
-        if (!decimal.TryParse(raw, NumberStyles.Number | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var v))
-            return false;
-
-        value = isNegParen ? -v : v;
-        return true;
-    }
 }

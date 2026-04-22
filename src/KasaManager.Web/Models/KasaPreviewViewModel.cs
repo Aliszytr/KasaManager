@@ -58,7 +58,6 @@ public sealed class KasaPreviewViewModel
     /// <summary>
     /// R9: "Verileri Getir" başarılı olduysa true.
     /// Snapshot yüklenmeden ve otomatik alanlar doldurulmadan "Hesapla" yapılmaz.
-    /// </summary>
     public bool IsDataLoaded { get; set; }
 
     // P4.3: Snapshot durumu UI bazlı karar mekanizmasından tamamen kaldırıldı
@@ -114,6 +113,13 @@ public sealed class KasaPreviewViewModel
     public decimal? BankayaGonderilmisDeger { get; set; }
     public decimal? BankayaYatirilacakHarciDegistir { get; set; }
     public decimal? BankayaYatirilacakTahsilatiDegistir { get; set; }
+
+    // Commit 5: İptal edilen işlem tutarı (Virman, Masraf vb.) — ComparisonService'ten beslenir.
+    // KasaPreview'da bankadan_cikan_tahsilat'tan düşülerek stopaj farkını düzeltir.
+    public decimal IptalEdilenCikisTutar { get; set; } = 0m;
+
+    // Commit 5.1: Sadece Virman türündeki iptal toplamı — banka_virman_tahsilat düzeltmesi için.
+    public decimal IptalEdilenVirmanTutar { get; set; } = 0m;
 
     // ===== Eksik/Fazla Kullanıcı Girişleri (Sabah Kasa) =====
     public decimal? GuneAitEksikFazlaTahsilat { get; set; }

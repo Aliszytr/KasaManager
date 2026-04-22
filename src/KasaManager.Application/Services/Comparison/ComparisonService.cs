@@ -144,7 +144,7 @@ public sealed partial class ComparisonService : IComparisonService
                     continue;
 
                 if (!row.TryGetValue(bankaTutarCol, out var tutarRaw) || 
-                    !DecimalParsingHelper.TryParseDecimal(tutarRaw, out var tutar))
+                    !DecimalParsingHelper.TryParseFromTurkish(tutarRaw, out var tutar))
                     continue;
 
                 var borcAlacak = bankaBorcAlacakCol != null && row.TryGetValue(bankaBorcAlacakCol, out var baRaw) 
@@ -173,7 +173,7 @@ public sealed partial class ComparisonService : IComparisonService
                     continue;
 
                 if (!row.TryGetValue(onlineMiktarCol, out var miktarRaw) ||
-                    !DecimalParsingHelper.TryParseDecimal(miktarRaw, out var miktar))
+                    !DecimalParsingHelper.TryParseFromTurkish(miktarRaw, out var miktar))
                     continue;
 
                 var dosyaNo = row.TryGetValue(onlineDosyaNoCol, out var dnRaw) ? dnRaw : null;
@@ -315,9 +315,15 @@ public sealed partial class ComparisonService : IComparisonService
     // İç record türleri
     // ─────────────────────────────────────────────────────────────
 
-    private sealed record BankaRecord(
+    internal sealed record BankaRecord(
         int RowIndex, decimal Tutar, DateTime? Tarih,
-        string? Aciklama, string? BorcAlacak, ParsedBankaAciklama Parsed);
+        string? Aciklama, string? BorcAlacak, ParsedBankaAciklama Parsed)
+    {
+        /// <summary>İptal edilmiş işlem olarak işaretlendi mi? (MarkCancelledRecords tarafından set edilir)</summary>
+        public bool IsCancelled { get; set; }
+        /// <summary>Borç (-) yönlü kayıt mı? (Reddiyat akışında hem Borç hem Alacak okunur)</summary>
+        public bool IsBorc { get; set; }
+    }
 
     private sealed record OnlineRecord(
         int RowIndex, string? DosyaNo, string? BirimAdi,

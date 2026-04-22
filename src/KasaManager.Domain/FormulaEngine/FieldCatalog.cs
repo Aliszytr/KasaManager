@@ -589,6 +589,36 @@ public static class FieldCatalog
                 Source = FieldSource.Excel,
                 Description = "Açıklama/İşlem adında 'iade' geçen girişler (BankaTahsilat.xlsx)"
             },
+            new() { 
+                Key = "banka_mevduat_tahsilat", 
+                DisplayName = "Banka Mevduat Tahsilat", 
+                Category = "Banka", 
+                SortOrder = 77,
+                DefaultVisibleIn = ["Aksam", "Sabah"],
+                Source = FieldSource.Excel,
+                IsReadOnly = true,
+                Description = "Banka Tahsilat dosyasındaki Mevduata Para Yatırma (borç/çıkan) toplamı — bankaya yatırılacak tahsilat doğrulaması için"
+            },
+            new() { 
+                Key = "banka_virman_tahsilat", 
+                DisplayName = "Banka Virman Tahsilat", 
+                Category = "Banka", 
+                SortOrder = 78,
+                DefaultVisibleIn = ["Aksam", "Sabah"],
+                Source = FieldSource.Excel,
+                IsReadOnly = true,
+                Description = "Banka Tahsilat dosyasındaki Virman (borç/çıkan — stopaj) toplamı — stopaj virman doğrulaması için"
+            },
+            new() { 
+                Key = "banka_mevduat_harc", 
+                DisplayName = "Banka Mevduat Harç", 
+                Category = "Banka", 
+                SortOrder = 79,
+                DefaultVisibleIn = ["Aksam", "Sabah"],
+                Source = FieldSource.Excel,
+                IsReadOnly = true,
+                Description = "Banka Harç dosyasındaki Mevduata Para Yatırma (borç/çıkan) toplamı — bankaya yatırılacak harç doğrulaması için"
+            },
             
             // ══════════════════════════════════════════════════════
             // KASA

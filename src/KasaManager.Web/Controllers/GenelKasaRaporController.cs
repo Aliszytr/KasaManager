@@ -247,7 +247,32 @@ public sealed class GenelKasaRaporController : Controller
             var raporDataJson = JsonSerializer.Serialize(raporData, new JsonSerializerOptions { WriteIndented = false });
 
             var inputsJson = JsonSerializer.Serialize(run.Inputs);
-            var outputsJson = JsonSerializer.Serialize(run.Outputs);
+            
+            // Ensure CarryoverResolver compatibility
+            // KRİTİK: Case-insensitive dict kullan!
+            // Formula engine "sonraya_devredecek" (küçük harf, underscore) üretir,
+            // CarryoverResolver ise "SonrayaDevredecek" (PascalCase) arar.
+            var outputsDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (run.Outputs != null)
+            {
+                foreach (var kv in run.Outputs)
+                {
+                    outputsDict[kv.Key] = kv.Value.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+                }
+                // Genel Kasa'da "SonrayaDevredecek" ve "genel_kasa" FARKLI değerlerdir!
+                // SonrayaDevredecek = Devreden + TahRedFark - GelmeyenD (Banka bakiye dahil DEĞİL)
+                // GenelKasa = Devreden + EksikFazla + TahRedFark - BankaBakiye - KasaNakit - GelmeyenD
+                // Doğru kaynak: sonraya_devredecek output'u
+                if (!outputsDict.ContainsKey("SonrayaDevredecek") && run.Outputs.TryGetValue("sonraya_devredecek", out var sd))
+                {
+                    outputsDict["SonrayaDevredecek"] = sd.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+                }
+                if (!outputsDict.ContainsKey("GenelKasa") && outputsDict.ContainsKey("genel_kasa"))
+                {
+                    outputsDict["GenelKasa"] = outputsDict["genel_kasa"];
+                }
+            }
+            var outputsJson = JsonSerializer.Serialize(outputsDict);
 
             var snapshot = new CalculatedKasaSnapshot
             {
@@ -261,13 +286,15 @@ public sealed class GenelKasaRaporController : Controller
                 FormulaSetName = run.FormulaSetId
             };
 
-            // P4.1 Stateless Snapshot Deactivation
-            // await _calcSnapshots.SaveAsync(snapshot, ct);
+            // Hesaplama sonucu arşiv olarak DB'ye yazılıyor.
+            // Bu, snapshot bağımlılığı DEĞİL — CarryoverResolver'ın gelecekte
+            // devreden değerini okuyabilmesi için zorunlu arşiv kaydıdır.
+            await _calcSnapshots.SaveAsync(snapshot, ct);
 
-            _log.LogInformation("GenelKasa rapor kaydedildi (Stateless - DB atlandı): {Name}, Tarih={Tarih}",
+            _log.LogInformation("GenelKasa rapor kaydedildi ve arşivlendi: {Name}, Tarih={Tarih}",
                 snapshot.Name, snapshot.RaporTarihi);
 
-            TempData["SuccessMessage"] = $"✅ Rapor başarıyla hesaplandı ve doğrulandı (Snapshot DB Kaydı Kapatıldı): {snapshot.Name}";
+            TempData["SuccessMessage"] = $"✅ Rapor başarıyla hesaplandı ve arşivlendi: {snapshot.Name}";
             return RedirectToAction("Index");
         }
         catch (Exception ex)
@@ -299,7 +326,25 @@ public sealed class GenelKasaRaporController : Controller
     private GenelKasaRaporViewModel MapSnapshotToViewModel(CalculatedKasaSnapshot snapshot)
     {
         var inputs = string.IsNullOrWhiteSpace(snapshot.InputsJson) ? new() : JsonSerializer.Deserialize<Dictionary<string, decimal>>(snapshot.InputsJson) ?? new();
-        var outputs = string.IsNullOrWhiteSpace(snapshot.OutputsJson) ? new() : JsonSerializer.Deserialize<Dictionary<string, decimal>>(snapshot.OutputsJson) ?? new();
+        
+        // OutputsJson: hem Dict<string,decimal> hem Dict<string,string> formatını destekle
+        Dictionary<string, decimal> outputs = new();
+        if (!string.IsNullOrWhiteSpace(snapshot.OutputsJson))
+        {
+            try { outputs = JsonSerializer.Deserialize<Dictionary<string, decimal>>(snapshot.OutputsJson) ?? new(); }
+            catch
+            {
+                try
+                {
+                    var sd = JsonSerializer.Deserialize<Dictionary<string, string>>(snapshot.OutputsJson);
+                    if (sd != null)
+                        foreach (var kv in sd)
+                            if (decimal.TryParse(kv.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d))
+                                outputs[kv.Key] = d;
+                }
+                catch { }
+            }
+        }
         decimal GetVal(string k) => outputs.TryGetValue(k, out var ov) ? ov : (inputs.TryGetValue(k, out var iv) ? iv : 0m);
 
         var baslangicTarihi = snapshot.RaporTarihi;

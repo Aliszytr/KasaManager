@@ -48,7 +48,7 @@ public sealed partial class KasaDraftService
 
             decimal ReadDec(string key)
             {
-                return TryParseDecimal(TryGet(dict, key), out var d) ? d : 0m;
+                return Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(TryGet(dict, key), out var d) ? d : 0m;
             }
 
             // İşlem sayısı (count) kolonlarını tutar (amount) kolonlarıyla karıştırmamak için
@@ -213,13 +213,13 @@ public sealed partial class KasaDraftService
                     }
                 }
 
-                if (!string.IsNullOrWhiteSpace(miktarCol) && row.TryGetValue(miktarCol, out var mRaw) && TryParseDecimal(mRaw, out var m))
+                if (!string.IsNullOrWhiteSpace(miktarCol) && row.TryGetValue(miktarCol, out var mRaw) && Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(mRaw, out var m))
                     totalMiktar += m;
 
                 // Stopaj kolonlarını tekil şekilde topla (2x bug'ı engeller)
                 foreach (var col in stopajCols)
                 {
-                    if (row.TryGetValue(col, out var raw) && TryParseDecimal(raw, out var v))
+                    if (row.TryGetValue(col, out var raw) && Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(raw, out var v))
                         totalStopaj += v;
                 }
             }
@@ -304,8 +304,8 @@ public sealed partial class KasaDraftService
                         if (!RowMatchesDate(row, dateCol, raporTarihi)) continue;
                     }
                 }
-                if (!row.TryGetValue(tutarCol, out var tRaw) || !TryParseDecimal(tRaw, out var tAbs)) continue;
-                if (!row.TryGetValue(bakiyeCol, out var bRaw) || !TryParseDecimal(bRaw, out var b)) continue;
+                if (!row.TryGetValue(tutarCol, out var tRaw) || !Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(tRaw, out var tAbs)) continue;
+                if (!row.TryGetValue(bakiyeCol, out var bRaw) || !Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(bRaw, out var b)) continue;
 
                 var dir = (directionCol is not null && row.TryGetValue(directionCol, out var dRaw)) ? dRaw : null;
                 var signed = ApplyDebitCreditSign(tAbs, dir);
@@ -470,7 +470,7 @@ public sealed partial class KasaDraftService
                     }
                 }
 
-                if (!row.TryGetValue(tutarCol, out var tRaw) || !TryParseDecimal(tRaw, out var tAbs)) continue;
+                if (!row.TryGetValue(tutarCol, out var tRaw) || !Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(tRaw, out var tAbs)) continue;
 
                 // Yön/işaret
                 var dir = (directionCol is not null && row.TryGetValue(directionCol, out var dRaw)) ? dRaw : null;
@@ -482,7 +482,7 @@ public sealed partial class KasaDraftService
                 row.TryGetValue(islemAdiCol, out var islemAdi);
                 row.TryGetValue(aciklamaCol, out var aciklama);
                 row.TryGetValue(bakiyeCol, out var bakiyeRaw);
-                _ = TryParseDecimal(bakiyeRaw, out var bakiye);
+                _ = Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(bakiyeRaw, out var bakiye);
 
                 // 1) İşlem Adı: EFT Otomatik İade
                 if (IsMatchIslemAdi(islemAdi, "Gelen EFT Otomatik Yatan"))
@@ -540,7 +540,7 @@ public sealed partial class KasaDraftService
 
                 if (!RowMatchesDate(row, dateCol, raporTarihi)) continue;
 
-                if (!row.TryGetValue(tutarCol, out var tRaw) || !TryParseDecimal(tRaw, out var tAbs)) continue;
+                if (!row.TryGetValue(tutarCol, out var tRaw) || !Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(tRaw, out var tAbs)) continue;
 
                 var dir = (directionCol is not null && row.TryGetValue(directionCol, out var dRaw)) ? dRaw : null;
                 var signed = ApplyDebitCreditSign(tAbs, dir);
@@ -661,6 +661,13 @@ public sealed partial class KasaDraftService
             var dateCol = FindDateCanonical(table) ?? "islem_tarihi";
             var tutarCol = FindCanonical(table, "islem_tutari") ?? "islem_tutari";
             var islemAdiCol = FindCanonical(table, "islem_adi") ?? "islem_adi";
+            
+            // Commit 5.2: Yön filtresi için directionCol tespiti
+            var directionCol =
+                FindCanonical(table, "borc_alacak")
+                ?? FindCanonicalByHeaderContains(table, "borç")
+                ?? FindCanonicalByHeaderContains(table, "borc")
+                ?? FindCanonicalByHeaderContains(table, "alacak");
 
             static string N(string? s)
             {
@@ -694,13 +701,21 @@ public sealed partial class KasaDraftService
                     }
                 }
 
-                if (!row.TryGetValue(tutarCol, out var tRaw) || !TryParseDecimal(tRaw, out var tAbs)) continue;
+                if (!row.TryGetValue(tutarCol, out var tRaw) || !Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(tRaw, out var tAbs)) continue;
 
-                // İşlem Adı'na göre filtreleme (borç/alacak kolonu olmayabilir, tutar pozitif olabilir)
-                var absAmount = Math.Abs(tAbs);
+                // Commit 5.2: Yön/işaret belirleme
+                var dir = (directionCol is not null && row.TryGetValue(directionCol, out var dRaw)) ? dRaw : null;
+                var signed = ApplyDebitCreditSign(tAbs, dir);
 
                 row.TryGetValue(islemAdiCol, out var islemAdi);
                 var nIslem = N(islemAdi);
+
+                // Sadece "Virman" işlemleri için bankadan ÇIKAN (borç) satırları topla — İptal iadelerini (alacak/giren) atla.
+                // Mevduata Para Yatırma gibi işlemler banka excel'inde alacak yönlü kayıtlı olabileceği için onları atlamıyoruz.
+                if (signed > 0m && nIslem.Contains("virman")) continue;
+
+                // İşlem Adı'na göre filtreleme
+                var absAmount = Math.Abs(signed);
 
                 // "Mevduata Para Yatırma" — "Mevduat Para Yatır" gibi kısaltmalar da dahil
                 if (nIslem.Contains("mevduata para") || nIslem.Contains("mevduat para") || nIslem.Contains("mevduat yatir"))

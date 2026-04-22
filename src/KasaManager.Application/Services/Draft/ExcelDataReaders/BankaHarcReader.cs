@@ -92,9 +92,9 @@ public class BankaHarcReader
                     }
                 }
                 
-                if (!row.TryGetValue(tutarCol, out var tRaw) || !DecimalParsingHelper.TryParseDecimal(tRaw, out var tAbs)) 
+                if (!row.TryGetValue(tutarCol, out var tRaw) || !DecimalParsingHelper.TryParseFromTurkish(tRaw, out var tAbs)) 
                     continue;
-                if (!row.TryGetValue(bakiyeCol, out var bRaw) || !DecimalParsingHelper.TryParseDecimal(bRaw, out var b)) 
+                if (!row.TryGetValue(bakiyeCol, out var bRaw) || !DecimalParsingHelper.TryParseFromTurkish(bRaw, out var b)) 
                     continue;
 
                 var dir = (directionCol is not null && row.TryGetValue(directionCol, out var dRaw)) ? dRaw : null;

@@ -524,7 +524,10 @@
 
             // Fetch Evaluation
             fetch(`/DataPilot/ManualSwitchCheck?dateStr=${dateStr}&kasaType=${kasaType}`)
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) throw new Error('Sunucu hatası: ' + response.status);
+                    return response.text().then(t => (t && t.trim()) ? JSON.parse(t) : { success: false });
+                })
                 .then(data => {
                     document.getElementById('simLoading').classList.add('d-none');
                     if(data.success && data.result) {

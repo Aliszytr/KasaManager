@@ -59,7 +59,7 @@ public static class BankaBalanceCalculator
         var endRow = rows.LastOrDefault(x => DateOnly.FromDateTime(x.dt) <= end);
         if (endRow.row is not null && bakiyeCol is not null && 
             endRow.row.TryGetValue(bakiyeCol, out var rawB) && 
-            DecimalParsingHelper.TryParseDecimal(rawB, out var b))
+            DecimalParsingHelper.TryParseFromJson(rawB, out var b))
         {
             endBalance = b;
             endBalanceDate = DateOnly.FromDateTime(endRow.dt);
@@ -79,9 +79,9 @@ public static class BankaBalanceCalculator
             decimal amt = 0m;
 
             var okB = firstOnStart.row.TryGetValue(bakiyeCol, out var rawAfter) && 
-                DecimalParsingHelper.TryParseDecimal(rawAfter, out after);
+                DecimalParsingHelper.TryParseFromJson(rawAfter, out after);
             var okT = firstOnStart.row.TryGetValue(tutarCol, out var rawAmt) && 
-                DecimalParsingHelper.TryParseDecimal(rawAmt, out amt);
+                DecimalParsingHelper.TryParseFromJson(rawAmt, out amt);
 
             if (okB && okT)
             {
@@ -105,7 +105,7 @@ public static class BankaBalanceCalculator
             var prev = rows.LastOrDefault(x => DateOnly.FromDateTime(x.dt) < start);
             if (prev.row is not null && bakiyeCol is not null && 
                 prev.row.TryGetValue(bakiyeCol, out var rawPrev) && 
-                DecimalParsingHelper.TryParseDecimal(rawPrev, out var pb))
+                DecimalParsingHelper.TryParseFromJson(rawPrev, out var pb))
                 devreden = pb;
             else
                 issues.Add("BankaTahsilat: devreden bakiye bulunamadı, 0 kabul edildi.");

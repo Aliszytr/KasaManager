@@ -86,7 +86,7 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
             .Select(x => x.Tutar)
             .ToList();
 
-        var stopajDurum = new StopajVirmanDurum(false, 0, null, "Reddiyat verisi yok");
+        var stopajDurum = new StopajVirmanDurum(false, 0, null, "Reddiyat verisi yok", StopajStatus.Error);
         try
         {
             var reddiyatResult = await _comparison.CompareReddiyatCikisAsync(uploadFolder, ct: ct);
@@ -100,7 +100,7 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
                     tumVirmanlar.Add(Math.Abs(v.Tutar));
                 }
 
-                stopajDurum = CheckStopajFromAllVirmans(toplamStopaj, tumVirmanlar);
+                stopajDurum = CheckStopajFromAllVirmans(toplamStopaj, tumVirmanlar, reddiyatResult.Value.CancelledPairs);
 
                 adayKayitlar.Add(new HesapKontrolKaydi
                 {
@@ -547,7 +547,7 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
         CancellationToken ct = default)
     {
         if (toplamStopaj <= 0)
-            return new StopajVirmanDurum(true, 0, null, "Stopaj tutarı yok.");
+            return new StopajVirmanDurum(true, 0, null, "Stopaj tutarı yok.", StopajStatus.Ok);
 
         try
         {
@@ -563,6 +563,7 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
 
         return new StopajVirmanDurum(
             false, toplamStopaj, null,
-            $"⚠️ Stopaj Hesabına {toplamStopaj:N2}₺ Virman yapılıp yapılmadığı kontrol edilemedi.");
+            $"⚠️ Stopaj Hesabına {toplamStopaj:N2}₺ Virman yapılıp yapılmadığı kontrol edilemedi.",
+            StopajStatus.Error);
     }
 }

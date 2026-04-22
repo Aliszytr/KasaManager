@@ -1,0 +1,81 @@
+Karşılaştırma Modülünde İptal Edilen Virman Tespiti Planı (v3 - Final)
+1. Eşleştirme Algoritmasını Sıkılaştır & "iade" Kelimesinin Çıkarılması
+ComparisonService.Reddiyat.cs dosyasına eklenecek MarkCancelledRecords metodu şu katı kurallara uyacak:
+
+Tarih Sırası: Orijinal (Borç) işlemin tarihi, iptal (Alacak) işlemin tarihinden KESİNLİKLE KÜÇÜK olmalıdır (aday.IslemTarihi < iptalKaydi.IslemTarihi). Aynı saniyede olan işlemler eşleşmeyecektir.
+Explicit Exclude: İşlem türü EFT_OTOMATIK_IADE olan kayıtlar eşleşme taramasına KESİNLİKLE dahil edilmeyecek (meşru iade işlemleri korunacak).
+İşlem Türü Eşleşmesi: "Virman İptal" sadece "Virman" türündeki kayıtla eşleşecek.
+Zaman Olarak En Yakın: Birden fazla aynı tutarlı aday varsa, iptal işlemine tarih/saat olarak en yakın ve öncesindeki (<) orijinal işlem seçilecek.
+Tek Seferlik: IsCancelled == true olan bir kayıt tekrar eşleşemez.
+Kelimeler: Yalnızca "iptal", "geri alma", "geri alındı", "düzeltme" kelimeleri taranacak. ("iade" kelimesi çıkarılmıştır).
+2. Model ve Enum Güncellemeleri
+[MODIFY] src/KasaManager.Domain/Reports/HesapKontrol/HesapKontrolKaydi.cs (veya IBankaHesapKontrolService.cs içerisi)
+Stopaj durumlarını yönetmek için StopajStatus enum'u eklenecek ve StopajVirmanDurum güncellenecek:
+
+csharp
+public enum StopajStatus
+{
+    Ok = 0,             // ✅ Normal başarılı (Yeşil)
+    OkWithNote = 1,     // ℹ️ İptal edilmiş, yerine doğrusu yapılmış (Yeşil/Bilgi)
+    WarningPending = 2, // ⚠️ İptal edilmiş, ancak yerine yeni virman yapılmamış (Sarı)
+    Error = 3           // ❌ Gerçek uyuşmazlık/eksik virman (Kırmızı)
+}
+// StopajVirmanDurum record'una enum dahil edilecek:
+public sealed record StopajVirmanDurum(
+    bool VirmanYapildiMi,
+    decimal BeklenenTutar,
+    decimal? BulunanVirmanTutar,
+    string Mesaj,
+    StopajStatus Status = StopajStatus.Ok);
+[MODIFY] src/KasaManager.Domain/Reports/ComparisonReport.cs
+Sınıfa explicitly iptal alanları eklenecek:
+
+csharp
+public int CancelledRecordsCount { get; set; }
+public decimal CancelledRecordsTotal { get; set; }
+public List<CancelledPair> CancelledPairs { get; set; } = new();
+3. UI Tarafı Değişiklikleri
+[MODIFY] src/KasaManager.Web/Views/Comparison/Results.cshtml
+İptal Edilen İşlemler Tablosu: Fazla Giren Kayıtlar tablosundan ÖNCE yeni bir "İptal Edilen İşlemler" alanı eklenecek. İptal çiftleri burada listelenecek.
+Fazla Giren Kayıtlar Tablosu: IsCancelled olarak işaretlenmiş iptal çiftleri bu tabloda GÖSTERİLMEYECEK.
+[MODIFY] src/KasaManager.Web/Views/KasaPreview/Index.cshtml (ve diğer ilgili view'lar)
+Stopaj Uyuşmazlığı Uyarı Kutusu Sınıfları: Enum'a göre renkler/sınıflar yönetilecek:
+StopajStatus.Error → .alert-danger (Kırmızı)
+StopajStatus.WarningPending → .alert-warning (Sarı)
+StopajStatus.Ok / StopajStatus.OkWithNote → .alert-success / .alert-info (Yeşil/Mavi)
+Geçmiş Sekmesi (Virman Tutarı): İptaller hesaplamadan tamamen çıkarıldığı için "Geçmiş" sekmesinde doğrudan net tutar (Örn. 16.419,44 ₺) yansıyacak.
+4. Backend Refactoring
+[MODIFY] src/KasaManager.Application/Services/Comparison/ComparisonService.Reddiyat.cs
+CompareReddiyatInternal döngüsünde hem borç hem alacak kayıtları okunacak, ardından yeni MarkCancelledRecords metodu çalıştırılacak (EFT_OTOMATIK_IADE hariç tutularak).
+Sadece IsBorc && !IsCancelled olanlar bankaRecords listesine eklenecek.
+[MODIFY] src/KasaManager.Infrastructure/Services/BankaHesapKontrolService.Helpers.cs
+CheckStopajFromAllVirmans metodunda parçalı virman hesabı ve Senaryo B mantığı kurulacak:
+csharp
+var iptalEdilenVirmanlar = iptalKayitlari.Where(r => r.Tur == "Virman").ToList(); // Parametreden gelecek veya ComparisonReport üzerinden alınacak
+var gecerliVirmanlar = virmanTutarlar; // Parametreden gelen iptal edilmemiş geçerli virman tutarları listesi
+decimal toplamGecerliVirman = gecerliVirmanlar.Sum();
+if (iptalEdilenVirmanlar.Any() && toplamGecerliVirman >= hedefStopajTutari)
+{
+    status = StopajStatus.OkWithNote;
+    message = $"ℹ️ {iptalEdilenVirmanlar.Sum(x => x.Tutar):N2} ₺ virman iptal edildi, yerine doğru tutarla yeniden yapıldı.";
+}
+else if (iptalEdilenVirmanlar.Any() && toplamGecerliVirman < hedefStopajTutari)
+{
+    status = StopajStatus.WarningPending;
+    message = $"⚠️ {iptalEdilenVirmanlar.Sum(x => x.Tutar):N2} ₺ virman iptal edildi, ancak yerine yeni virman yapılmamış. Stopaj askıda.";
+}
+else if (!iptalEdilenVirmanlar.Any() && toplamGecerliVirman < hedefStopajTutari)
+{
+    status = StopajStatus.Error;
+    message = $"❌ Stopaj Hesabına {hedefStopajTutari:N2}₺ Virman bekleniyor, en yakın virman: {toplamGecerliVirman:N2}₺.";
+}
+5. Test Senaryoları (Edge Cases)
+Senaryo A: Aynı tutarda iki ayrı virman + bir iptal → Sadece zaman olarak iptale en yakın öncesindeki (<) orijinal işlem iptal işaretlenecek.
+Senaryo B: İptal edilmiş ama yerine yenisi yapılmamış → StopajStatus.WarningPending ile sarı uyarı kutusu görünecek.
+Senaryo C: Parçalı virman (10.000 + 6.419,44) → Hepsini toplayacak, StopajStatus.Ok veya duruma göre OkWithNote dönecek.
+Senaryo D: İptal + yeni virman + yeni virman da iptal → Tüm karşılık bulan işlemler birbirini sıfırlayacak, WarningPending durumuna düşecek.
+Commit Sırası
+IBankaHesapKontrolService.cs ve ComparisonReport.cs (Enum, Parametre değişiklikleri)
+ComparisonService.cs ve ComparisonService.Reddiyat.cs (İptal işaretleme, < tarih kuralı, iade hariç)
+BankaHesapKontrolService.Helpers.cs (Parçalı virman, 3 durumlu mantık)
+UI Görünümleri (Results.cshtml, KasaPreview/Index, vb.)

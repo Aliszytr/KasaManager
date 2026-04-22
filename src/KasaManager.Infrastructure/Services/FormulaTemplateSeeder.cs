@@ -237,46 +237,64 @@ public sealed class FormulaTemplateSeeder : IFormulaTemplateSeeder
                 "(DB: {CurrentCount} formül, Beklenen: {ExpectedCount} formül). R10 uyumlu formüllerle değiştiriliyor...",
                 currentLines.Count, CorrectGenelKasaFormulas.Count);
 
-            // ═══ ADIM 3: Atomik düzeltme (explicit transaction) ═══
-            // Transaction içinde: ya tüm işlemler başarılı olur, ya hiçbiri.
-            // Yarım kalan migration imkansız — DB her zaman tutarlı kalır.
+            // ═══ ADIM 3: Atomik düzeltme (ExecutionStrategy + explicit transaction) ═══
+            // SQL Server retry strategy (EnableRetryOnFailure) açıkken, user-initiated
+            // transaction doğrudan BeginTransactionAsync() ile AÇILAMAZ.
+            // CreateExecutionStrategy().ExecuteAsync() içine sarılmalıdır.
+            // (FormulaSetStore.UpdateAsync ile aynı pattern.)
             var setId = genelSet.Id;
-            await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+            var strategy = _db.Database.CreateExecutionStrategy();
 
-            // 3a. Eski satırları server-side bulk silme
-            // ExecuteDeleteAsync: Doğrudan SQL DELETE çalıştırır.
-            // Change tracker'ı TAMAMEN bypass eder — concurrency token sorunu OLAMAZ.
-            var deletedCount = await _db.FormulaLines
-                .Where(fl => fl.SetId == setId)
-                .ExecuteDeleteAsync(ct);
+            int deletedCount = 0;
+            List<PersistedFormulaLine>? newLines = null;
 
-            // 3b. Doğru R10 uyumlu formülleri ekle (yeni entity'ler — concurrency sorunu yok)
-            var newLines = CorrectGenelKasaFormulas.Select((f, idx) => new PersistedFormulaLine
+            await strategy.ExecuteAsync(async () =>
             {
-                Id = Guid.NewGuid(),
-                SetId = setId,
-                TargetKey = f.Target,
-                Mode = "Formula",
-                Expression = f.Expression,
-                SortOrder = idx
-            }).ToList();
+                await using var transaction = await _db.Database.BeginTransactionAsync(ct);
 
-            _db.FormulaLines.AddRange(newLines);
-            await _db.SaveChangesAsync(ct);
+                try
+                {
+                    // 3a. Eski satırları server-side bulk silme
+                    // ExecuteDeleteAsync: Doğrudan SQL DELETE çalıştırır.
+                    // Change tracker'ı TAMAMEN bypass eder — concurrency token sorunu OLAMAZ.
+                    deletedCount = await _db.FormulaLines
+                        .Where(fl => fl.SetId == setId)
+                        .ExecuteDeleteAsync(ct);
 
-            // 3c. Parent set timestamp güncelle (server-side, tracker bypass)
-            await _db.FormulaSets
-                .Where(fs => fs.Id == setId)
-                .ExecuteUpdateAsync(
-                    s => s.SetProperty(p => p.UpdatedAtUtc, DateTime.UtcNow), ct);
+                    // 3b. Doğru R10 uyumlu formülleri ekle (yeni entity'ler — concurrency sorunu yok)
+                    newLines = CorrectGenelKasaFormulas.Select((f, idx) => new PersistedFormulaLine
+                    {
+                        Id = Guid.NewGuid(),
+                        SetId = setId,
+                        TargetKey = f.Target,
+                        Mode = "Formula",
+                        Expression = f.Expression,
+                        SortOrder = idx
+                    }).ToList();
 
-            // 3d. Tüm işlemler başarılı — commit
-            await transaction.CommitAsync(ct);
+                    _db.FormulaLines.AddRange(newLines);
+                    await _db.SaveChangesAsync(ct);
+
+                    // 3c. Parent set timestamp güncelle (server-side, tracker bypass)
+                    await _db.FormulaSets
+                        .Where(fs => fs.Id == setId)
+                        .ExecuteUpdateAsync(
+                            s => s.SetProperty(p => p.UpdatedAtUtc, DateTime.UtcNow), ct);
+
+                    // 3d. Tüm işlemler başarılı — commit
+                    await transaction.CommitAsync(ct);
+                }
+                catch
+                {
+                    await transaction.RollbackAsync(ct);
+                    throw;
+                }
+            });
 
             _logger.LogInformation(
                 "V2 Migration: Genel Kasa '{Name}' formülleri başarıyla güncellendi. " +
                 "{DeletedCount} eski formül kaldırıldı → {NewCount} R10 uyumlu formül eklendi.",
-                genelSet.Name, deletedCount, newLines.Count);
+                genelSet.Name, deletedCount, newLines?.Count ?? 0);
         }
         catch (Exception ex)
         {

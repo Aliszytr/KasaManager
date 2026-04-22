@@ -1,0 +1,179 @@
+# 🎯 GÖREV: Karşılaştırma Modülünde İptal Edilen Virman Tespiti
+
+## ⚠️ KRİTİK KURALLAR (ÖNCE OKU)
+
+1. **HİÇBİR DEĞİŞİKLİK YAPMA** — önce analiz ve plan sun, onay bekle.
+2. **Çalışan yapıyı bozma** — mevcut karşılaştırma algoritmasının ana gövdesine, UI render kodlarına, veritabanı şemasına DOKUNMA.
+3. **Sadece EKLEME yap** — silme/yeniden yazma yok.
+4. **Önce plan, sonra kod** — etkilenen dosyaların listesini ve her dosyadaki TAM SATIR NUMARALARINI belirt.
+5. **Her değişiklik ayrı commit** olsun, geri alınabilir olsun.
+
+---
+
+## 🔍 SORUN TANIMI
+
+Karşılaştırma modülü, banka dosyasındaki virman kayıtlarını ararken **iptal edilmiş bir virmanı geçerli sanıyor**.
+
+### Gerçek Senaryo (21.04.2026 verisi):
+- **Satır 767:** `Virman` | `-18.940,88 ₺` | 17:10:13 → Banka çalışanı YANLIŞ tutarla virman yapmış.
+- **Satır 769:** `Virman İptal` | `+18.940,88 ₺` | 17:14:32 → Hatayı fark edip iptal etmiş.
+- **Satır 771:** `Virman` | `-16.419,44 ₺` | 17:20:36 → DOĞRU tutarla tekrar virman yapmış.
+
+### Mevcut Hatalı Davranış:
+- Algoritma "ilk eşleşen virman" mantığıyla **18.940,88 ₺** kaydını yakalıyor.
+- Döngüyü `break` ile kırıyor.
+- Gerçek virman **16.419,44 ₺** hiç kontrol edilmiyor.
+- İptal satırı görmezden geliniyor.
+
+### Domino Etkileri:
+1. **Tutar Dengesi modülü:** 18.940,88 ₺'yi "fazla kayıt" olarak işaretliyor (sahte uyarı).
+2. **Stopaj Uyuşmazlığı:** İptal edilen tutarı "Bankadan Çıkan"a dahil ediyor → `-18.940,88 ₺` sahte fark, kırmızı uyarı.
+3. **Geçmiş/Açık Kayıtlar:** Yanlış virmanı listeliyor, açıklama boş görünüyor.
+
+### Teknik Kök Neden:
+Algoritma *"ilk eşleşen"* mantığıyla çalışıyor, *"iptal edilmemiş ilk eşleşen"* değil. Ayrıca aynı tutar birden fazla virmanla parçalı gönderildiğinde de `break` erken çıkıyor (ikinci bir bug).
+
+---
+
+## 🎯 ÇÖZÜM PLANI (Minimal Müdahale)
+
+### Adım 1 — Yeni Fonksiyon: `iptal_edilenleri_isaretle()`
+
+**Bağımsız, yeni bir fonksiyon.** Banka kayıtları karşılaştırmaya girmeden ÖNCE çağrılacak. Mevcut hiçbir kodu değiştirmez.
+
+```python
+def iptal_edilenleri_isaretle(banka_kayitlari):
+    """
+    Banka kayıtları içinde 'iptal' kelimesi geçen satırları bulur ve
+    iptal edilen orijinal işlemle eşleştirir. Kayıtları SİLMEZ,
+    sadece metadata ekler: iptal_edildi=True ve orijinal_referansi.
+    """
+    for i, kayit in enumerate(banka_kayitlari):
+        islem_adi = str(kayit.get('islem_adi', '')).lower()
+        
+        if 'iptal' not in islem_adi:
+            continue
+        
+        iptal_tutari = abs(float(kayit['islem_tutari']))
+        iptal_zamani = kayit['islem_tarihi']
+        
+        # Orijinal işlemi bul: aynı tutar, zıt işaret, iptal'den önce
+        for j, aday in enumerate(banka_kayitlari):
+            if i == j:
+                continue
+            if aday.get('iptal_edildi'):
+                continue
+            if abs(float(aday['islem_tutari'])) != iptal_tutari:
+                continue
+            # İşaretler zıt olmalı (biri -, diğeri +)
+            if (float(aday['islem_tutari']) * float(kayit['islem_tutari'])) >= 0:
+                continue
+            # Aday iptal'den ÖNCE olmalı
+            if aday['islem_tarihi'] >= iptal_zamani:
+                continue
+            
+            # EŞLEŞME
+            aday['iptal_edildi'] = True
+            aday['iptal_referansi'] = kayit.get('id') or j
+            kayit['iptal_edildi'] = True
+            kayit['orijinal_referansi'] = aday.get('id') or j
+            break
+    
+    return banka_kayitlari
+```
+
+### Adım 2 — Mevcut Virman Döngüsüne TEK KOŞUL EKLE
+
+Mevcut kod bloğunu BULUP sadece işaretli yere `continue` ekle. Başka hiçbir şeye dokunma.
+
+```python
+for kayit in banka_kayitlari:
+    if kayit.get('tur') != 'Virman':
+        continue
+    
+    # 👇 EKLENECEK BLOK 👇
+    if kayit.get('iptal_edildi'):
+        notlar.append(
+            f"{kayit['islem_tutari']} ₺ virman işlemi yapılmış, "
+            f"daha sonra iptal edilmiştir."
+        )
+        continue
+    # 👆 EKLENECEK BLOK 👆
+    
+    # ... mevcut eşleştirme mantığı AYNEN kalır ...
+```
+
+### Adım 3 — Erken `break` Sorununu Düzelt (Parçalı Virman Desteği)
+
+Aynı tutar birden fazla virmanla bölünerek gönderilebilir. Mevcut `break` ilk eşleşmede çıkıyor.
+
+```python
+# ÖNCE (hatalı):
+if eslesme_bulundu:
+    break
+
+# SONRA (doğru):
+toplam_eslesen = 0
+eslesen_kayitlar = []
+for kayit in uygun_virmanlar:
+    if kayit.get('iptal_edildi'):
+        continue
+    toplam_eslesen += abs(float(kayit['tutar']))
+    eslesen_kayitlar.append(kayit)
+    if toplam_eslesen >= hedef_tutar:
+        break  # sadece HEDEFE ulaşınca çık
+```
+
+### Adım 4 — Stopaj Uyuşmazlığı Hesaplamasına Filtre
+
+`Bankadan Çıkan` toplamını hesaplayan yerde tek satırlık filtre koşulu ekle.
+
+```python
+bankadan_cikan = sum(
+    k['tutar'] for k in kayitlar
+    if k['yon'] == 'cikis' and not k.get('iptal_edildi')  # ← EK KOŞUL
+)
+```
+
+### Adım 5 — UI: Kırmızı Uyarıyı Sarı Bilgi Notuna Çevir
+
+Eğer "Stopaj Uyuşmazlığı" farkı SADECE iptal edilmiş bir virmandan kaynaklanıyorsa:
+- Kırmızı uyarıyı GİZLE.
+- Yerine sarı/mavi bilgilendirme göster:
+
+> ℹ️ **18.940,88 ₺ tutarında virman işlemi yapılmış, daha sonra iptal edilmiştir. Hesaplamaya dahil edilmedi.**
+
+---
+
+## ✅ SENDEN İSTENEN ÇIKTILAR (Kod Yazma, Sadece Sun)
+
+### 1. Etki Analizi Raporu
+- Değişiklik yapılacak dosyaların listesi.
+- Her dosyada etkilenecek TAM SATIR NUMARALARI.
+- Her satırın mevcut hali ve önerilen hali (diff formatında).
+
+### 2. Risk Değerlendirmesi
+- Bu değişikliklerin çalışan yapıyı bozma ihtimali var mı?
+- Geri alma (rollback) planı nasıl olacak?
+- Hangi sırayla commit edilmeli?
+
+### 3. Test Senaryosu
+21.04.2026 tarihli gerçek veriyle (18.940,88 iptal + 16.419,44 gerçek virman) şu üç şeyi doğrulayan test planı:
+- ✅ Tutar Dengesi → "Fazla Kayıt" listesinde 18.940,88 GÖRÜNMEMELİ.
+- ✅ Stopaj Uyuşmazlığı → Kırmızı uyarı KAYBOLMALI, yerine sarı bilgi notu.
+- ✅ Geçmiş sekmesi → Virman olarak **16.419,44 ₺** görünmeli; 18.940,88 ya görünmemeli ya da "iptal edilmiş" etiketiyle ayrı gösterilmeli.
+
+### 4. Sorular Listesi
+Planı uygulamadan önce netleşmesi gereken noktalar varsa sor.
+
+---
+
+## 🚫 YAPMAYACAKLARIN
+
+- Mevcut çalışan karşılaştırma algoritmasının ana gövdesini YENİDEN YAZMA.
+- Veritabanı şemasına sütun EKLEME (metadata runtime'da taşınacak).
+- UI component yapısını DEĞİŞTİRME (sadece mesaj metni/renk değişecek).
+- Birden fazla değişikliği TEK COMMIT'te toplamayacaksın.
+- Onay almadan HİÇBİR dosyayı KAYDETMEYECEKSİN.
+
+**Önce plan + diff sun, onay bekle, sonra kod.**

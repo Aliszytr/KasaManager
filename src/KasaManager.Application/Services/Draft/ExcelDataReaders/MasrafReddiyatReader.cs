@@ -88,7 +88,7 @@ public class MasrafReddiyatReader
                 }
 
                 inRangeRows++;
-                if (!row.TryGetValue(miktarCol, out var rawM) || !DecimalParsingHelper.TryParseDecimal(rawM, out var m)) continue;
+                if (!row.TryGetValue(miktarCol, out var rawM) || !DecimalParsingHelper.TryParseFromTurkish(rawM, out var m)) continue;
 
                 var tip = row.GetValueOrDefault(tipCol) ?? string.Empty;
                 var tipU = tip.Trim().ToUpperInvariant();

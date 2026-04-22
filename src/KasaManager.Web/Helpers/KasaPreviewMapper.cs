@@ -157,6 +157,8 @@ public static class KasaPreviewMapper
         vm.BankayaGonderilmisDeger = dto.BankayaGonderilmisDeger;
         vm.BankayaYatirilacakHarciDegistir = dto.BankayaYatirilacakHarciDegistir;
         vm.BankayaYatirilacakTahsilatiDegistir = dto.BankayaYatirilacakTahsilatiDegistir;
+        vm.IptalEdilenCikisTutar = dto.IptalEdilenCikisTutar; // Commit 5
+        vm.IptalEdilenVirmanTutar = dto.IptalEdilenVirmanTutar; // Commit 5.1
         vm.GuneAitEksikFazlaTahsilat = dto.GuneAitEksikFazlaTahsilat;
         vm.GuneAitEksikFazlaHarc = dto.GuneAitEksikFazlaHarc;
         vm.DundenEksikFazlaTahsilat = dto.DundenEksikFazlaTahsilat;

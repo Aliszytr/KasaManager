@@ -330,7 +330,14 @@
             fd.append('__RequestVerificationToken', token);
 
             fetch('/GenelKasaRapor/UpdateSnapshot', { method: 'POST', body: fd })
-                .then(function(r) { return r.json(); })
+                .then(function(r) {
+                    if (!r.ok) throw new Error('Sunucu hatası: ' + r.status);
+                    return r.text().then(function(t) {
+                        if (!t || t.trim() === '') return { ok: false, message: 'Sunucudan boş yanıt' };
+                        try { return JSON.parse(t); }
+                        catch(e) { throw new Error('Yanıt işlenemedi'); }
+                    });
+                })
                 .then(function(data) {
                     showToast(data.message, data.ok ? 'success' : 'error');
                 })
@@ -355,7 +362,14 @@
             fd.append('__RequestVerificationToken', token);
 
             fetch('/GenelKasaRapor/DeleteSnapshot', { method: 'POST', body: fd })
-                .then(function(r) { return r.json(); })
+                .then(function(r) {
+                    if (!r.ok) throw new Error('Sunucu hatası: ' + r.status);
+                    return r.text().then(function(t) {
+                        if (!t || t.trim() === '') return { ok: false, message: 'Sunucudan boş yanıt' };
+                        try { return JSON.parse(t); }
+                        catch(e) { throw new Error('Yanıt işlenemedi'); }
+                    });
+                })
                 .then(function(data) {
                     showToast(data.message, data.ok ? 'success' : 'error');
                     if (data.ok) {
@@ -399,7 +413,14 @@
         if (searchTextInput && searchTextInput.value.trim()) url += '&search=' + encodeURIComponent(searchTextInput.value.trim());
 
         fetch(url)
-            .then(function(r) { return r.json(); })
+            .then(function(r) {
+                if (!r.ok) throw new Error('Sunucu hatası: ' + r.status);
+                return r.text().then(function(t) {
+                    if (!t || t.trim() === '') return { items: [], totalCount: 0 };
+                    try { return JSON.parse(t); }
+                    catch(e) { throw new Error('Yanıt işlenemedi'); }
+                });
+            })
             .then(function(data) {
                 if (countBadge) countBadge.textContent = data.totalCount + ' rapor';
                 if (!data.items || data.items.length === 0) {
@@ -462,7 +483,14 @@
         fd.append('__RequestVerificationToken', token);
 
         fetch('/GenelKasaRapor/DeleteSnapshot', { method: 'POST', body: fd })
-            .then(function(r) { return r.json(); })
+            .then(function(r) {
+                if (!r.ok) throw new Error('Sunucu hatası: ' + r.status);
+                return r.text().then(function(t) {
+                    if (!t || t.trim() === '') return { ok: false, message: 'Sunucudan boş yanıt' };
+                    try { return JSON.parse(t); }
+                    catch(e) { throw new Error('Yanıt işlenemedi'); }
+                });
+            })
             .then(function(data) {
                 showToast(data.message, data.ok ? 'success' : 'error');
                 if (data.ok) {
@@ -497,7 +525,14 @@
         if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Aktarılıyor...'; }
 
         fetch('/GenelKasaRapor/TransferVergideBiriken', { method: 'POST', body: fd })
-            .then(function(r) { return r.json(); })
+            .then(function(r) {
+                if (!r.ok) throw new Error('Sunucu hatası: ' + r.status);
+                return r.text().then(function(t) {
+                    if (!t || t.trim() === '') return { ok: false, message: 'Sunucudan boş yanıt' };
+                    try { return JSON.parse(t); }
+                    catch(e) { throw new Error('Yanıt işlenemedi'); }
+                });
+            })
             .then(function(data) {
                 showToast(data.message, data.ok ? 'success' : 'error');
                 if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-piggy-bank me-1"></i>Vergide Biriken\'e Aktar'; }

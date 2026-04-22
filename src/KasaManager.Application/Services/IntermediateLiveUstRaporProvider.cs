@@ -53,7 +53,7 @@ public class IntermediateLiveUstRaporProvider : IIntermediateLiveUstRaporProvide
 
             decimal ReadDec(string key)
             {
-                return TryParseDecimal(TryGet(dict, key), out var d) ? d : 0m;
+                return Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(TryGet(dict, key), out var d) ? d : 0m;
             }
 
             var countSuffixes = new[] { "_islem_sayisi", "_sayisi" };
@@ -164,13 +164,5 @@ public class IntermediateLiveUstRaporProvider : IIntermediateLiveUstRaporProvide
         return null;
     }
 
-    private static bool TryParseDecimal(string? raw, out decimal value)
-    {
-        value = 0m;
-        if (string.IsNullOrWhiteSpace(raw)) return false;
-        raw = raw.Trim().Replace("₺", "").Replace(" ", "");
-        if (decimal.TryParse(raw, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.GetCultureInfo("tr-TR"), out value)) return true;
-        if (decimal.TryParse(raw, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out value)) return true;
-        return false;
-    }
+
 }

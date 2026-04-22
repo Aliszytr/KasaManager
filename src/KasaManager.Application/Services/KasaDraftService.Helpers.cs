@@ -37,7 +37,6 @@ public sealed partial class KasaDraftService
 
 
     private static string BuildRawJson(
-        KasaManager.Domain.Reports.Snapshots.KasaRaporSnapshot genSnap,
         string? bankaLastRowRaw,
         string? onlineAggRaw = null,
         string? bankaGunAggRaw = null,
@@ -72,13 +71,6 @@ public sealed partial class KasaDraftService
 
             var obj = new
             {
-                snapshot = new
-                {
-                    genSnap.RaporTarihi,
-                    genSnap.RaporTuru,
-                    genSnap.SelectionTotal,
-                    SelectedCount = genSnap.Rows.Count(r => r.IsSelected)
-                },
                 bankaTahsilatLastRow = TryDeserializeDict(bankaLastRowRaw),
                 onlineReddiyatAgg = TryDeserializeDict(onlineAggRaw),
                 bankaTahsilatGunAgg = TryDeserializeDict(bankaGunAggRaw),
@@ -98,21 +90,7 @@ public sealed partial class KasaDraftService
         }
     }
 
-    private static bool TryParseDecimal(string? input, out decimal value)
-    {
-        value = 0m;
-        if (string.IsNullOrWhiteSpace(input)) return false;
 
-        var s = input.Trim();
-        // TR/EN parse denemesi
-        if (decimal.TryParse(s, NumberStyles.Any, CultureInfo.GetCultureInfo("tr-TR"), out value)) return true;
-        if (decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out value)) return true;
-
-        // Para birimi vb. temizle
-        s = s.Replace("TL", "", StringComparison.OrdinalIgnoreCase).Trim();
-        return decimal.TryParse(s, NumberStyles.Any, CultureInfo.GetCultureInfo("tr-TR"), out value)
-               || decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out value);
-    }
 
     private static decimal ApplyDebitCreditSign(decimal absAmount, string? direction)
     {

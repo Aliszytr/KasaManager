@@ -1,0 +1,24 @@
+# Proje Bağlamı
+
+Bu planın amacı: Banka dosyasında yapılan sonra iptal edilen virman 
+işlemlerinin, karşılaştırma modülünde "gerçek virman" sanılması 
+sorununu çözmek.
+
+## Gerçek Senaryo (21.04.2026)
+- 17:10:13 → Virman: -18.940,88 ₺ (yanlış tutar)
+- 17:14:32 → Virman İptal: +18.940,88 ₺ (iptal)
+- 17:20:36 → Virman: -16.419,44 ₺ (doğru tutar)
+
+Mevcut sistem 18.940,88'i yakalıyor ve break yapıyor. 
+16.419,44 hiç kontrol edilmiyor.
+
+## Bu Plan Ne Yapıyor
+1. İptal edilen işlemleri ön-filtreden geçiriyor (MarkCancelledRecords)
+2. Karşılaştırma döngüsü iptal edilenleri atlıyor
+3. Parçalı virmanları destekliyor (erken break düzeltildi)
+4. UI'da kırmızı yerine sarı bilgi kutusu gösteriyor
+
+## Kritik Kurallar
+- Çalışan yapıya dokunmuyoruz, sadece ekleme yapıyoruz
+- Her commit ayrı, onay bekleyecek
+- Plan dışına çıkma yok

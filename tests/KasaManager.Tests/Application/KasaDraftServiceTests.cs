@@ -36,7 +36,7 @@ public sealed class KasaDraftServiceTests
 
         _carryoverMock
             .Setup(c => c.ResolveAsync(It.IsAny<DateOnly>(), It.IsAny<CarryoverScope>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new CarryoverResolutionResult(0m, DateOnly.FromDateTime(DateTime.Today), null, "Default", "Default setup", true));
+            .ReturnsAsync(new CarryoverResolutionResult(0m, "dunden_devreden_kasa_nakit", DateOnly.FromDateTime(DateTime.Today), null, "Default", "Default setup", true));
 
         var projMock = new Mock<IEksikFazlaProjectionEngine>();
         projMock.Setup(p => p.ProjectAsync(It.IsAny<ProjectionRequest>(), It.IsAny<CancellationToken>()))

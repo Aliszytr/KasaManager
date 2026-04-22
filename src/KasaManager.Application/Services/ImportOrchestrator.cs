@@ -140,7 +140,10 @@ public ImportFileKind GuessKindFromFileName(string fileName)
                 // Tarihi yoldan tahmin etmeye çalış, bulamazsan bugünü at.
                 var targetDate = GuessDateFromPath(absoluteFilePath);
                 
-                await normalizationService.NormalizeAndSaveShadowFactsAsync(table, targetDate, absoluteFilePath);
+                var result = await normalizationService.NormalizeAndSaveShadowFactsAsync(table, targetDate, absoluteFilePath);
+                
+                if (!result.Success)
+                    _logger.LogWarning("Shadow Ingestion başarısız: {Error} — Dosya: {FilePath}", result.Error, absoluteFilePath);
             }
             catch (Exception ex)
             {

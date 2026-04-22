@@ -12,6 +12,143 @@ namespace KasaManager.Web.Controllers;
 // ─────────────────────────────────────────────────────────────
 public sealed partial class KasaPreviewController
 {
+    // =========================================================================
+    // Auto-Provision: Genel Snapshot yoksa dosyalardan otomatik oluştur
+    // =========================================================================
+
+    /// <summary>
+    /// Sabah/Aksam kasa sayfası açıldığında, seçili tarih için Genel snapshot yoksa
+    /// ama KasaÜstRapor Excel dosyası yüklüyse otomatik olarak snapshot oluşturur.
+    /// P4.1 stateless geçişinde snapshot kaydı devre dışı bırakılmıştı — bu metot
+    /// o boşluğu kapatır ve kullanıcının manuel "Snapshot Kaydet" yapmasını gereksiz kılar.
+    /// </summary>
+    private async Task TryAutoProvisionGenelSnapshotAsync(DateOnly targetDate, CancellationToken ct)
+    {
+        try
+        {
+            // 1) Zaten snapshot var mı?
+            var existing = await _raporSnapshots.GetAsync(targetDate, KasaRaporTuru.Genel, ct);
+            if (existing?.Rows != null && existing.Rows.Count > 0)
+                return; // Var, bir şey yapma
+
+            // 2) KasaÜstRapor dosyası yüklü mü?
+            var files = ListUploadedFiles();
+            var kasaUstFile = PickKasaUstRaporFile(files);
+            if (string.IsNullOrWhiteSpace(kasaUstFile))
+                return; // Dosya yok
+
+            var folder = ResolveUploadFolderAbsolute();
+            var fullPath = Path.Combine(folder, kasaUstFile);
+            if (!System.IO.File.Exists(fullPath))
+                return;
+
+            // 3) Dosya tarihini kontrol et — yüklü dosyanın tarih kuralları eşleşiyor mu?
+            var eval = await _dateRules.EvaluateAsync(folder, ct);
+            var fileDate = eval.ProposedDate ?? targetDate;
+
+            // Dosya tarihi ile hedef tarih uyuşmuyorsa, yine de aynı gün dosyası olduğunu varsay
+            // (kullanıcı birden fazla gün çalışabilir, dosya ismi/içeriği dünün olabilir)
+
+            // 4) KasaÜstRapor'u import et
+            var import = _importOrchestrator.Import(fullPath, ImportFileKind.KasaUstRapor);
+            if (!import.Ok || import.Value is null)
+            {
+                _log.LogWarning("Auto-provision: KasaÜstRapor import başarısız: {Error}", import.Error);
+                return;
+            }
+
+            var table = import.Value;
+            var (veznedarCol, bakiyeCol) = GuessColumns(table);
+
+            // 5) Tüm satırları seçili olarak snapshot oluştur
+            var rows = new List<KasaManager.Domain.Reports.Snapshots.KasaRaporSnapshotRow>();
+            decimal selectionTotal = 0m;
+
+            // VergiKasa veznedarlarını Global Defaults'tan al (seçim işaretleme için)
+            var defaults = await _globalDefaults.GetAsync(ct);
+            var defaultVergiList = new List<string>();
+            try
+            {
+                defaultVergiList = System.Text.Json.JsonSerializer.Deserialize<List<string>>(
+                    defaults.SelectedVeznedarlarJson ?? "[]") ?? new();
+            }
+            catch { defaultVergiList = new(); }
+
+            var headersJson = System.Text.Json.JsonSerializer.Serialize(table.ColumnMetas);
+
+            for (int i = 0; i < table.Rows.Count; i++)
+            {
+                var r = table.Rows[i];
+                var veznedar = (veznedarCol != null && r.TryGetValue(veznedarCol, out var vz)) ? vz ?? "" : "";
+                var isSummary = IsSummaryRow(r);
+
+                // VergiKasa veznedarlarını "seçili" olarak işaretle
+                var isSelected = !isSummary
+                    && !string.IsNullOrWhiteSpace(veznedar)
+                    && defaultVergiList.Contains(veznedar.Trim(), StringComparer.OrdinalIgnoreCase);
+
+                decimal bakiye = 0m;
+                if (bakiyeCol != null && r.TryGetValue(bakiyeCol, out var bv))
+                    Application.Services.Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(bv, out bakiye);
+
+                if (isSelected)
+                    selectionTotal += bakiye;
+
+                rows.Add(new KasaManager.Domain.Reports.Snapshots.KasaRaporSnapshotRow
+                {
+                    Veznedar = veznedar,
+                    IsSelected = isSelected,
+                    Bakiye = bakiye,
+                    IsSummaryRow = isSummary,
+                    ColumnsJson = System.Text.Json.JsonSerializer.Serialize(r),
+                    HeadersJson = i == 0 ? headersJson : null
+                });
+            }
+
+            var snapshot = new KasaManager.Domain.Reports.Snapshots.KasaRaporSnapshot
+            {
+                RaporTarihi = targetDate,
+                RaporTuru = KasaRaporTuru.Genel,
+                Version = 1,
+                SelectionTotal = selectionTotal,
+                CreatedBy = "AutoProvision",
+                SourceEvidenceJson = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    Source = "AutoProvision",
+                    File = kasaUstFile,
+                    FileDate = fileDate.ToString("yyyy-MM-dd"),
+                    TargetDate = targetDate.ToString("yyyy-MM-dd"),
+                    RowCount = rows.Count
+                }),
+                Rows = rows
+            };
+
+            await _raporSnapshots.SaveAsync(snapshot, ct);
+
+            _log.LogInformation(
+                "Auto-provision: {TargetDate} için Genel snapshot otomatik oluşturuldu ({RowCount} satır, dosya={File})",
+                targetDate, rows.Count, kasaUstFile);
+        }
+        catch (Exception ex)
+        {
+            // Auto-provision sessiz başarısız — kullanıcıyı engellemesin
+            _log.LogWarning(ex, "Auto-provision snapshot oluşturma başarısız (tarih={Date})", targetDate);
+        }
+    }
+
+    private static bool IsSummaryRow(Dictionary<string, string?> row)
+    {
+        foreach (var kv in row)
+        {
+            var v = kv.Value;
+            if (string.IsNullOrWhiteSpace(v)) continue;
+            var t = v.Trim().ToLowerInvariant();
+            if (t == "toplam" || t.Contains("genel toplam") || t.Contains("toplamlar"))
+                return true;
+        }
+        return false;
+    }
+
     /// <summary>
     /// Hidden input'lardan posted değerleri okuyarak KasaRaporData oluşturur.
     /// Engine tekrar çalıştırılmaz — ekrandaki değerler birebir kullanılır.
@@ -49,7 +186,7 @@ public sealed partial class KasaPreviewController
             KasadakiNakit = PF("RptKasadakiNakit"), DundenDevredenBanka = PF("RptDevredenBanka"),
             YarinaDevredecekBanka = PF("RptDevredecekBanka"),
             // Vergi
-            VergidenGelen = PF("RptVergidenGelen"), VergiKasa = PF("RptVergiKasa"), VergideBirikenKasa = PF("RptVergideBiriken"),
+            VergidenGelen = PF("RptVergidenGelen"), VergiKasa = PF("VergiKasaBakiyeToplam"), VergideBirikenKasa = PF("RptVergideBiriken"),
             // Beklenen Girişler
             EftOtomatikIade = PF("RptEftIade"), GelenHavale = PF("RptGelenHavale"), IadeKelimesiGiris = PF("RptIadeKelimesi"),
             // Banka Reconciliation
@@ -325,6 +462,58 @@ public sealed partial class KasaPreviewController
         {
             _log.LogWarning(ex, "KasaÜstRapor panel hydration failed in KasaPreview");
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Eğer UI tarafında kullanıcı açıkça bir Veznedar Checkbox listesi göndermediyse, 
+    /// Sistem otomatik olarak Global Ayarlar (Settings) içinden Default Vergi Veznedarlarını okur
+    /// ve Excel (KasaUstRapor) içerisinden bu isimleri bularak Bakiye toplamını otomatik hesaplar.
+    /// Eski sistemdeki (Snapshot öncesi) otomatik hesaplama mantığının devamıdır.
+    /// </summary>
+    private async Task ApplyAutoVergiKasaFromDefaultsAsync(KasaPreviewViewModel model, CancellationToken ct)
+    {
+        // UI'dan explicit bir seçim geldiyse ezme
+        if (model.VergiKasaVeznedarlar != null && model.VergiKasaVeznedarlar.Count > 0)
+            return;
+
+        // Panel henüz hydrate edilmediyse et (Excel'i parse et)
+        model.UstRaporPanel ??= await HydrateUstRaporPanelAsync(ct);
+
+        var defaultList = model.UstRaporPanel?.DefaultVergiKasaVeznedarlar;
+        var table = model.UstRaporPanel?.Table;
+
+        if (defaultList == null || defaultList.Count == 0 || table == null)
+            return;
+
+        var vezCol = model.UstRaporPanel!.VeznedarColumn ?? "VEZNEDAR";
+        var bakCol = model.UstRaporPanel!.BakiyeColumn ?? "BAKİYE";
+
+        decimal total = 0m;
+        var appliedVeznedars = new List<string>();
+
+        foreach (var row in table.Rows)
+        {
+            if (row.ContainsKey(vezCol) && row.ContainsKey(bakCol))
+            {
+                var v = row[vezCol]?.ToString()?.Trim();
+                if (!string.IsNullOrEmpty(v) && defaultList.Contains(v, StringComparer.OrdinalIgnoreCase))
+                {
+                    if (decimal.TryParse(row[bakCol]?.ToString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.CurrentCulture, out var bakiye))
+                    {
+                        total += bakiye;
+                        if(!appliedVeznedars.Contains(v, StringComparer.OrdinalIgnoreCase))
+                            appliedVeznedars.Add(v);
+                    }
+                }
+            }
+        }
+
+        if (appliedVeznedars.Count > 0)
+        {
+            model.VergiKasaVeznedarlar = appliedVeznedars;
+            model.VergiKasaBakiyeToplam = total;
+            _log.LogInformation("AutoVergiKasaFromSettings: {total} (Settings: {vez})", total, string.Join(",", appliedVeznedars));
         }
     }
 

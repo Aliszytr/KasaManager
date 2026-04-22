@@ -99,6 +99,7 @@ public sealed partial class KasaDraftService
             ["toplam_stopaj"] = sabahCalc.ToplamStopaj.ToString("N2", CultureInfo.InvariantCulture),
 
             ["vergi_kasa_bakiye_toplam"] = vergiKasa.ToString("N2", CultureInfo.InvariantCulture),
+            ["vergi_kasa"] = vergiKasa.ToString("N2", CultureInfo.InvariantCulture),
             ["vergiden_gelen"] = vergiGelenKasa.ToString("N2", CultureInfo.InvariantCulture),
             ["kayden_tahsilat"] = kaydenTahsilat.ToString("N2", CultureInfo.InvariantCulture),
             ["kayden_harc"] = kaydenHarc.ToString("N2", CultureInfo.InvariantCulture),
@@ -121,6 +122,11 @@ public sealed partial class KasaDraftService
             ["banka_goturulecek_nakit"] = sabahCalc.BankaGoturulecekNakit.ToString("N2", CultureInfo.InvariantCulture),
             ["bozuk_para"] = bozukPara.ToString("N2", CultureInfo.InvariantCulture),
             ["bozuk_para_haric_kasa"] = sabahCalc.BozukParaHaricKasa.ToString("N2", CultureInfo.InvariantCulture),
+
+            ["LEGACY_genel_kasa"] = sabahCalc.GenelKasa.ToString("N2", CultureInfo.InvariantCulture),
+            ["LEGACY_bankaya_yatirilacak_tahsilat"] = sabahCalc.BankayaYatirilacakNakit.ToString("N2", CultureInfo.InvariantCulture),
+            ["LEGACY_bankaya_yatirilacak_harc"] = sabahCalc.BankayaYatirilacakHarc.ToString("N2", CultureInfo.InvariantCulture),
+            ["LEGACY_bozuk_para_haric_kasa"] = sabahCalc.BozukParaHaricKasa.ToString("N2", CultureInfo.InvariantCulture),
 
             ["masraf"] = masrafReddiyat.Masraf.ToString("N2", CultureInfo.InvariantCulture),
             ["masraf_reddiyat"] = masrafReddiyat.Reddiyat.ToString("N2", CultureInfo.InvariantCulture),
@@ -246,6 +252,7 @@ public sealed partial class KasaDraftService
             ["toplam_stopaj"] = aksamCalc.ToplamStopaj.ToString("N2", CultureInfo.InvariantCulture),
 
             ["vergi_kasa_bakiye_toplam"] = vergiKasa.ToString("N2", CultureInfo.InvariantCulture),
+            ["vergi_kasa"] = vergiKasa.ToString("N2", CultureInfo.InvariantCulture),
             ["vergiden_gelen"] = vergiGelenKasa.ToString("N2", CultureInfo.InvariantCulture),
             ["kayden_tahsilat"] = kaydenTahsilat.ToString("N2", CultureInfo.InvariantCulture),
             ["kayden_harc"] = kaydenHarc.ToString("N2", CultureInfo.InvariantCulture),
@@ -276,6 +283,11 @@ public sealed partial class KasaDraftService
             ["bozuk_para_haric_kasa"] = aksamCalc.BozukParaHaricKasa.ToString("N2", CultureInfo.InvariantCulture),
 
             ["kasadaki_anlik_nakit"] = aksamCalc.GenelKasa.ToString("N2", CultureInfo.InvariantCulture),
+
+            ["LEGACY_genel_kasa"] = aksamCalc.GenelKasa.ToString("N2", CultureInfo.InvariantCulture),
+            ["LEGACY_bankaya_yatirilacak_tahsilat"] = aksamCalc.BankayaYatirilacakNakit.ToString("N2", CultureInfo.InvariantCulture),
+            ["LEGACY_bankaya_yatirilacak_harc"] = aksamCalc.BankayaYatirilacakHarc.ToString("N2", CultureInfo.InvariantCulture),
+            ["LEGACY_bozuk_para_haric_kasa"] = aksamCalc.BozukParaHaricKasa.ToString("N2", CultureInfo.InvariantCulture),
 
             ["masraf"] = masrafReddiyat.Masraf.ToString("N2", CultureInfo.InvariantCulture),
             ["masraf_reddiyat"] = masrafReddiyat.Reddiyat.ToString("N2", CultureInfo.InvariantCulture),

@@ -36,22 +36,25 @@ public sealed class KasaRaporSnapshotService : IKasaRaporSnapshotService
 
             await using var tx = await _db.Database.BeginTransactionAsync(ct);
 
-            var existing = await _db.KasaRaporSnapshots
+            var existingList = await _db.KasaRaporSnapshots
                 .Include(x => x.Rows)
                 .Include(x => x.Inputs)
                 .Include(x => x.Results)
-                .FirstOrDefaultAsync(
-                    x => x.RaporTarihi == snapshot.RaporTarihi && x.RaporTuru == snapshot.RaporTuru,
-                    ct
-                );
+                .Where(
+                    x => x.RaporTarihi == snapshot.RaporTarihi && x.RaporTuru == snapshot.RaporTuru && !x.IsSuperseded
+                )
+                .ToListAsync(ct);
 
-            if (existing != null)
+            foreach (var existing in existingList)
             {
                 // R6-AUDIT: Immutable model kuralı gereğince artık eski kaydı silmiyoruz.
                 // Üzerine yazma isteği yeni bir snapshot versiyonudur. Eskisini Superseded yapıyoruz.
                 existing.IsSuperseded = true;
                 _db.KasaRaporSnapshots.Update(existing);
+            }
 
+            if (existingList.Count > 0)
+            {
                 try
                 {
                     await _db.SaveChangesAsync(ct);
@@ -73,7 +76,7 @@ public sealed class KasaRaporSnapshotService : IKasaRaporSnapshotService
                 .Include(x => x.Inputs)
                 .Include(x => x.Results)
                 .SingleAsync(
-                    x => x.RaporTarihi == snapshot.RaporTarihi && x.RaporTuru == snapshot.RaporTuru,
+                    x => x.RaporTarihi == snapshot.RaporTarihi && x.RaporTuru == snapshot.RaporTuru && !x.IsSuperseded,
                     ct
                 );
         });

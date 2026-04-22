@@ -202,6 +202,7 @@ namespace KasaManager.Infrastructure.Migrations
                         .HasDatabaseName("IX_DailyCalcResults_PrevId");
 
                     b.HasIndex("ForDate", "KasaTuru")
+                        .IsUnique()
                         .HasDatabaseName("IX_DailyCalcResults_Date_Type");
 
                     b.ToTable("DailyCalculationResults", (string)null);

@@ -235,12 +235,32 @@
                         </h5>
                     </div>
                     <div class="card-body">
-                        <!-- Stopaj Durumu Mesajı -->
-                        @if (!string.IsNullOrEmpty(Model.StopajStatus))
+                        <!-- Stopaj Durumu Mesajı (Commit 4: Enum tabanlı renk mapping) -->
+                        @{
+                            var stopajAlertClass = Model.StopajDurum switch
+                            {
+                                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.Ok => "alert-success",
+                                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.OkWithNote => "alert-info",
+                                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.WarningPending => "alert-warning",
+                                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.Error => "alert-danger",
+                                _ => "alert-info"
+                            };
+                            var stopajIcon = Model.StopajDurum switch
+                            {
+                                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.Ok => "fas fa-check-circle",
+                                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.OkWithNote => "fas fa-info-circle",
+                                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.WarningPending => "fas fa-exclamation-triangle",
+                                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.Error => "fas fa-times-circle",
+                                _ => "fas fa-info-circle"
+                            };
+                            var stopajMesaj = !string.IsNullOrEmpty(Model.StopajMesaj) ? Model.StopajMesaj : Model.StopajStatus;
+                        }
+                        @if (!string.IsNullOrEmpty(stopajMesaj))
                         {
-                            <div class="alert @(Model.StopajStatus.Contains("✅") ? "alert-success" : Model.StopajStatus.Contains("⚠️") ? "alert-warning" : "alert-info") mb-4">
-                                <div style="white-space: pre-line; line-height: 1.8; font-size: 1.05rem;">
-                                    @Model.StopajStatus
+                            <div class="alert @stopajAlertClass mb-4">
+                                <div class="d-flex align-items-start gap-2" style="line-height: 1.8; font-size: 1.05rem;">
+                                    <i class="@stopajIcon mt-1" style="font-size: 1.2rem;"></i>
+                                    <div style="white-space: pre-line;">@stopajMesaj</div>
                                 </div>
                             </div>
                         }
@@ -375,6 +395,64 @@
                             </div>
                         </div>
                         
+                        <!-- İptal Edilen İşlemler (Commit 4) -->
+                        @if (Model.CancelledPairs.Count > 0)
+                        {
+                            <div class="mb-4">
+                                <div class="d-flex align-items-center justify-content-between mb-2">
+                                    <h6 class="mb-0">
+                                        <i class="fas fa-ban me-2 text-secondary"></i>
+                                        İptal Edilen İşlemler
+                                        <span class="badge bg-secondary ms-1">@Model.CancelledPairs.Count çift</span>
+                                        <span class="badge bg-light text-dark ms-1">@Model.CancelledRecordsTotal.ToString("N2") ₺</span>
+                                    </h6>
+                                    <button class="btn btn-sm btn-outline-secondary" type="button"
+                                            data-bs-toggle="collapse" data-bs-target="#cancelledPairsTable"
+                                            aria-expanded="false" aria-controls="cancelledPairsTable">
+                                        <i class="fas fa-chevron-down me-1"></i>Detay
+                                    </button>
+                                </div>
+                                <div class="alert alert-secondary py-2 mb-2">
+                                    <small>
+                                        <i class="fas fa-info-circle me-1"></i>
+                                        Aşağıdaki kayıtlar iptal tespiti algoritması tarafından eşleştirilmiştir.
+                                        Bu çiftler "Fazla Giren Kayıtlar" tablosunda <strong>gösterilmez</strong> ve tutar dengesini etkilemez.
+                                    </small>
+                                </div>
+                                <div class="collapse" id="cancelledPairsTable">
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-hover">
+                                            <thead class="table-secondary">
+                                                <tr>
+                                                    <th>#</th>
+                                                    <th>Tür</th>
+                                                    <th class="text-end">Tutar</th>
+                                                    <th>Orijinal Tarih</th>
+                                                    <th>İptal Tarihi</th>
+                                                    <th>Açıklama</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @{ int cancelIdx = 0; }
+                                                @foreach (var pair in Model.CancelledPairs)
+                                                {
+                                                    cancelIdx++;
+                                                    <tr>
+                                                        <td class="text-muted">@cancelIdx</td>
+                                                        <td><span class="badge bg-secondary">@(pair.Tur ?? "-")</span></td>
+                                                        <td class="text-end fw-bold">@pair.Tutar.ToString("N2") ₺</td>
+                                                        <td>@pair.OrijinalTarih.ToString("dd.MM.yyyy HH:mm")</td>
+                                                        <td>@pair.IptalTarihi.ToString("dd.MM.yyyy HH:mm")</td>
+                                                        <td class="small text-muted">@pair.Aciklama</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+
                         <!-- Fazla Kayıtlar (Banka'da var, Online'da yok) -->
                         @if (Model.SurplusBankaRecords.Any())
                         {
@@ -1036,7 +1114,8 @@
 
             try {
                 const res = await fetch(`@Url.Action("UserDecisions", "Comparison")?type=${comparisonType}`);
-                const data = await res.json();
+                if (!res.ok) throw new Error('Sunucu hatası: ' + res.status);
+                const data = await res.text().then(t => (t && t.trim()) ? JSON.parse(t) : []);
 
                 document.getElementById('decisionsLoading').style.display = 'none';
 
@@ -1182,7 +1261,8 @@
         (async function() {
             try {
                 const res = await fetch(`@Url.Action("UserDecisions", "Comparison")?type=${comparisonType}`);
-                const data = await res.json();
+                if (!res.ok) throw new Error('Sunucu hatası: ' + res.status);
+                const data = await res.text().then(t => (t && t.trim()) ? JSON.parse(t) : []);
                 savedDecisionCount = data ? data.length : 0;
                 updateDecisionBadge();
             } catch(e) {}

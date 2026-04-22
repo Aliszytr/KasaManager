@@ -50,11 +50,10 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
 builder.Services.AddAuthorization();
 
 // Performans: Response sıkıştırma (JSON, HTML, CSS, JS)
-// Geçici teşhis için kapatıldı:
-// builder.Services.AddResponseCompression(options =>
-// {
-//     options.EnableForHttps = true;
-// });
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+});
 
 // ✅ HttpContextAccessor (FormulaDesigner için gerekli)
 builder.Services.AddHttpContextAccessor();
@@ -107,7 +106,7 @@ builder.Services.AddScoped<IKasaReportDateRulesService, KasaReportDateRulesServi
 // P1(C): Typed config — env-var yerine IOptions pattern
 builder.Services.Configure<KasaManager.Domain.Settings.UstRaporSourceOptions>(
     builder.Configuration.GetSection(KasaManager.Domain.Settings.UstRaporSourceOptions.SectionName));
-builder.Services.AddScoped<ICarryoverResolver, CarryoverResolver>();
+builder.Services.AddScoped<ICarryoverResolver, KasaManager.Infrastructure.Services.CarryoverResolver>();
 builder.Services.AddScoped<IKasaDraftService, KasaDraftService>();
 builder.Services.AddScoped<KasaManager.Application.Abstractions.IEksikFazlaProjectionEngine, EksikFazlaProjectionEngine>();
 builder.Services.AddScoped<IAlertService, AlertService>(); // GÖREV 3: IAlertService DI kaydı
@@ -198,8 +197,7 @@ else
     app.UseHsts();
 }
 
-// Geçici teşhis için kapatıldı:
-// app.UseResponseCompression();
+app.UseResponseCompression();
 
 // Kurumsal ağda HTTPS sertifikası olmayabilir — Production'da sadece HTTP kullan
 if (app.Environment.IsDevelopment())

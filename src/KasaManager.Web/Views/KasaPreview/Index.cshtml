@@ -139,6 +139,7 @@
     </div>
 }
 
+
 <!-- Draft Cache Bilgilendirme Banner -->
 @if (ViewData["DraftInfo"] is string draftInfo && !string.IsNullOrEmpty(draftInfo))
 {
@@ -269,6 +270,7 @@
                         <i class="fas fa-calendar-day me-1"></i>Rapor Tarihi
                     </label>
                     <input type="date" class="kasa-form-input"
+                           asp-format="{0:yyyy-MM-dd}"
                            asp-for="SelectedDate" />
                 </div>
 
@@ -279,6 +281,7 @@
                             <i class="fas fa-calendar-alt me-1 text-success"></i>Dönem Başlangıcı
                         </label>
                         <input type="date" class="kasa-form-input"
+                               asp-format="{0:yyyy-MM-dd}"
                                asp-for="GenelKasaStartDate" />
                         @if (Model.DefaultGenelKasaBaslangicTarihiSeed.HasValue)
                         {
@@ -291,7 +294,7 @@
                         <label class="kasa-form-label">
                             <i class="fas fa-calendar-check me-1 text-warning"></i>Dönem Bitişi
                         </label>
-                        <input type="date" class="kasa-form-input"
+                        <input asp-format="{0:yyyy-MM-dd}" type="date" class="kasa-form-input"
                                asp-for="GenelKasaEndDate" />
                         <small class="text-muted d-block mt-1" style="font-size:0.75rem;">
                             <i class="fas fa-info-circle"></i> Rapor tarihi ile aynı bırakılabilir
@@ -779,6 +782,60 @@
                         <i class="fas fa-calculator"></i> <text>Hesapla</text>
                     }
                 </button>
+                @if (Model.HasResults)
+                {
+                    <button type="button" class="kasa-btn kasa-btn-primary" id="btnSaveReport">
+                        <i class="fas fa-save"></i> <text>Kaydet</text>
+                    </button>
+                    <script>
+                        document.addEventListener('DOMContentLoaded', function() {
+                            var btnSave = document.getElementById('btnSaveReport');
+                            if (btnSave) {
+                                btnSave.addEventListener('click', async function(e) {
+                                    e.preventDefault();
+                                    var form = this.closest('form');
+                                    var formData = new FormData(form);
+                                    
+                                    btnSave.disabled = true;
+                                    btnSave.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Kaydediliyor...';
+                                    
+                                    try {
+                                        const response = await fetch('@Url.Action("SaveReport", "KasaPreview")', {
+                                            method: 'POST',
+                                            body: formData
+                                        });
+                                        if (!response.ok) throw new Error('Sunucu hatası: ' + response.status);
+                                        const txt = await response.text();
+                                        const result = (txt && txt.trim()) ? JSON.parse(txt) : { success: false, message: 'Sunucudan boş yanıt' };
+                                        
+                                        if (result.success) {
+                                            if (typeof showToast === 'function') {
+                                                showToast('success', result.message || 'Kayıt başarılı');
+                                            } else {
+                                                alert('✅ ' + (result.message || 'Kayıt başarılı'));
+                                            }
+                                        } else {
+                                            if (typeof showToast === 'function') {
+                                                showToast('error', result.message || 'Kayıt başarısız');
+                                            } else {
+                                                alert('❌ ' + (result.message || 'Kayıt başarısız'));
+                                            }
+                                        }
+                                    } catch (err) {
+                                        if (typeof showToast === 'function') {
+                                            showToast('error', 'Bağlantı hatası: ' + err.message);
+                                        } else {
+                                            alert('❌ Bağlantı hatası: ' + err.message);
+                                        }
+                                    } finally {
+                                        btnSave.disabled = false;
+                                        btnSave.innerHTML = '<i class="fas fa-save"></i> <text>Kaydet</text>';
+                                    }
+                                });
+                            }
+                        });
+                    </script>
+                }
                 @if (ViewData["DraftRestored"] as bool? == true)
                 {
                     <div class="alert" style="background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.2); border-radius: var(--radius-md); padding: 8px 14px; margin: 0; display: flex; align-items: center; gap: 8px;">
@@ -963,8 +1020,11 @@
         //   Fark ≈ Stopaj   → ✅ OK + bilgi notu (virman yapılacak)
         //   Fark ≠ Stopaj   → ❌ Stopaj dışı uyuşmazlık
         // ════════════════════════════════════════════════════════════════
+        <!-- TODO: İptal düşüşü ileride Pool seviyesine taşınmalı (tek kaynak prensibi) -->
         var sk_reddiyat = ResultValRaw("online_reddiyat");
-        var sk_bankaCikan = ResultValRaw("bankadan_cikan_tahsilat");
+        var sk_bankaCikanHam = ResultValRaw("bankadan_cikan_tahsilat");
+        var sk_iptalDusus = Model.IptalEdilenCikisTutar;  // Commit 5: İptal edilen işlem toplamı
+        var sk_bankaCikan = sk_bankaCikanHam - sk_iptalDusus;  // Düzeltilmiş banka çıkış
         var sk_toplamStopaj = ResultValRaw("toplam_stopaj");
         decimal sk_fark = sk_reddiyat - sk_bankaCikan;          // ham fark
         bool sk_farkSifir = Math.Abs(sk_fark) < 0.01m;          // fark ≈ 0
@@ -1468,6 +1528,18 @@
             </div>
         </div>
 
+        @if (sk_iptalDusus > 0.01m)
+        {
+            <div class="row g-3 mb-1">
+                <div class="col-12">
+                    <div class="text-muted small" style="padding: 2px 8px; font-size: 10px;">
+                        <i class="fas fa-info-circle me-1"></i>
+                        Banka çıkışından @sk_iptalDusus.ToString("N2", trCulture) ₺ iptal edilen işlem düşüldü.
+                    </div>
+                </div>
+            </div>
+        }
+
         <!-- ═══════════════════════════════════════════════════════════════ -->
         <!-- ROW 2.5: Çeşitli Nedenlerle Bankadan Çıkamayan Tahsilat       -->
         <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -1519,7 +1591,7 @@
                                 </div>
                             </div>
                             @{
-                                var virmanTahsilat = ResultValRaw("banka_virman_tahsilat");
+                                var virmanTahsilat = ResultValRaw("banka_virman_tahsilat") - Model.IptalEdilenVirmanTutar; // Commit 5.1: İptal edilen virman düşüldü
                                 var stopajVal = ResultValRaw("toplam_stopaj");
                             }
                             @if (stopajVal != 0)
@@ -2550,7 +2622,7 @@
                         <input type="hidden" name="RptDevredenBanka" value="@InvExp(ResultValRaw("banka_devreden_tahsilat"))" />
                         <input type="hidden" name="RptDevredecekBanka" value="@InvExp(ResultValRaw("banka_yarina_devredecek_tahsilat"))" />
                         <input type="hidden" name="RptVergidenGelen" value="@InvExp(ResultValRaw("vergiden_gelen"))" />
-                        <input type="hidden" name="RptVergiKasa" value="@InvExp(Model.VergiKasaBakiyeToplam)" />
+                        <input type="hidden" name="VergiKasaBakiyeToplam" value="@InvExp(Model.VergiKasaBakiyeToplam)" />
                         <input type="hidden" name="RptVergideBiriken" value="@InvExp(Model.VergideBirikenKasa ?? 0m)" />
                         <input type="hidden" name="RptVergiCalisanlari" value="@(string.Join(",", Model.VergiKasaVeznedarlar ?? new()))" />
                         <input type="hidden" name="RptEftIade" value="@InvExp(ResultValRaw("eft_otomatik_iade"))" />
@@ -2585,7 +2657,7 @@
                         <input type="hidden" name="RptDevredenBanka" value="@InvExp(ResultValRaw("banka_devreden_tahsilat"))" />
                         <input type="hidden" name="RptDevredecekBanka" value="@InvExp(ResultValRaw("banka_yarina_devredecek_tahsilat"))" />
                         <input type="hidden" name="RptVergidenGelen" value="@InvExp(ResultValRaw("vergiden_gelen"))" />
-                        <input type="hidden" name="RptVergiKasa" value="@InvExp(Model.VergiKasaBakiyeToplam)" />
+                        <input type="hidden" name="VergiKasaBakiyeToplam" value="@InvExp(Model.VergiKasaBakiyeToplam)" />
                         <input type="hidden" name="RptVergideBiriken" value="@InvExp(Model.VergideBirikenKasa ?? 0m)" />
                         <input type="hidden" name="RptEfGuneT" value="@InvExp(Model.ToplamFarkTahsilat != 0 ? Model.ToplamFarkTahsilat : (Model.GuneAitEksikFazlaTahsilat ?? 0m))" />
                         <input type="hidden" name="RptEfDundenT" value="@InvExp(Model.DundenEksikFazlaTahsilat ?? 0m)" />
@@ -2661,7 +2733,7 @@
                         <input type="hidden" name="RptDevredenBanka" value="@InvExp(ResultValRaw("banka_devreden_tahsilat"))" />
                         <input type="hidden" name="RptDevredecekBanka" value="@InvExp(ResultValRaw("banka_yarina_devredecek_tahsilat"))" />
                         <input type="hidden" name="RptVergidenGelen" value="@InvExp(ResultValRaw("vergiden_gelen"))" />
-                        <input type="hidden" name="RptVergiKasa" value="@InvExp(Model.VergiKasaBakiyeToplam)" />
+                        <input type="hidden" name="VergiKasaBakiyeToplam" value="@InvExp(Model.VergiKasaBakiyeToplam)" />
                         <input type="hidden" name="RptVergideBiriken" value="@InvExp(Model.VergideBirikenKasa ?? 0m)" />
                         <input type="hidden" name="RptVergiCalisanlari" value="@(string.Join(",", Model.VergiKasaVeznedarlar ?? new()))" />
                         <input type="hidden" name="RptEftIade" value="@InvExp(ResultValRaw("eft_otomatik_iade"))" />
@@ -2702,7 +2774,7 @@
                         <input type="hidden" name="RptDevredenBanka" value="@InvExp(ResultValRaw("banka_devreden_tahsilat"))" />
                         <input type="hidden" name="RptDevredecekBanka" value="@InvExp(ResultValRaw("banka_yarina_devredecek_tahsilat"))" />
                         <input type="hidden" name="RptVergidenGelen" value="@InvExp(ResultValRaw("vergiden_gelen"))" />
-                        <input type="hidden" name="RptVergiKasa" value="@InvExp(Model.VergiKasaBakiyeToplam)" />
+                        <input type="hidden" name="VergiKasaBakiyeToplam" value="@InvExp(Model.VergiKasaBakiyeToplam)" />
                         <input type="hidden" name="RptVergideBiriken" value="@InvExp(Model.VergideBirikenKasa ?? 0m)" />
                         <input type="hidden" name="RptVergiCalisanlari" value="@(string.Join(",", Model.VergiKasaVeznedarlar ?? new()))" />
                         <input type="hidden" name="RptEftIade" value="@InvExp(ResultValRaw("eft_otomatik_iade"))" />
@@ -2767,7 +2839,7 @@
                 <input type="hidden" name="RptDevredecekBanka" value="@Inv(ResultValRaw("banka_yarina_devredecek_tahsilat"))" />
                 @* Vergi *@
                 <input type="hidden" name="RptVergidenGelen" value="@Inv(ResultValRaw("vergiden_gelen"))" />
-                <input type="hidden" name="RptVergiKasa" value="@Inv(Model.VergiKasaBakiyeToplam)" />
+                <input type="hidden" name="VergiKasaBakiyeToplam" value="@Inv(Model.VergiKasaBakiyeToplam)" />
                 <input type="hidden" name="RptVergideBiriken" value="@Inv(Model.VergideBirikenKasa ?? 0m)" />
                 <input type="hidden" name="RptVergiCalisanlari" value="@(string.Join(",", Model.VergiKasaVeznedarlar ?? new()))" />
                 @* Beklenen Girişler *@
@@ -2806,7 +2878,7 @@
                 <input type="hidden" name="RptDevredecekBanka" value="@Inv(ResultValRaw("banka_yarina_devredecek_tahsilat"))" />
                 @* Vergi *@
                 <input type="hidden" name="RptVergidenGelen" value="@Inv(ResultValRaw("vergiden_gelen"))" />
-                <input type="hidden" name="RptVergiKasa" value="@Inv(Model.VergiKasaBakiyeToplam)" />
+                <input type="hidden" name="VergiKasaBakiyeToplam" value="@Inv(Model.VergiKasaBakiyeToplam)" />
                 <input type="hidden" name="RptVergideBiriken" value="@Inv(Model.VergideBirikenKasa ?? 0m)" />
                 @* Eksik/Fazla *@
                 <input type="hidden" name="RptEfGuneT" value="@Inv(Model.ToplamFarkTahsilat != 0 ? Model.ToplamFarkTahsilat : (Model.GuneAitEksikFazlaTahsilat ?? 0m))" />
@@ -3307,7 +3379,7 @@
             <input type="hidden" name="RptDevredenBanka" class="save-rpt-field" value="" />
             <input type="hidden" name="RptDevredecekBanka" class="save-rpt-field" value="" />
             <input type="hidden" name="RptVergidenGelen" class="save-rpt-field" value="" />
-            <input type="hidden" name="RptVergiKasa" class="save-rpt-field" value="" />
+            <input type="hidden" name="VergiKasaBakiyeToplam" class="save-rpt-field" value="" />
             <input type="hidden" name="RptVergideBiriken" class="save-rpt-field" value="" />
             <input type="hidden" name="RptVergiCalisanlari" class="save-rpt-field" value="" />
             <input type="hidden" name="RptEftIade" class="save-rpt-field" value="" />
@@ -3510,13 +3582,21 @@
 
         var fd = new FormData(form);
         fetch(form.action, { method: 'POST', body: fd })
-            .then(function(r) { return r.json(); })
+            .then(function(r) {
+                if (!r.ok) throw new Error('Sunucu hatası: ' + r.status);
+                return r.text().then(function(t) {
+                    if (!t || t.trim() === '') return { success: false, message: 'Sunucudan boş yanıt' };
+                    try { return JSON.parse(t); }
+                    catch(e) { throw new Error('Yanıt işlenemedi'); }
+                });
+            })
             .then(function(data) {
+                var isOk = data.ok || data.success;
                 if (data.needsConfirmation) {
                     // Onay gerekli — modalı göster
                     document.getElementById('saveReportModal').style.display = 'none';
                     showOverwriteConfirm(data);
-                } else if (data.ok) {
+                } else if (isOk) {
                     // Başarılı kayıt/güncelleme
                     document.getElementById('saveReportModal').style.display = 'none';
                     showToast(data.message, 'success');
@@ -3635,7 +3715,14 @@
         if (searchTextInput && searchTextInput.value.trim()) url += '&search=' + encodeURIComponent(searchTextInput.value.trim());
 
         fetch(url)
-            .then(function(r) { return r.json(); })
+            .then(function(r) {
+                if (!r.ok) throw new Error('Sunucu hatası: ' + r.status);
+                return r.text().then(function(t) {
+                    if (!t || t.trim() === '') return { items: [], totalCount: 0 };
+                    try { return JSON.parse(t); }
+                    catch(e) { throw new Error('Yanıt işlenemedi'); }
+                });
+            })
             .then(function(data) {
                 if (countBadge) countBadge.textContent = data.totalCount + ' rapor';
 
@@ -3737,7 +3824,14 @@
             deleteBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Siliniyor...';
 
             fetch('/KasaPreview/DeleteSnapshot', { method: 'POST', body: fd })
-                .then(function(r) { return r.json(); })
+                .then(function(r) {
+                    if (!r.ok) throw new Error('Sunucu hatası: ' + r.status);
+                    return r.text().then(function(t) {
+                        if (!t || t.trim() === '') return { ok: false, message: 'Sunucudan boş yanıt' };
+                        try { return JSON.parse(t); }
+                        catch(e) { throw new Error('Yanıt işlenemedi'); }
+                    });
+                })
                 .then(function(data) {
                     showToast(data.message, data.ok ? 'success' : 'error');
                     if (data.ok) {
@@ -3785,7 +3879,14 @@
         fd.append('__RequestVerificationToken', token);
 
         fetch('/KasaPreview/DeleteSnapshot', { method: 'POST', body: fd })
-            .then(function(r) { return r.json(); })
+            .then(function(r) {
+                if (!r.ok) throw new Error('Sunucu hatası: ' + r.status);
+                return r.text().then(function(t) {
+                    if (!t || t.trim() === '') return { ok: false, message: 'Sunucudan boş yanıt' };
+                    try { return JSON.parse(t); }
+                    catch(e) { throw new Error('Yanıt işlenemedi'); }
+                });
+            })
             .then(function(data) {
                 showToast(data.message, data.ok ? 'success' : 'error');
                 if (data.ok) {
@@ -3826,7 +3927,14 @@
             headers: { 'RequestVerificationToken': token },
             body: new URLSearchParams({ id: snapshotId, name: newName, notes: newNotes })
         })
-        .then(function(r) { return r.json(); })
+        .then(function(r) {
+            if (!r.ok) throw new Error('Sunucu hatası: ' + r.status);
+            return r.text().then(function(t) {
+                if (!t || t.trim() === '') return { success: false, message: 'Sunucudan boş yanıt' };
+                try { return JSON.parse(t); }
+                catch(e) { throw new Error('Yanıt işlenemedi'); }
+            });
+        })
         .then(function(data) {
             showToast(data.message || 'Güncellendi', data.success ? 'success' : 'error');
             if (data.success) loadReports(); // Panel'i yenile
@@ -4110,3 +4218,4 @@
     </div>
 </div>
 }
+

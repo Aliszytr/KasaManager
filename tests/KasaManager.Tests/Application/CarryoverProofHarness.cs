@@ -7,8 +7,11 @@ using Xunit;
 using Xunit.Abstractions;
 using Moq;
 using Microsoft.Extensions.Logging;
-using KasaManager.Application.Services;
 using KasaManager.Application.Pipeline;
+using KasaManager.Application.Services;
+using KasaManager.Infrastructure.Services;
+using KasaManager.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using KasaManager.Application.Abstractions;
 using KasaManager.Domain.Calculation;
 using KasaManager.Domain.FormulaEngine;
@@ -53,12 +56,17 @@ public class CarryoverProofHarness
         defaultsMock.Setup(s => s.GetOrCreateAsync(It.IsAny<CancellationToken>())).ReturnsAsync(settings);
 
         // 3. Instantiate Real Services
+        var options = new DbContextOptionsBuilder<KasaManagerDbContext>()
+            .UseInMemoryDatabase(databaseName: "CarryoverProofDb_" + Guid.NewGuid().ToString())
+            .Options;
+        var dbContext = new KasaManagerDbContext(options);
+
         var resolverLogger = LoggerFactory.Create(builder => { builder.AddConsole(); builder.SetMinimumLevel(LogLevel.Debug); }).CreateLogger<CarryoverResolver>();
-        var resolver = new CarryoverResolver(defaultsMock.Object, resolverLogger);
+        var resolver = new CarryoverResolver(defaultsMock.Object, dbContext, resolverLogger);
         
         // UnifiedDataPipeline uses ICarryoverResolver
         var pipeline = new UnifiedDataPipeline(draftMock.Object, defaultsMock.Object, resolver);
-        var engine = new FormulaEngineService();
+        var engine = new KasaManager.Application.Services.FormulaEngineService();
 
         // Scenario 1: SeedOverride -> 50,000 TL
         _output.WriteLine("");
@@ -101,7 +109,7 @@ public class CarryoverProofHarness
                  .ReturnsAsync(Result<GenelKasaR10EngineInputBundle>.Success(fakeBundle));
         draftMock.Setup(x => x.BuildAsync(It.IsAny<DateOnly>(), It.IsAny<string>(), It.IsAny<KasaDraftFinalizeInputs?>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync(Result<KasaDraftBundle>.Success(new KasaDraftBundle()));
-        draftMock.Setup(x => x.BuildUnifiedPoolAsync(It.IsAny<DateOnly>(), It.IsAny<string>(), It.IsAny<KasaDraftFinalizeInputs?>(), It.IsAny<DateOnly?>(), It.IsAny<DateOnly?>(), It.IsAny<bool>(), It.IsAny<string?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+        draftMock.Setup(x => x.BuildUnifiedPoolAsync(It.IsAny<DateOnly>(), It.IsAny<string>(), It.IsAny<KasaDraftFinalizeInputs?>(), It.IsAny<DateOnly?>(), It.IsAny<DateOnly?>(), It.IsAny<bool>(), It.IsAny<string?>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync(Result<IReadOnlyList<UnifiedPoolEntry>>.Success(new List<UnifiedPoolEntry>()));
         
         var poolResult = await pipeline.ExecuteAsync(request, CancellationToken.None);

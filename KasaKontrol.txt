@@ -1,0 +1,140 @@
+Rapor oluşturuldu. İşte araştırmanın özeti:
+
+Bulgular
+İki proje arasında Harç kontrol ve karşılaştırma modüllerinin core servisleri birebir aynıdır — BankaHesapKontrolService, ComparisonService, ve FormulaTemplateSeeder dosyaları aynı harç mantığını kullanıyor.
+
+Ancak 5 kritik altyapı farkı tespit ettim:
+
+En Önemli Farklar:
+BankaHarcReader.cs — Excel parse metodu TryParseDecimal → TryParseFromJson olarak değişmiş. Bu, Türkçe formatlı Excel dosyalarında harç tutarlarının yanlış parse edilmesine yol açabilir.
+
+KasaDraftService.ReadersHarc.cs — MasrafveReddiyat dosyasındaki tip filtresi daraltılmış: HARCAMA kelimesi masraf filtresinden çıkarılmış, ve "diğer" kategorisi artık sadece KAYDEN tipi satırları alıyor. Bu, bazı satırların hesaplamaya dahil edilmemesine neden olabilir.
+
+Pool Veri Kaynağı — Snapshot'tan canlı (Live) Excel okumaya geçilmiş. Genel Kasa için toplamTahsilat artık farklı bir kaynaktan geliyor.
+
+DecimalParsingHelper — Tüm Excel okuyucularda parse metotları ayrıştırılmış (Json vs Turkish).
+
+Controller — Snapshot bağımlılığı kaldırılmış, Auto-Provision mekanizması eklenmiş.
+
+Detaylı rapor artifact'te yer alıyor. İncelemenizi ve hangi noktada sorun yaşadığınızı belirtmenizi bekliyorum.
+
+Harc Karsilastirma Raporu
+
+Kasa Kontrol & Karşılaştırma Modülleri — Harç Fark Analiz Raporu
+Tarih: 2026-04-08
+Karşılaştırma: KasaYonetim/ (Eski) vs src/ (Yeni — KasaYonetim_New)
+
+Yönetici Özeti
+IMPORTANT
+
+Sonuç: Harç, Kontrol ve Karşılaştırma modüllerinin core servis katmanları birebir aynıdır — BankaHesapKontrolService.cs, BankaHesapKontrolService.Helpers.cs, ComparisonService.cs ve FormulaTemplateSeeder.cs dosyaları iki projede de aynı harç formül ve kontrol mantığını kullanmaktadır. Ancak projeler arasında 5 kritik altyapı farkı tespit edilmiştir; bunlar dolaylı yoldan harç hesaplamasını etkileyebilir.
+
+1. Birebir Aynı Olan Modüller (Harç Dahil)
+Aşağıdaki dosyalar her iki projede de satır satır aynıdır — harç mantığı korunmuştur:
+
+Dosya	Durum	Harç İlgisi
+BankaHesapKontrolService.cs
+✅ Aynı	Harcama-Harç karşılaştırma çağrısı (satır 68-81)
+BankaHesapKontrolService.Helpers.cs
+✅ Aynı	BankaHesapTuru.Harc sınıflandırma, fingerprint
+ComparisonService.cs
+✅ Aynı (mantık)	BankaHarc.xlsx ↔ onlineHarc.xlsx karşılaştırma
+FormulaTemplateSeeder.cs
+✅ Aynı	bankaya_yatirilacak_harc, muhasebe_fark_harc formülleri
+NOTE
+
+Harç karşılaştırma mantığı (CompareHarcamaHarcAsync) ve HesapKontrol harç kayıt oluşturma (ConvertToKayitlar ile BankaHesapTuru.Harc) iki projede de aktif ve çalışır durumdadır.
+
+2. Tespit Edilen Farklılıklar
+FARK 1: DecimalParsingHelper — Excel Parse Yöntemi Değişikliği
+Özellik	Eski (KasaYonetim/)	Yeni (src/)
+Metot adı	TryParseDecimal()	TryParseFromTurkish() + TryParseFromJson()
+Eski metot	Aktif	[Obsolete] işaretli, TryParseFromTurkish'e yönleniyor
+Borç/Alacak	"BORÇ", "BORC", "ALACAK"	+ "B", "A" kısaltmaları destekleniyor
+Etki Alanı — Harç Açısından:
+
+ComparisonService.cs satır 147: Eski → TryParseDecimal, Yeni → TryParseFromTurkish
+ComparisonService.Reddiyat.cs: Tüm TryParseDecimal → TryParseFromTurkish
+BankaHarcReader.cs: TryParseDecimal → TryParseFromJson (Excel okuma)
+KasaDraftService.ReadersHarc.cs: TryParseDecimal → TryParseFromTurkish
+WARNING
+
+Potansiyel Risk: BankaHarcReader.cs'de eski TryParseDecimal (TR-first) yerine yeni TryParseFromJson (Invariant-first) kullanılıyor. Eğer Excel dosyasındaki harç tutarları Türkçe formatında (ör: 13.668,90) ise, TryParseFromJson bunu önce Invariant (nokta = ondalık) olarak deneyecek ve 13668.90 yerine 13.66890 olarak parse edebilir. Ancak TryParseFromJson metodu Invariant başarısız olursa TR'ye fallback yapmaktadır, bu yüzden çoğu durumda doğru çalışır.
+
+FARK 2: KasaDraftService.ReadersHarc.cs — MasrafveReddiyat Tip Filtresi Değişikliği
+diff
+// Eski (KasaYonetim):
+-if (tipU.Contains("MASRAF") || tipU.Contains("GİDER") || tipU.Contains("GIDER") || tipU.Contains("HARCAMA"))
++if (tipU.Contains("MASRAF"))
+ { masraf += m; }
+ // Eski:
+-else
++else if (tipU.Contains("KAYDEN"))
+ { diger += m; }
+Özellik	Eski	Yeni
+Masraf filtresi	MASRAF, GİDER, GIDER, HARCAMA	Sadece MASRAF
+"Diğer" kategorisi	else (tüm tanınmayan satırlar)	else if (KAYDEN) — yalnızca KAYDEN satırları
+CAUTION
+
+ÖNEMLİ FARK: Eski versiyonda HARCAMA tipi satırlar masraf toplamına dahil edilirdi. Yeni versiyonda bu kelime filtreden çıkarılmış. Eğer MasrafveReddiyat Excel dosyasında "HARCAMA" tipinde satırlar varsa, bunlar yeni versiyonda hiçbir kategoriye girmeyecek (ne masraf, ne reddiyat, ne diğer) ve toplam hesaplamasından dışlanacaktır.
+
+Ayrıca eski versiyonda "tanınmayan" tüm satırlar diger toplamına ekleniyor iken, yeni versiyonda yalnızca KAYDEN tipindekiler ekleniyor. Bu da harç hesabını dolaylı etkileyebilir.
+
+FARK 3: Pool Veri Kaynağı — Snapshot'tan Live Data'ya Geçiş
+Özellik	Eski	Yeni
+KasaDraftService.Pool.cs veri kaynağı	_snapshots.GetAsync() — Genel Snapshot	IntermediateLiveUstRaporProvider — Canlı Excel okuma
+Genel Kasa Tahsilat	ust.Tahsilat (her zaman KasaÜstRapor)	isGenel ? masrafReddiyatAgg.Masraf : ust.Tahsilat
+Devreden Kasa	GlobalDefaults override → Akşam Snapshot fallback	CarryoverResolver (scope-aware)
+diff
+// toplamTahsilat kaynağı:
+-var toplamTahsilat = ust.Tahsilat;
+-var toplamReddiyat = ust.Reddiyat;
++var toplamTahsilat = isGenel ? masrafReddiyatAgg.Masraf : ust.Tahsilat;
++var toplamReddiyat = isGenel ? masrafReddiyatAgg.Reddiyat : ust.Reddiyat;
+NOTE
+
+Bu değişiklik doğrudan harç hesabını etkilemez — harç toplamı (ust.Harc) hâlâ KasaÜstRapor'dan okunmaktadır. Ancak toplamTahsilat üzerinden hesaplanan bankaya_yatirilacak_tahsilat formülü değişir ve bu da bankaya_yatirilacak_toplam (harç + tahsilat + stopaj) toplamını etkiler.
+
+FARK 4: KasaPreviewController — Auto-Provision & Stateless Geçiş
+Özellik	Eski	Yeni
+_snapshots dependency	IKasaRaporSnapshotService injected, aktif kullanım	_raporSnapshots olarak yeniden adlandırıldı, auto-provision için kullanılıyor
+Tarih belirleme	Son snapshot tarihi: _snapshots.GetLastSnapshotDateAsync()	DateTime.Today (sabit)
+Auto-Load	lastSnapshotDate.HasValue ise çalışır	Her zaman çalışır (stateless)
+TryAutoProvisionGenelSnapshotAsync	❌ Yok	✅ Yeni — snapshot yoksa Excel'den otomatik oluşturur
+ApplyAutoVergiKasaFromDefaultsAsync	❌ Yok	✅ Yeni — Excel'den VergiKasa otomatik hesaplar
+VergiKasa form adı	RptVergiKasa	VergiKasaBakiyeToplam
+NOTE
+
+Auto-Provision mekanizması snapshot'ı otomatik oluşturarak pool'un çalışmasını garanti eder. Eski versiyonda kullanıcının manuel KasaÜstRapor sayfasından "Kaydet" yapması gerekiyordu.
+
+FARK 5: Snapshot Bağımlılığının Kaldırılması
+Özellik	Eski	Yeni
+Pool veri kaynağı	genSnap = await _snapshots.GetAsync(...)	Live Excel okuma (IntermediateLiveUstRaporProvider)
+HydrateUstRaporPanelAsync	_snapshots.GetLastSnapshotDateAsync() çağırır	Bu çağrı kaldırılmış
+KasaUstRaporPanelViewModel	HasExistingSnapshot, LastSnapshotDate alanları	Bu alanlar kaldırılmış
+3. Harç Formül Pipeline'ı — Her İki Versiyonda Aynı
+Aşağıdaki formüller her iki versiyonda da birebir aynıdır (FormulaTemplateSeeder.cs):
+
+bankaya_yatirilacak_harc = Max(0.0, toplam_harc + bankaya_yatirilacak_harci_degistir - kayden_harc)
+muhasebe_fark_harc = bankaya_giren_harc - bankaya_yatirilacak_harc - online_harc - dunden_eksik_fazla_gelen_harc
+harc_red_fark = kayden_harc - bankaya_giren_harc
+Auto-fill HesapKontrol alanları (her iki versiyonda aynı):
+
+GuneAitEksikFazlaHarc → B6 auto-fill
+DundenEksikFazlaHarc → B6 auto-fill
+DundenEksikFazlaGelenHarc → B6 auto-fill
+4. Sonuç ve Öneriler
+Harç Kontrol/Karşılaştırma modüllerinde kodlar AYNI — Sorun Başka Yerde Olabilir
+Eğer yeni versiyonda "Harç dahil edilmiyor" diye bir davranış görüyorsanız, olası kök nedenler:
+
+📋 BankaHarcReader.cs'deki parse farkı — TryParseFromJson vs TryParseDecimal. Eğer Excel Türkçe formatlıysa, bu fark parse hatasına ve tutarların sıfır olarak okunmasına yol açabilir. → Kontrol Edin: BankaHarc.xlsx dosyasının tutar formatı.
+
+📋 ReadersHarc.cs'deki HARCAMA filtresi — MasrafveReddiyat dosyasında "HARCAMA" tipli satırlar artık masraf toplamına dahil edilmiyor. → Kontrol Edin: MasrafveReddiyat Excel'inde tip sütunundaki değerler.
+
+📋 Pool veri kaynağı değişikliği — Genel Kasa için toplamTahsilat artık MasrafReddiyat aggregasyonundan geliyor. Bu durum bankaya_yatirilacak_toplam hesabını dolaylı etkiler.
+
+📋 Snapshot/Live geçişi — Pool artık canlı Excel'den okuyor. KasaÜstRapor dosyası yoksa veya okunamazsa, harç dahil tüm değerler sıfır olacaktır.
+
+TIP
+
+Doğrulama Adımı: Yeni versiyonun loglarında "HesapKontrol analiz tamamlandı" mesajındaki netHarc değerini kontrol edin. Sıfırsa → Harcama-Harç karşılaştırma başarısız oluyor demektir (dosya eksik veya parse hatası).

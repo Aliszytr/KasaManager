@@ -5,7 +5,9 @@ using Xunit;
 using Xunit.Abstractions;
 using Moq;
 using Microsoft.Extensions.Logging;
-using KasaManager.Application.Services;
+using KasaManager.Infrastructure.Services;
+using KasaManager.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using KasaManager.Application.Abstractions;
 using KasaManager.Domain.Settings;
 using KasaManager.Domain.Reports;
@@ -36,8 +38,14 @@ public class CarryoverScenariosRunner
         
         var loggerMock = new Mock<ILogger<CarryoverResolver>>();
 
+        var options = new DbContextOptionsBuilder<KasaManagerDbContext>()
+            .UseInMemoryDatabase(databaseName: "CarryoverScenariosDb_" + Guid.NewGuid().ToString())
+            .Options;
+        var dbContext = new KasaManagerDbContext(options);
+
         var resolver = new CarryoverResolver(
             defaultsMock.Object,
+            dbContext,
             loggerMock.Object);
 
         var targetDate = new DateOnly(2026, 5, 10);

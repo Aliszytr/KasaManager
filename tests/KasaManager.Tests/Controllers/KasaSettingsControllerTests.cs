@@ -6,6 +6,9 @@ using KasaManager.Web.Controllers;
 using KasaManager.Web.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
+using KasaManager.Application.Services;
 using Moq;
 using Xunit;
 
@@ -26,9 +29,16 @@ public class KasaSettingsControllerTests
         var mockTemplates = new Mock<IDocumentTemplateService>();
         var mockLog = new Mock<ILogger<KasaSettingsController>>();
 
+        var mockImport = new Mock<IImportOrchestrator>();
+        var mockEnv = new Mock<IWebHostEnvironment>();
+        var mockCfg = new Mock<IConfiguration>();
+
         var controller = new KasaSettingsController(
             mockDefaults.Object,
             mockTemplates.Object,
+            mockImport.Object,
+            mockEnv.Object,
+            mockCfg.Object,
             mockLog.Object
         );
 

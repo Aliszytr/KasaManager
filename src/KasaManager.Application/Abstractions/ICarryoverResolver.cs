@@ -14,11 +14,22 @@ public enum CarryoverScope
     /// <summary>
     /// Akşam kasa ekranında kullanılan spesifik devreden nakit
     /// </summary>
-    AksamKasaNakit
+    AksamKasaNakit,
+
+    /// <summary>
+    /// Sabah kasa ekranında kullanılan spesifik devreden nakit
+    /// </summary>
+    SabahKasaNakit,
+
+    /// <summary>
+    /// Geçmiş günler için Vergi Kasa Bakiye Toplam manuel girişi (snapshot'tan okuma)
+    /// </summary>
+    VergiKasaSelectionTotal
 }
 
 public sealed record CarryoverResolutionResult(
     decimal Value,
+    string TargetKey,
     DateOnly RangeStart,
     DateOnly? SourceDate,
     string SourceCode,

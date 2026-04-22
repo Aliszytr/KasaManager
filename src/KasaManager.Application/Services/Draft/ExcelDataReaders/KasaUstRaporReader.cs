@@ -50,7 +50,16 @@ public static class KasaUstRaporReader
 
             decimal ReadDec(string key)
             {
-                return TryGet(dict, key, out var val) && DecimalParsingHelper.TryParseDecimal(val, out var d) ? d : 0m;
+                if (TryGet(dict, key, out var val))
+                {
+                    System.IO.File.AppendAllText(@"H:\kasa_debug.txt", $"KEY={key} | RAW_VAL={val}\n");
+                    if (DecimalParsingHelper.TryParseFromTurkish(val, out var d))
+                    {
+                        System.IO.File.AppendAllText(@"H:\kasa_debug.txt", $"  PARSED={d}\n");
+                        return d;
+                    }
+                }
+                return 0m;
             }
 
             string? FindKeyContains(params string[] tokens)

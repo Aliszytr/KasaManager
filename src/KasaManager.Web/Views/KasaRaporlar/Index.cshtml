@@ -547,7 +547,14 @@
             },
             body: `id=${id}`
         })
-        .then(r => r.json())
+        .then(r => {
+            if (!r.ok) throw new Error('Sunucu hatası: ' + r.status);
+            return r.text().then(t => {
+                if (!t || t.trim() === '') return { success: false, message: 'Sunucudan boş yanıt' };
+                try { return JSON.parse(t); }
+                catch(e) { throw new Error('Yanıt işlenemedi'); }
+            });
+        })
         .then(data => {
             if (data.success) {
                 if (typeof kasaToast === 'function') kasaToast(data.message, 'success');
@@ -573,7 +580,14 @@
             },
             body: `id=${id}`
         })
-        .then(r => r.json())
+        .then(r => {
+            if (!r.ok) throw new Error('Sunucu hatası: ' + r.status);
+            return r.text().then(t => {
+                if (!t || t.trim() === '') return { success: false, message: 'Sunucudan boş yanıt' };
+                try { return JSON.parse(t); }
+                catch(e) { throw new Error('Yanıt işlenemedi'); }
+            });
+        })
         .then(data => {
             if (data.success) {
                 if (typeof kasaToast === 'function') kasaToast(data.message, 'success');

@@ -86,6 +86,18 @@ public sealed partial class KasaDraftService
         decimal bankaDevreden = 0m;
         decimal bankaBakiye = 0m;
 
+        if (bt is not null)
+        {
+            var bRes = ComputeBankaBalances(bt, startDate, endDate, issues, btPath ?? "Belirsiz.xlsx");
+            bankaDevreden = bRes.devreden;
+            bankaBakiye = bRes.endBalance;
+
+            if (bRes.mismatch == BankaMismatchType.SourceDateOlderThanRequested)
+            {
+                issues.Add($"Uyarı: BankaTahsilat işlemleri son tarihi ({bRes.diag.SelectedBalanceDate?.ToString("dd.MM.yyyy")}), rapor tarihinden ({endDate:dd.MM.yyyy}) daha eski.");
+            }
+        }
+
         decimal toplamTahsilat = 0m;
         decimal toplamReddiyat = 0m;
         decimal kaydenTahsilat = 0m;
@@ -221,7 +233,7 @@ public sealed partial class KasaDraftService
         };
         var mismatch = BankaMismatchType.None;
 
-        if (endRow.row is not null && bakiyeCol is not null && endRow.row.TryGetValue(bakiyeCol, out var rawB) && TryParseDecimal(rawB, out var b))
+        if (endRow.row is not null && bakiyeCol is not null && endRow.row.TryGetValue(bakiyeCol, out var rawB) && Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(rawB, out var b))
         {
             endBalance = b;
             endBalanceDate = DateOnly.FromDateTime(endRow.dt);
@@ -255,8 +267,8 @@ public sealed partial class KasaDraftService
             decimal after = 0m;
             decimal amt = 0m;
 
-            var okB = firstOnStart.row.TryGetValue(bakiyeCol, out var rawAfter) && TryParseDecimal(rawAfter, out after);
-            var okT = firstOnStart.row.TryGetValue(tutarCol, out var rawAmt) && TryParseDecimal(rawAmt, out amt);
+            var okB = firstOnStart.row.TryGetValue(bakiyeCol, out var rawAfter) && Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(rawAfter, out after);
+            var okT = firstOnStart.row.TryGetValue(tutarCol, out var rawAmt) && Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(rawAmt, out amt);
 
             if (okB && okT)
             {
@@ -278,7 +290,7 @@ public sealed partial class KasaDraftService
         {
             // start öncesi son bakiye
             var prev = rows.LastOrDefault(x => DateOnly.FromDateTime(x.dt) < start);
-            if (prev.row is not null && bakiyeCol is not null && prev.row.TryGetValue(bakiyeCol, out var rawPrev) && TryParseDecimal(rawPrev, out var pb))
+            if (prev.row is not null && bakiyeCol is not null && prev.row.TryGetValue(bakiyeCol, out var rawPrev) && Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(rawPrev, out var pb))
                 devreden = pb;
             else
                 issues.Add("BankaTahsilat: devreden bakiye bulunamadı, 0 kabul edildi.");
@@ -315,7 +327,7 @@ public sealed partial class KasaDraftService
                 if (d < start || d > end) continue;
             }
 
-            if (miktarCol is null || !row.TryGetValue(miktarCol, out var rawM) || !TryParseDecimal(rawM, out var m))
+            if (miktarCol is null || !row.TryGetValue(miktarCol, out var rawM) || !Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(rawM, out var m))
                 continue;
 
             var tip = tipCol is not null ? (row.GetValueOrDefault(tipCol) ?? "") : "";
@@ -435,6 +447,59 @@ private static UnifiedPoolEntry CreateRawEntry(string key, decimal value, string
             return Task.FromResult<DateOnly?>(null);
         }
     }
+
+    /// <summary>
+    /// BankaTahsilat.xlsx dosyasındaki en son işlem tarihini döner.
+    /// Genel Kasa hesaplamasında bitiş tarihini belirleyen birincil kaynaktır.
+    /// </summary>
+    private Task<DateOnly?> ResolveMaxDateFromBankaTahsilatAsync(string uploadFolderAbsolute, List<string> issues, CancellationToken ct)
+    {
+        try
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var btPath = ResolveExistingFile(uploadFolderAbsolute, "BankaTahsilat.xlsx");
+            if (btPath is null)
+            {
+                issues.Add("BankaTahsilat.xlsx bulunamadı; bitiş tarihi belirlenemedi.");
+                return Task.FromResult<DateOnly?>(null);
+            }
+
+            var res = _import.ImportTrueSource(btPath, ImportFileKind.BankaTahsilat);
+            if (!res.Ok || res.Value is null)
+            {
+                issues.Add($"BankaTahsilat.xlsx okunamadı: {res.Error}");
+                return Task.FromResult<DateOnly?>(null);
+            }
+
+            var table = res.Value;
+            var tarihCol = FindCanonical(table, "islem_tarihi") ?? FindCanonical(table, "tarih");
+            if (tarihCol is null)
+            {
+                issues.Add("BankaTahsilat.xlsx: İşlem Tarihi kolonu bulunamadı.");
+                return Task.FromResult<DateOnly?>(null);
+            }
+
+            DateOnly? max = null;
+            foreach (var row in table.Rows)
+            {
+                if (row is null) continue;
+                if (!row.TryGetValue(tarihCol, out var rawT) || string.IsNullOrWhiteSpace(rawT)) continue;
+                if (!TryParseDateTime(rawT, out var dt)) continue;
+                var d = DateOnly.FromDateTime(dt);
+                if (max is null || d > max.Value) max = d;
+            }
+
+            _log.LogInformation("[BankaTahsilat MaxDate] Tespit edilen son işlem tarihi: {MaxDate}", max);
+            return Task.FromResult(max);
+        }
+        catch (Exception ex)
+        {
+            issues.Add($"BankaTahsilat.xlsx max tarih okuma hatası: {ex.Message}");
+            return Task.FromResult<DateOnly?>(null);
+        }
+    }
+
 
     private async Task<(DateOnly RangeStart, DateOnly DevredenSonTarihi, decimal Devreden, string Source, bool IsSnapshotActive, Guid? LastSnapshotId)> DetermineGenelKasaDevredenSsotAsync(DateOnly endDate, CancellationToken ct)
     {

@@ -92,7 +92,7 @@
                 </div>
                 <div class="col-md-2">
                     <label class="kasa-form-label">Test Tarihi</label>
-                    <input type="date" class="kasa-form-input" asp-for="TestDate"
+                    <input asp-format="{0:yyyy-MM-dd}" type="date" class="kasa-form-input" asp-for="TestDate"
                            value="@(Model.TestDate?.ToString("yyyy-MM-dd") ?? DateTime.Today.ToString("yyyy-MM-dd"))" />
                 </div>
             </div>
@@ -989,3 +989,4 @@
         box-shadow: 0 0 0 2px rgba(255,193,7,0.15) !important;
     }
 </style>
+

@@ -8,24 +8,24 @@ namespace KasaManager.Tests.Application;
 /// </summary>
 public class DecimalParsingHelperTests
 {
-    // ── TryParseDecimal ──
+    // ── TryParseFromTurkish ──
 
     [Theory]
     [InlineData("1.234,56", 1234.56)]  // TR format
     [InlineData("1234,56", 1234.56)]
     [InlineData("100", 100)]
     [InlineData("  50,00  ", 50.00)]    // whitespace
-    public void TryParseDecimal_ValidTR_ReturnsTrue(string input, decimal expected)
+    public void TryParseFromTurkish_ValidTR_ReturnsTrue(string input, decimal expected)
     {
-        Assert.True(DecimalParsingHelper.TryParseDecimal(input, out var value));
+        Assert.True(DecimalParsingHelper.TryParseFromTurkish(input, out var value));
         Assert.Equal(expected, value);
     }
 
     [Fact]
-    public void TryParseDecimal_ValidEN_WithThousands_ReturnsTrue()
+    public void TryParseFromTurkish_ValidEN_WithThousands_ReturnsTrue()
     {
         // "1,234.56" → invariant culture parses as 1234.56
-        Assert.True(DecimalParsingHelper.TryParseDecimal("1,234.56", out var value));
+        Assert.True(DecimalParsingHelper.TryParseFromTurkish("1,234.56", out var value));
         Assert.Equal(1234.56m, value);
     }
 
@@ -34,9 +34,9 @@ public class DecimalParsingHelperTests
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("abc")]
-    public void TryParseDecimal_Invalid_ReturnsFalse(string? input)
+    public void TryParseFromTurkish_Invalid_ReturnsFalse(string? input)
     {
-        Assert.False(DecimalParsingHelper.TryParseDecimal(input, out var value));
+        Assert.False(DecimalParsingHelper.TryParseFromTurkish(input, out var value));
         Assert.Equal(0m, value);
     }
 

@@ -17,10 +17,10 @@ public sealed partial class KasaDraftService
 {
 
 
-    private async Task<decimal> DetermineDevredenKasaAsync(DateOnly raporTarihi, List<string> issues, CancellationToken ct)
+    private async Task<decimal> DetermineDevredenKasaAsync(DateOnly raporTarihi, CarryoverScope scope, List<string> issues, CancellationToken ct)
     {
         // R6-AUDIT P1(B): Carryover resolver
-        var res = await _carryoverResolver.ResolveAsync(raporTarihi, CarryoverScope.AksamKasaNakit, ct);
+        var res = await _carryoverResolver.ResolveAsync(raporTarihi, scope, ct);
         if (res.UsedFallback)
         {
             issues.Add($"Devreden Kasa: {res.Reason} (Tarih: {res.SourceDate:dd.MM.yyyy}).");

@@ -1,0 +1,48 @@
+Karşılaştırma Modülünde İptal Edilen Virman Tespiti Planı (v2)
+1. Eşleştirme Algoritmasını Sıkılaştır & İptal Anahtar Kelimeleri
+ComparisonService.Reddiyat.cs dosyasına eklenecek MarkCancelledRecords metodu şu katı kurallara uyacak:
+
+Tarih Sırası: İptal (Alacak) işleminin tarihi (islem_tarihi), orijinal (Borç) işlemin tarihinden BÜYÜK VEYA EŞİT olmalı.
+İşlem Türü Eşleşmesi: "Virman İptal" sadece "Virman" türündeki kayıtla eşleşmeli. (Örn: DetectRecordType sonuçları aynı/uyumlu olmalı).
+Zaman Olarak En Yakın: Birden fazla aynı tutarlı Borç adayı varsa, iptal işlemine tarih/saat olarak en yakın ve öncesindeki orijinal işlem eşleştirilmeli.
+Tek Seferlik: IsCancelled == true olan bir kayıt, tekrar eşleşemez.
+Kelimeler: "iptal", "iade", "geri alma", "geri alındı", "düzeltme" kelimeleri taranacak. (Kullanıcı onayına sunulan kelimeler listesi test edilecek).
+2. Model Güncellemeleri
+[MODIFY] src/KasaManager.Domain/Reports/ComparisonReport.cs
+Sınıfa explicitly alanlar eklenecek:
+
+csharp
+public int CancelledRecordsCount { get; set; }
+public decimal CancelledRecordsTotal { get; set; }
+public List<CancelledPair> CancelledPairs { get; set; } = new();
+(Ayrıca CancelledPair adında (BankaRecord Orijinal, BankaRecord Iptal) yapısında bir record/class domain katmanına veya service katmanında DTO olarak eklenecek).
+
+3. UI Tarafı Değişiklikleri
+[MODIFY] src/KasaManager.Web/Views/Comparison/Results.cshtml
+İptal Edilen İşlemler Tablosu: Fazla Giren Kayıtlar tablosundan ÖNCE (veya sonra) yeni bir "İptal Edilen İşlemler" alanı eklenecek. Bu alanda iptal çiftleri (Borç ve Alacak karşılıkları) collapsible şekilde listelenecek. Değişecek Tahmini Satırlar: ~380-385 arası (Fazla Kayıtlar bloğundan önce eklenecek).
+Fazla Giren Kayıtlar Tablosu: Eşleşmiş ve IsCancelled olarak işaretlenmiş iptal çiftleri bu tabloda GÖSTERİLMEYECEK. Backend zaten bunları SurplusBankaRecords içerisine eklemeyecek.
+[MODIFY] src/KasaManager.Web/Views/KasaPreview/Index.cshtml (veya _KasaUstRaporPanel.cshtml / _FinansalIstisnaKart.cshtml)
+Stopaj Uyuşmazlığı Uyarı Kutusu: Eğer fark SADECE iptal edilen tutarlara eşitse, kırmızı uyarı kutusu yerine sarı (warning) bilgi kutusu ("İptal edilen işlemler nedeniyle oluşan olağan fark...") gösterilecek. Backend tarafında ComparisonReport.StopajStatus mesajı da bu duruma göre güncellenecek.
+Geçmiş Sekmesi (Virman Tutarı): İptaller hesaplamadan tamamen çıkarıldığı için, ilgili sekmelerde "Geçmiş" virman tutarları (18.940,88 yerine 16.419,44) otomatik olarak doğru yansıyacak. (Backend'de CheckStopajFromAllVirmans metodunun virmanTutarlar.Sum() olarak refactor edilmesi bu UI sorununu kendiliğinden çözecektir).
+4. Backend Refactoring (Tam Dosya & Değişiklikler)
+[MODIFY] src/KasaManager.Application/Services/Comparison/ComparisonService.cs
+Değişecek Satırlar: ~318-321 (BankaRecord tanımı).
+BankaRecord içerisine IsCancelled flag'i eklenecek. CancelledPair record/class tanımı eklenecek.
+[MODIFY] src/KasaManager.Application/Services/Comparison/ComparisonService.Reddiyat.cs
+Değişecek Satırlar: ~62-80 (Banka kayıtları okuma döngüsü). Hem borç hem alacak kayıtları okunacak, ardından yeni yazılacak MarkCancelledPairs metodu çalıştırılacak.
+Değişecek Satırlar: ~115, ~171 (totalBankaCikis ve rapor oluşturma kısımları). Sadece IsBorc && !IsCancelled olanlar baz alınacak.
+Değişecek Satırlar: ~329-340 (CreateStopajStatus metodu). Eğer diff ile CancelledRecordsTotal eşleşiyorsa, mesaj ⚠️ Eksik Çıkış yerine ℹ️ İptal Kaynaklı Fark olarak (sarı bilgi formatında) dönülecek.
+[MODIFY] src/KasaManager.Infrastructure/Services/BankaHesapKontrolService.Helpers.cs
+Değişecek Satırlar: ~118-142 (CheckStopajFromAllVirmans metodu). Döngüdeki FirstOrDefault yerine .Sum() kullanılarak tüm virmanlar toplanacak. Parçalı virmanlar (Örn. 10.000 + 6.419,44) başarıyla birleşecek.
+5. Test Senaryoları (Edge Cases)
+Kod tamamlandıktan sonra şu senaryoların testleri teyit edilecektir:
+
+Senaryo A: Aynı tutarda iki ayrı virman + bir iptal → Zaman olarak iptale en yakın olan orijinal işlem iptal işaretlenecek. Diğeri geçerli kalacak.
+Senaryo B: İptal edilmiş ama yerine yenisi yapılmamış virman → Stopaj uyuşmazlığı uyarı mesajı kırmızı (hata) yerine sarı (bilgi) olarak "İptal nedeniyle stopaj virmanı askıda/yapılmamış" şeklinde görünecek.
+Senaryo C: Parçalı virman (10.000 + 6.419,44 = 16.419,44) → CheckStopajFromAllVirmans ikisini de toplayacak, parçalı yapı eksiksiz çalışacak.
+Senaryo D: İptal + yeni virman + yeni virman da iptal → Tüm karşılık bulan işlemler birbirini sıfırlayacak, "Virman yapılmadı" (ancak iptal kaynaklı) mesajı dönecek.
+Commit Sırası
+ComparisonReport.cs (Domain) güncellemeleri
+ComparisonService.cs ve ComparisonService.Reddiyat.cs (Application) İptal işaretleme algoritması ve hesaplama dışlamaları
+BankaHesapKontrolService.Helpers.cs (Infrastructure) Parçalı virman desteği
+Results.cshtml ve diğer ilgili view'lar (Web UI)

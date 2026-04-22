@@ -9,6 +9,7 @@ using KasaManager.Domain.Constants;
 using KasaManager.Domain.FormulaEngine;
 using KasaManager.Domain.Reports;
 using KasaManager.Domain.Reports.Snapshots;
+using Microsoft.Extensions.Logging;
 
 namespace KasaManager.Application.Orchestration;
 
@@ -188,7 +189,7 @@ public partial class KasaOrchestrator
                 ("genel_kasa_toplam", "genel_kasa_devreden_seed + toplam_tahsilat - toplam_harc + kasa_nakit"),
                 ("genel_kasa_devir", "genel_kasa_toplam - bankaya_yatirilacak_tahsilat"),
                 ("banka_tahsilat", "banka_cekilen_tahsilat + online_tahsilat"),
-                ("bankaya_yatirilacak_tahsilat", "Max(0.0, Max(0.0, toplam_tahsilat - normal_reddiyat) + bankaya_yatirilacak_tahsilati_degistir - vergi_kasa - kayden_tahsilat)"),
+                ("bankaya_yatirilacak_tahsilat", "Max(0, Max(0, toplam_tahsilat - normal_reddiyat) + bankaya_yatirilacak_tahsilati_degistir - vergi_kasa - kayden_tahsilat)"),
                 ("banka_harc", "banka_cekilen_harc"),
                 ("banka_yarina_devredecek_tahsilat", "genel_kasa_devir"),
                 ("tahsil_red_fark", "kayden_tahsilat - banka_tahsilat"),
@@ -215,15 +216,25 @@ public partial class KasaOrchestrator
 
     private async Task<bool> HydrateFromSnapshotAndDefaultsInternalAsync(KasaPreviewDto dto, DateOnly date, CancellationToken ct)
     {
-        // P4.4: Snapshot dependency completely removed.
-        // Veznedar selection and legacy UI state are no longer mapped from snapshot.
-        dto.IsDataLoaded = true;
-        dto.VeznedarOptions = new List<string>();
-        dto.VergiKasaVeznedarlar = new List<string>();
+        var snap = await _snapshots.GetAsync(date, KasaRaporTuru.Genel, ct);
+        if (snap?.Rows is null || snap.Rows.Count == 0)
+        {
+            dto.HasSnapshot = false;
+            dto.IsDataLoaded = false;
+            dto.Errors.Add($"{date:dd.MM.yyyy} için Genel snapshot bulunamadı.");
+            return false;
+        }
+
+        dto.HasSnapshot = true;
+        dto.VeznedarOptions = snap.Rows.Where(r => !r.IsSummaryRow && !string.IsNullOrWhiteSpace(r.Veznedar))
+            .Select(r => r.Veznedar!.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x=>x).ToList();
+
+        dto.VergiKasaVeznedarlar = snap.Rows.Where(r => !r.IsSummaryRow && r.IsSelected && !string.IsNullOrWhiteSpace(r.Veznedar))
+            .Select(r => r.Veznedar!.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x=>x).ToList();
             
         if (dto.VergiKasaBakiyeToplam == 0)
         {
-            dto.VergiKasaBakiyeToplam = 0m;
+            dto.VergiKasaBakiyeToplam = snap.Rows.Where(r => !r.IsSummaryRow && r.IsSelected).Sum(r => r.Bakiye ?? 0m);
         }
 
         // DRY: Tek kaynak üzerinden varsayılan hydration

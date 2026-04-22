@@ -82,7 +82,7 @@ public class OnlineReader
                 }
 
                 if (!row.TryGetValue(miktarCol, out var raw)) continue;
-                if (!DecimalParsingHelper.TryParseDecimal(raw, out var v)) continue;
+                if (!DecimalParsingHelper.TryParseFromTurkish(raw, out var v)) continue;
 
                 total += v;
                 matched++;

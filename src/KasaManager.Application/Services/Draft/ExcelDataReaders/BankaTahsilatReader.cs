@@ -85,8 +85,15 @@ public class BankaTahsilatReader
                         if (!DateParsingHelper.RowMatchesDate(row, dateCol, raporTarihi)) continue;
                     }
                 }
-                if (!row.TryGetValue(tutarCol, out var tRaw) || !DecimalParsingHelper.TryParseDecimal(tRaw, out var tAbs)) continue;
-                if (!row.TryGetValue(bakiyeCol, out var bRaw) || !DecimalParsingHelper.TryParseDecimal(bRaw, out var b)) continue;
+
+                // GEÇİCİ TEŞHİS LOGU — sonra silinecek
+                if (row.TryGetValue(tutarCol, out var tRaw_dbg))
+                    Console.WriteLine($"[TESHIS] tutarCol={tutarCol}, tRaw={tRaw_dbg}");
+                if (row.TryGetValue(bakiyeCol, out var bRaw_dbg))
+                    Console.WriteLine($"[TESHIS] bakiyeCol={bakiyeCol}, bRaw={bRaw_dbg}");
+
+                if (!row.TryGetValue(tutarCol, out var tRaw) || !DecimalParsingHelper.TryParseFromJson(tRaw, out var tAbs)) continue;
+                if (!row.TryGetValue(bakiyeCol, out var bRaw) || !DecimalParsingHelper.TryParseFromJson(bRaw, out var b)) continue;
 
                 var dir = (directionCol is not null && row.TryGetValue(directionCol, out var dRaw)) ? dRaw : null;
                 var signed = DecimalParsingHelper.ApplyDebitCreditSign(tAbs, dir);

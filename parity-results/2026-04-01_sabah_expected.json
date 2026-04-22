@@ -1,0 +1,13 @@
+{
+  "Tarih": "2026-04-01",
+  "HesapTuru": "Sabah",
+  "Sonuclar": {
+    "GenelKasa": -405346.16,
+    "DevredenKasa": 0,
+    "BankayaYatirilacakNakit": 0.00,
+    "BankayaYatirilacakTahsilat": 0.00,
+    "BankayaYatirilacakHarc": 185610.80,
+    "BozukParaHaricKasa": -411346.16,
+    "VergiKasa_SelectionTotal": 0.00
+  }
+}

@@ -65,6 +65,7 @@ public interface IKasaDraftService
         string? kasaScope = null,
         // Akşam Kasa Mesai Sonu modu: true ise OnlineMasraf, OnlineHarc, MasrafveReddiyat atlanır
         bool mesaiSonuModu = false,
+        bool skipSlimPoolFilter = false,
         CancellationToken ct = default);
 
 }

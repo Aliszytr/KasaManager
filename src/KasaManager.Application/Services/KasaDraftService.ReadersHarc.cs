@@ -72,8 +72,8 @@ public sealed partial class KasaDraftService
                         if (!RowMatchesDate(row, dateCol, raporTarihi)) continue;
                     }
                 }
-                if (!row.TryGetValue(tutarCol, out var tRaw) || !TryParseDecimal(tRaw, out var tAbs)) continue;
-                if (!row.TryGetValue(bakiyeCol, out var bRaw) || !TryParseDecimal(bRaw, out var b)) continue;
+                if (!row.TryGetValue(tutarCol, out var tRaw) || !Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(tRaw, out var tAbs)) continue;
+                if (!row.TryGetValue(bakiyeCol, out var bRaw) || !Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(bRaw, out var b)) continue;
 
                 var dir = (directionCol is not null && row.TryGetValue(directionCol, out var dRaw)) ? dRaw : null;
                 var signed = ApplyDebitCreditSign(tAbs, dir);
@@ -187,7 +187,7 @@ public sealed partial class KasaDraftService
                 // Tarih kolonu yoksa: bu rapor "tek gün" kabul edilir ve tüm satırlar toplanır.
 
                 if (!row.TryGetValue(miktarCol, out var raw)) continue;
-                if (!TryParseDecimal(raw, out var v)) continue;
+                if (!Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(raw, out var v)) continue;
 
                 total += v;
                 matched++;
@@ -302,7 +302,7 @@ public sealed partial class KasaDraftService
                 }
 
                 inRangeRows++;
-                if (!row.TryGetValue(miktarCol, out var rawM) || !TryParseDecimal(rawM, out var m)) 
+                if (!row.TryGetValue(miktarCol, out var rawM) || !Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(rawM, out var m)) 
                 {
                     // Debug: Miktar parse edilemedi
                     continue;

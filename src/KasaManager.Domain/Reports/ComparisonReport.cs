@@ -103,6 +103,31 @@ public sealed class ComparisonReport
     /// </summary>
     public string? StopajStatus { get; init; }
     
+    /// <summary>
+    /// Stopaj durumu enum değeri (UI renk/ikon mapping için).
+    /// CheckStopajFromAllVirmans / DetermineStopajDurum tarafından set edilir.
+    /// </summary>
+    public HesapKontrol.StopajStatus StopajDurum { get; set; } = HesapKontrol.StopajStatus.Ok;
+    
+    /// <summary>
+    /// Stopaj durumu detay mesajı (enum ile birlikte kullanılır).
+    /// StopajStatus string property'si geriye uyumluluk için korunmuştur.
+    /// </summary>
+    public string? StopajMesaj { get; set; }
+    
+    // ─────────────────────────────────────────────────────────────
+    // İptal Edilen İşlemler (MarkCancelledRecords sonuçları)
+    // ─────────────────────────────────────────────────────────────
+    
+    /// <summary>İptal olarak işaretlenen toplam kayıt sayısı (orijinal + iptal çiftleri)</summary>
+    public int CancelledRecordsCount { get; set; }
+    
+    /// <summary>İptal edilen işlemlerin toplam tutarı (mutlak değer)</summary>
+    public decimal CancelledRecordsTotal { get; set; }
+    
+    /// <summary>İptal eşleşme çiftleri (orijinal Borç ↔ iptal Alacak)</summary>
+    public List<CancelledPair> CancelledPairs { get; set; } = new();
+    
     // ─────────────────────────────────────────────────────────────
     // Detaylı sonuçlar
     // ─────────────────────────────────────────────────────────────

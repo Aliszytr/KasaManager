@@ -77,6 +77,44 @@ public sealed class ParityCheckService : IParityCheckService
                 .Where(x => x.ForDate == targetDate && x.KasaTuru == kasaScope)
                 .FirstOrDefaultAsync(ct);
                 
+            var outputDict = new Dictionary<string, decimal>(newRunResult.Value.Outputs);
+            
+            // Seçenek A: Mevcut JSON'daki kritik keyleri koru
+            if (currentResult != null && !string.IsNullOrWhiteSpace(currentResult.ResultsJson))
+            {
+                try
+                {
+                    var existingDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, System.Text.Json.JsonElement>>(currentResult.ResultsJson);
+                    if (existingDict != null)
+                    {
+                        var keysToPreserve = new[] { "sonraki_kasaya_devredecek", "SonrayaDevredecek", "GenelKasa", "genel_kasa", "sabah_kasa_devir", "kasa_toplam" };
+                        foreach(var preserveKey in keysToPreserve)
+                        {
+                            if (existingDict.TryGetValue(preserveKey, out var el))
+                            {
+                                if (el.ValueKind == System.Text.Json.JsonValueKind.Number && el.TryGetDecimal(out var d))
+                                    outputDict[preserveKey] = d;
+                                else if (el.ValueKind == System.Text.Json.JsonValueKind.String)
+                                {
+                                    // Invariant culture with fallback
+                                    var rawStr = el.GetString()?.Replace("₺", "")?.Trim();
+                                    if (!string.IsNullOrWhiteSpace(rawStr))
+                                    {
+                                        if (decimal.TryParse(rawStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var ds))
+                                            outputDict[preserveKey] = ds;
+                                        else if (decimal.TryParse(rawStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.GetCultureInfo("tr-TR"), out ds))
+                                            outputDict[preserveKey] = ds;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            var finalJson = System.Text.Json.JsonSerializer.Serialize(outputDict);
+
             if (currentResult == null)
             {
                 currentResult = new DailyCalculationResult
@@ -89,7 +127,7 @@ public sealed class ParityCheckService : IParityCheckService
                     IsLocked = false,
                     IsStale = prevResult != null && prevResult.IsStale, // Cascade stale logic
                     CalculatedVersion = 1,
-                    ResultsJson = System.Text.Json.JsonSerializer.Serialize(newRunResult.Value.Outputs),
+                    ResultsJson = finalJson,
                     CalculatedAt = DateTime.UtcNow
                 };
                 _dbContext.DailyCalculationResults.Add(currentResult);
@@ -101,11 +139,13 @@ public sealed class ParityCheckService : IParityCheckService
                     currentResult.CalculatedVersion++;
                     currentResult.PreviousResultId = prevResult?.Id;
                     currentResult.IsStale = prevResult != null && prevResult.IsStale;
-                    currentResult.ResultsJson = System.Text.Json.JsonSerializer.Serialize(newRunResult.Value.Outputs);
+                    currentResult.ResultsJson = finalJson;
                     currentResult.CalculatedAt = DateTime.UtcNow;
                     _dbContext.DailyCalculationResults.Update(currentResult);
                 }
             }
+            
+            var isStale = currentResult.IsStale;
 
             // 4. INPUT KARŞILAŞTIRMASI (Seed 0 vs Null / Missing Fact Analizi)
             var legacyInputDict = legacyInputs
@@ -123,7 +163,6 @@ public sealed class ParityCheckService : IParityCheckService
                 var hasLegacy = legacyInputDict.TryGetValue(key, out var legVal);
                 var hasNew = newInputDict.TryGetValue(key, out var newVal);
 
-                var isStale = currentResult?.IsStale ?? false;
                 var (severity, rootCause, reasonHint) = AnalyzeInputDrift(hasLegacy, legVal, hasNew, newVal, isStale);
 
                 var absoluteDiff = Math.Abs((legVal ?? 0m) - (newVal ?? 0m));
@@ -159,8 +198,8 @@ public sealed class ParityCheckService : IParityCheckService
                 decimal newValSafe = hasNew ? newVal : 0m;
                 var absoluteDiff = Math.Abs(legValSafe - newValSafe);
 
-                var isStale = currentResult?.IsStale ?? false;
-                string? reasonHint = isStale ? "PreviousDayStale" : null;
+                var isStale2 = false;
+                string? reasonHint = isStale2 ? "PreviousDayStale" : null;
                 var rootCause = "Calculation Output Divergence";
                 if (!hasLegacy && hasNew) rootCause = "Missing in Legacy Output";
                 if (hasLegacy && !hasNew) rootCause = "Missing in DataFirst Output";
@@ -193,8 +232,8 @@ public sealed class ParityCheckService : IParityCheckService
             if (drifts.Any())
             {
                 _dbContext.CalculationParityDrifts.AddRange(drifts);
-                await _dbContext.SaveChangesAsync(ct);
             }
+            await _dbContext.SaveChangesAsync(ct);
         }
         catch (Exception ex)
         {

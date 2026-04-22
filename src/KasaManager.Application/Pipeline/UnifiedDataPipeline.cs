@@ -129,7 +129,8 @@ public sealed class UnifiedDataPipeline : IDataPipeline
             fullExcelTotals: request.FullExcelTotals,
             kasaScope: request.KasaScope,
             mesaiSonuModu: false,
-            ct);
+            skipSlimPoolFilter: false,
+            ct: ct);
 
         if (poolResult.Ok && poolResult.Value is not null)
         {
@@ -294,9 +295,19 @@ public sealed class UnifiedDataPipeline : IDataPipeline
     {
         // R6-AUDIT P1(B): Carryover kararı ICarryoverResolver'a devredildi.
         // Tekilleştirilmiş ve standardize edilmiş devreden kararını okuyoruz.
-        CarryoverResolutionResult res = request.KasaScope.StartsWith("Aksam", StringComparison.OrdinalIgnoreCase) 
-            ? await _carryoverResolver.ResolveAsync(request.RaporTarihi, CarryoverScope.AksamKasaNakit, ct)
-            : await _carryoverResolver.ResolveAsync(request.RaporTarihi, CarryoverScope.GenelKasa, ct);
+        CarryoverResolutionResult res;
+        if (request.KasaScope.StartsWith("Aksam", StringComparison.OrdinalIgnoreCase))
+        {
+            res = await _carryoverResolver.ResolveAsync(request.RaporTarihi, CarryoverScope.AksamKasaNakit, ct);
+        }
+        else if (request.KasaScope.StartsWith("Sabah", StringComparison.OrdinalIgnoreCase))
+        {
+            res = await _carryoverResolver.ResolveAsync(request.RaporTarihi, CarryoverScope.SabahKasaNakit, ct);
+        }
+        else
+        {
+            res = await _carryoverResolver.ResolveAsync(request.RaporTarihi, CarryoverScope.GenelKasa, ct);
+        }
 
         // Fallback bilgisi log için
         var fbSource = res.UsedFallback ? $", fallback=true" : "";
@@ -306,10 +317,10 @@ public sealed class UnifiedDataPipeline : IDataPipeline
         
         cells.Set(new Cell
         {
-            Key = "dunden_devreden_kasa",
+            Key = res.TargetKey,
             Value = res.Value,
             Source = CellSource.Carryover,
-            DisplayName = "Dünden Devreden Kasa (Resolver)",
+            DisplayName = $"Dünden Devreden Kasa ({res.TargetKey})",
             Category = "Carryover",
             Notes = $"Kaynak: {res.SourceCode}\nKarar: {res.Reason}\nTarih (Source): {res.SourceDate:yyyy-MM-dd}"
         });

@@ -1,5 +1,8 @@
 using KasaManager.Application.Abstractions;
+using KasaManager.Application.Services;
 using KasaManager.Domain.Reports;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using KasaManager.Web.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -19,13 +22,23 @@ public sealed class KasaSettingsController : Controller
     private readonly IDocumentTemplateService _templateService;
     private readonly ILogger<KasaSettingsController> _log;
 
+    private readonly IImportOrchestrator _importOrchestrator;
+    private readonly IWebHostEnvironment _env;
+    private readonly IConfiguration _cfg;
+
     public KasaSettingsController(
         IKasaGlobalDefaultsService globalDefaults,
         IDocumentTemplateService templateService,
+        IImportOrchestrator importOrchestrator,
+        IWebHostEnvironment env,
+        IConfiguration cfg,
         ILogger<KasaSettingsController> log)
     {
         _globalDefaults = globalDefaults;
         _templateService = templateService;
+        _importOrchestrator = importOrchestrator;
+        _env = env;
+        _cfg = cfg;
         _log = log;
     }
 
@@ -78,10 +91,49 @@ public sealed class KasaSettingsController : Controller
             vm.Warnings.Add($"Banka yazıları şablonları yüklenemedi: {ex.Message}");
         }
 
-        // 3. Veznedar Listesi Snapshot ile toplanıyordu (P4.4: İptal edildi)
+        // 3. Veznedar Listesini KasaUstRapor Excel'inden Al
         vm.Warnings ??= new List<string>();
-        vm.Warnings.Add("Veznedar listesi (otomatik önerme) Snapshot sistemi ile birlikte deaktif edilmiştir.");
         vm.VeznedarOptions = new List<string>();
+        try
+        {
+            var sub = _cfg.GetValue<string>("Upload:SubFolder") ?? "Data\\Raporlar";
+            sub = sub.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
+            var folder = Path.Combine(_env.WebRootPath, sub);
+
+            if (Directory.Exists(folder))
+            {
+                var files = Directory.GetFiles(folder, "*.xls*").Select(Path.GetFileName).ToList();
+                var kasaUst = files.FirstOrDefault(f => f?.Contains("kasa", StringComparison.OrdinalIgnoreCase) == true && f.Contains("ust", StringComparison.OrdinalIgnoreCase));
+                
+                if (!string.IsNullOrWhiteSpace(kasaUst))
+                {
+                    var fullPath = Path.Combine(folder, kasaUst);
+                    var imported = _importOrchestrator.Import(fullPath, ImportFileKind.KasaUstRapor);
+                    if (imported.Ok && imported.Value != null)
+                    {
+                        var vezCol = imported.Value.Columns.FirstOrDefault(c => c.Contains("VEZNEDAR", StringComparison.OrdinalIgnoreCase)) ?? "VEZNEDAR";
+                        vm.VeznedarOptions = imported.Value.Rows
+                            .Where(r => r.ContainsKey(vezCol))
+                            .Select(r => r[vezCol]?.ToString())
+                            .Where(x => !string.IsNullOrWhiteSpace(x))
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .Cast<string>()
+                            .OrderBy(x => x)
+                            .ToList();
+                    }
+                }
+            }
+
+            if (vm.VeznedarOptions.Count == 0)
+            {
+                 vm.Warnings.Add("Veznedar listesi yok — önce 'kasa_ust_rapor' Excel dosyasını yükleyin.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "[KasaSettings.Index] KasaUstRapor'dan veznedar listesi okunamadı");
+            vm.Warnings.Add("Veznedar listesi Excel dosyasından yüklenemedi.");
+        }
 
         return View(vm);
     }

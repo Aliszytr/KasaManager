@@ -50,6 +50,42 @@ public sealed class CalculatedKasaSnapshotService : ICalculatedKasaSnapshotServi
         snapshot.CalculatedAtUtc = DateTime.UtcNow;
 
         _db.CalculatedKasaSnapshots.Add(snapshot);
+
+        // --- DATA FIRST SSOT MIGRATION ---
+        // Ensure that explicit saves via UI ("SaveReport") also correctly update the Data-First Carryover lookup source natively
+        var scopeStr = snapshot.KasaTuru switch {
+            KasaRaporTuru.Sabah => "Sabah",
+            KasaRaporTuru.Aksam => "Aksam",
+            KasaRaporTuru.Genel => "Genel",
+            _ => "Ortak"
+        };
+        
+        var dailyRes = await _db.DailyCalculationResults
+            .Where(x => x.ForDate == snapshot.RaporTarihi && x.KasaTuru == scopeStr)
+            .FirstOrDefaultAsync(ct);
+            
+        if (dailyRes == null)
+        {
+            dailyRes = new KasaManager.Domain.Calculation.Data.DailyCalculationResult
+            {
+                Id = Guid.NewGuid(),
+                ForDate = snapshot.RaporTarihi,
+                KasaTuru = scopeStr,
+                CalculatedVersion = snapshot.Version,
+                ResultsJson = snapshot.OutputsJson ?? "{}",
+                CalculatedAt = DateTime.UtcNow
+            };
+            _db.DailyCalculationResults.Add(dailyRes);
+        }
+        else
+        {
+            dailyRes.CalculatedVersion = snapshot.Version;
+            dailyRes.ResultsJson = snapshot.OutputsJson ?? "{}";
+            dailyRes.CalculatedAt = DateTime.UtcNow;
+            _db.DailyCalculationResults.Update(dailyRes);
+        }
+        // ---------------------------------
+
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation("R17: Kasa kaydedildi - Tarih={Tarih}, Tip={Tip}, Versiyon={Version}, Id={Id}",

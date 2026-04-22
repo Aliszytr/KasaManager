@@ -94,7 +94,7 @@ public sealed partial class KasaDraftService : IKasaDraftService
         var masrafReddiyat = ReadMasrafReddiyatAggUnified(raporTarihi, uploadFolderAbsolute, issues, out var masrafReddiyatRawJson);
 
         // Dünden devreden kasa (şimdilik: önceki gün Akşam snapshot sonucu varsa oradan)
-        var devredenKasa = await DetermineDevredenKasaAsync(raporTarihi, issues, ct);
+        var devredenKasa = await DetermineDevredenKasaAsync(raporTarihi, CarryoverScope.AksamKasaNakit, issues, ct);
 
         // === R13: Akşam/Sabah kasa için kullanıcı girişleri (Legacy parity) ===
         // Bu alanlar eski sistemde kırmızı çerçeveli kullanıcı girişleri.
@@ -133,7 +133,15 @@ public sealed partial class KasaDraftService : IKasaDraftService
         }
 
         var bankayaYatirilacakTahsilatiDegistir = bankayaYatirilacakTahsilatiDegistirAuto + bankayaYatirilacakTahsilatiDegistirManual;
-        var vergiKasa = finalizeInputs.VergiKasaBakiyeToplam ?? 0m;
+        
+        var vergiKasaRaw = finalizeInputs.VergiKasaBakiyeToplam;
+        if (!vergiKasaRaw.HasValue)
+        {
+            var vRes = await _carryoverResolver.ResolveAsync(raporTarihi, CarryoverScope.VergiKasaSelectionTotal, ct);
+            vergiKasaRaw = vRes.Value;
+        }
+        var vergiKasa = vergiKasaRaw.Value;
+        
         var vergiGelenKasa = finalizeInputs.VergidenGelen ?? 0m;
 
         // R15B: Normal Tahsilat (FİZİKİ Tahsilat) — KİLİTLİ KURAL
@@ -207,8 +215,69 @@ var aksamCalc = CalculateAksamLegacy(
         {
             DayInputProvider inputProvider = async (DateOnly d, CancellationToken innerCt) =>
             {
-                // Snapshot kalmadığı için her zaman data fail olur veya external input provider kullanılır
-                return null;
+                await Task.CompletedTask; // async delegate imzası için
+
+                var localIssues = new List<string>();
+
+                var bankaGun = ReadBankaTahsilatGun(d, uploadFolderAbsolute, localIssues, out _);
+                var bankaHarcGun = ReadBankaHarcGun(d, uploadFolderAbsolute, localIssues, out _);
+                var online = ReadOnlineReddiyatTotals(d, uploadFolderAbsolute, localIssues, out _);
+                var onlineHarc = ReadOnlineTotal(d, uploadFolderAbsolute, "onlineHarc.xlsx", ImportFileKind.OnlineHarcama, localIssues, out _);
+
+                var innerLiveProvider = new IntermediateLiveUstRaporProvider(_import);
+                var liveSummaryRes = innerLiveProvider.GetSummary(d, uploadFolderAbsolute, localIssues);
+                KasaUstSummary? innerUst = null;
+
+                if (liveSummaryRes.Ok && liveSummaryRes.Value != null)
+                {
+                    var l = liveSummaryRes.Value;
+                    innerUst = new KasaUstSummary(l.PosTahsilat, l.OnlineTahsilat, l.PostTahsilat, l.Tahsilat, l.Reddiyat, l.PosHarc, l.OnlineHarc, l.PostHarc, l.GelmeyenPost, l.Harc, l.GelirVergisi, l.DamgaVergisi, l.Stopaj);
+                }
+
+                if (innerUst == null)
+                {
+                    _log.LogWarning("P3.1 Eksik/Fazla Zinciri [{Date}]: KasaUstRapor verisi okunamadı. Zincirde NoData dönecek.", d);
+                    return null;
+                }
+
+                var vRes = await _carryoverResolver.ResolveAsync(d, CarryoverScope.VergiKasaSelectionTotal, innerCt);
+                var vergiKasaInner = vRes.Value;
+
+                #pragma warning disable CS0618 // LEGACY parity/debug only – intentionally used
+                var calc = CalculateAksamLegacy(
+                    devredenKasa: 0m,
+                    isSabah: true,
+                    bankaTahsilatGun: bankaGun,
+                    bankaHarcGun: bankaHarcGun,
+                    ust: innerUst,
+                    online: online,
+                    bankayaYatirilacakHarciDegistir: 0m,
+                    bankayaYatirilacakTahsilatiDegistir: 0m,
+                    kaydenTahsilat: 0m,
+                    kaydenHarc: 0m,
+                    vergiKasa: vergiKasaInner,
+                    vergiGelenKasa: 0m,
+                    bankadanCekilen: 0m,
+                    cesitliNedenlerleBankadanCikamayanTahsilat: 0m,
+                    bankayaGonderilmisDeger: 0m,
+                    bozukPara: 0m);
+                #pragma warning restore CS0618
+
+                _log.LogDebug("P3.1 Eksik/Fazla Zinciri [{Date}]: Veri kaynağı LiveCalculation üzerinden beslendi.", d);
+
+                return new ProjectionDayInput(
+                    Date: d,
+                    BankaGirenTahsilat: bankaGun.Giren,
+                    BankaGirenHarc: bankaHarcGun.Giren,
+                    ToplamTahsilat: innerUst.Tahsilat,
+                    OnlineTahsilat: innerUst.OnlineTahsilat,
+                    ToplamHarc: innerUst.Harc,
+                    OnlineReddiyat: online.OnlineReddiyat,
+                    OnlineHarc: onlineHarc,
+                    BankayaYatirilacakNakit: calc.BankayaYatirilacakNakit,
+                    NormalHarc: calc.NormalHarc,
+                    Source: ProjectionDaySource.LiveCalculation
+                );
             };
 
             var projReq = new ProjectionRequest(raporTarihi, uploadFolderAbsolute, InputProvider: inputProvider);
@@ -267,7 +336,7 @@ var aksamCalc = CalculateAksamLegacy(
         var sabah = new KasaDraftResult
         {
             Title = "Sabah Kasa (Draft)",
-            RawJson = BuildRawJson(null, bankaRawJson, onlineRawJson, bankaGunRawJson, bankaExtraRawJson, bankaHarcGunRawJson, onlineHarcRawJson, onlineMasrafRawJson, masrafReddiyatRawJson),
+            RawJson = BuildRawJson(bankaRawJson, onlineRawJson, bankaGunRawJson, bankaExtraRawJson, bankaHarcGunRawJson, onlineHarcRawJson, onlineMasrafRawJson, masrafReddiyatRawJson),
 #pragma warning disable CS0618 // Intentional: Legacy method for parity
             InlineFormulas = BuildSabahInlineFormulas(devredenKasa, ust, online, vergiKasa, kaydenTahsilat, kaydenHarc, bankayaYatirilacakHarciDegistir, bankayaYatirilacakTahsilatiDegistirAuto, bankayaYatirilacakTahsilatiDegistirManual, bankayaYatirilacakTahsilatiDegistir, (finalizeInputs.KasadaKalacakHedef ?? 0m), cesitliNedenlerleBankadanCikamayanTahsilat, bankadanCekilen, vergiGelenKasa, bankayaGonderilmisDeger, bozukPara, sabahCalc),
 #pragma warning restore CS0618
@@ -290,7 +359,7 @@ var aksamCalc = CalculateAksamLegacy(
         var aksam = new KasaDraftResult
         {
             Title = "Akşam Kasa (Draft)",
-            RawJson = BuildRawJson(null, bankaRawJson, onlineRawJson, bankaGunRawJson, bankaExtraRawJson, bankaHarcGunRawJson, onlineHarcRawJson, onlineMasrafRawJson, masrafReddiyatRawJson),
+            RawJson = BuildRawJson(bankaRawJson, onlineRawJson, bankaGunRawJson, bankaExtraRawJson, bankaHarcGunRawJson, onlineHarcRawJson, onlineMasrafRawJson, masrafReddiyatRawJson),
             #pragma warning disable CS0618 // LEGACY parity/debug only – intentionally used
             InlineFormulas = BuildAksamInlineFormulas(devredenKasa, ust, online, vergiKasa, kaydenTahsilat, kaydenHarc, bankayaYatirilacakHarciDegistir, bankayaYatirilacakTahsilatiDegistirAuto, bankayaYatirilacakTahsilatiDegistirManual, bankayaYatirilacakTahsilatiDegistir, (finalizeInputs.KasadaKalacakHedef ?? 0m), cesitliNedenlerleBankadanCikamayanTahsilat, bankadanCekilen, vergiGelenKasa, bankayaGonderilmisDeger, bozukPara, aksamCalc),
             #pragma warning restore CS0618
@@ -366,15 +435,47 @@ var aksamCalc = CalculateAksamLegacy(
 
         var issues = new List<string>();
 
-        // 1) EndDate (Bitiş Tarihi): UI'den gelirse onu kullan, gelmezse MasrafveReddiyat.xlsx içinden max tarih.
-        var endDate = selectedBitisTarihi ?? await ResolveMaxDateFromMasrafveReddiyatAsync(uploadFolderAbsolute, issues, ct);
-        if (endDate == null)
-            return Result<GenelKasaR10EngineInputBundle>.Fail("MasrafveReddiyat.xlsx içinde tarih bulunamadı.");
+        // 1) EndDate (Bitiş Tarihi):
+        //    KRİTİK KURAL: Bitiş tarihini belirleyen birincil kaynak BankaTahsilat.xlsx'tir.
+        //    MasrafveReddiyat.xlsx ana veri kaynağıdır ama raporlama dönemi BankaTahsilat tarafından sınırlanır.
+        //    UI'den selectedBitisTarihi gelirse onu kullan; gelmezse BankaTahsilat.xlsx max tarih.
+        var btMaxDate = await ResolveMaxDateFromBankaTahsilatAsync(uploadFolderAbsolute, issues, ct);
+        var mrMaxDate = await ResolveMaxDateFromMasrafveReddiyatAsync(uploadFolderAbsolute, issues, ct);
+
+        DateOnly? endDate;
+        if (selectedBitisTarihi.HasValue)
+        {
+            endDate = selectedBitisTarihi;
+        }
+        else if (btMaxDate.HasValue)
+        {
+            endDate = btMaxDate;
+        }
+        else if (mrMaxDate.HasValue)
+        {
+            // BankaTahsilat yoksa fallback olarak MR'den al
+            endDate = mrMaxDate;
+            issues.Add("BankaTahsilat.xlsx'ten tarih belirlenemediği için MasrafveReddiyat.xlsx son tarihi kullanıldı.");
+        }
+        else
+        {
+            return Result<GenelKasaR10EngineInputBundle>.Fail("Bitiş tarihi belirlenemedi: BankaTahsilat.xlsx ve MasrafveReddiyat.xlsx içinde tarih bulunamadı.");
+        }
+
+        // Bilgilendirme: MR daha geniş bir döneme sahipse kullanıcıyı bilgilendir
+        if (mrMaxDate.HasValue && btMaxDate.HasValue && mrMaxDate.Value > btMaxDate.Value)
+        {
+            issues.Add($"ℹ️ Sorgulanan tarih sonu {mrMaxDate.Value:dd.MM.yyyy} seçilmiş olsa da, analiz edilen dönem BankaTahsilat.xlsx verilerine göre {btMaxDate.Value:dd.MM.yyyy} tarihine kadar raporlanmıştır.");
+            _log.LogInformation(
+                "[GenelKasa DateCap] MasrafveReddiyat max={MrMax}, BankaTahsilat max={BtMax}. Bitiş tarihi {EndDate} olarak sınırlandırıldı.",
+                mrMaxDate.Value, btMaxDate.Value, endDate);
+        }
 
         // 2) RangeStart + Devreden: en son GenelKasa snapshot'ına göre belirlenir (R12.5 prensibi).
         var (rangeStart, devredenSonTarihi, devreden) = await ResolveGenelKasaRangeAndDevredenAsync(endDate.Value, ct);
 
         // 3) True Source hesapları: Masraf/Reddiyat toplamları + Banka bakiye
+        //    MR filtrelemesi endDate ile yapılır (BankaTahsilat tarafından sınırlanmış dönem)
         var (toplamTahsilat, toplamReddiyat, kaydenTahsilat, masrafRawJson, masrafOk) = await ImportMasrafveReddiyatAggAsync(uploadFolderAbsolute, rangeStart, endDate.Value, issues, ct);
         var (bankaBakiye, bankaRawJson, bankaMismatch, bankaDiag) = await ImportBankaBakiyeAsync(uploadFolderAbsolute, rangeStart, endDate.Value, issues, ct);
 
@@ -430,6 +531,9 @@ var aksamCalc = CalculateAksamLegacy(
         {
             RangeStart = rangeStart,
             EndDate = endDate,
+            BtMaxDate = btMaxDate,
+            MrMaxDate = mrMaxDate,
+            DateSource = selectedBitisTarihi.HasValue ? "UI" : (btMaxDate.HasValue ? "BankaTahsilat" : "MasrafveReddiyat_Fallback"),
             Masraf = new { toplamTahsilat, toplamReddiyat, kaydenTahsilat, masrafRawJson, masrafOk },
             Banka = new { bankaBakiye, bankaRawJson, bankaMismatch, bankaDiag },
             BankaBakiye = bankaBakiye,

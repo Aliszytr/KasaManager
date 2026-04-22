@@ -153,7 +153,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 method: 'POST',
                 body: formData
             })
-            .then(function (r) { return r.json(); })
+            .then(function (r) {
+                if (!r.ok) throw new Error('Sunucu hatası: ' + r.status);
+                return r.text().then(function(t) {
+                    if (!t || t.trim() === '') return { ok: false, message: 'Sunucudan boş yanıt' };
+                    try { return JSON.parse(t); }
+                    catch(e) { throw new Error('Yanıt işlenemedi'); }
+                });
+            })
             .then(function (data) {
                 if (data.ok) {
                     // Satırı yeşil yap ve line-through

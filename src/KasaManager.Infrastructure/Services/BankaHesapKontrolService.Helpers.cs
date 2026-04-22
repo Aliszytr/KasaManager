@@ -99,44 +99,73 @@ public sealed partial class BankaHesapKontrolService
     {
         var toplamStopaj = reddiyatRapor.TotalStopaj;
         if (toplamStopaj <= 0)
-            return new StopajVirmanDurum(true, 0, null, "Stopaj tutarı yok.");
+            return new StopajVirmanDurum(true, 0, null, "Stopaj tutarı yok.", StopajStatus.Ok);
 
         var virmanlar = reddiyatRapor.SurplusBankaRecords
             .Where(x => x.DetectedType == "VIRMAN")
             .Select(x => Math.Abs(x.Tutar))
             .ToList();
 
-        return CheckStopajFromAllVirmans(toplamStopaj, virmanlar);
+        return CheckStopajFromAllVirmans(toplamStopaj, virmanlar, reddiyatRapor.CancelledPairs);
     }
 
     /// <summary>
     /// TÜM karşılaştırma kaynaklarındaki VIRMAN tutarlarını kullanarak
     /// Stopaj virman durumunu kontrol eder.
+    /// Parçalı virman desteği ve iptal mantığı içerir.
     /// </summary>
-    private static StopajVirmanDurum CheckStopajFromAllVirmans(
-        decimal toplamStopaj, List<decimal> virmanTutarlar)
+    internal static StopajVirmanDurum CheckStopajFromAllVirmans(
+        decimal hedefStopajTutari,
+        List<decimal> gecerliVirmanTutarlar,
+        List<CancelledPair>? iptalKayitlari = null)
     {
-        if (toplamStopaj <= 0)
-            return new StopajVirmanDurum(true, 0, null, "Stopaj tutarı yok.");
+        if (hedefStopajTutari <= 0)
+            return new StopajVirmanDurum(true, 0, null, "Stopaj tutarı yok.", StopajStatus.Ok);
 
-        if (virmanTutarlar.Count == 0)
-            return new StopajVirmanDurum(
-                false, toplamStopaj, null,
-                $"⚠️ Stopaj Hesabına {toplamStopaj:N2}₺ Virman yapılmadığını görüyorum. " +
-                "Lütfen Hesapları kontrol ediniz.");
+        iptalKayitlari ??= new List<CancelledPair>();
+        
+        // Sadece Virman türündeki iptalleri al
+        var iptalEdilenVirmanlar = iptalKayitlari
+            .Where(r => string.Equals(r.Tur, "VIRMAN", StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
-        var eslesen = virmanTutarlar.FirstOrDefault(v => v == toplamStopaj);
-        if (eslesen != 0)
+        decimal toplamGecerliVirman = gecerliVirmanTutarlar.Sum();
+
+        StopajStatus status;
+        string message;
+
+        if (iptalEdilenVirmanlar.Count > 0 && toplamGecerliVirman > 0 && toplamGecerliVirman >= hedefStopajTutari)
         {
-            return new StopajVirmanDurum(
-                true, toplamStopaj, eslesen,
-                $"✅ Stopaj virmanı yapılmış ({toplamStopaj:N2}₺).");
+            // Durum: İptal var AMA yerine doğrusu yapılmış
+            status = StopajStatus.OkWithNote;
+            message = $"ℹ️ {iptalEdilenVirmanlar.Sum(x => x.Tutar):N2} ₺ virman iptal edildi, yerine doğru tutarla yeniden yapıldı.";
+        }
+        else if (iptalEdilenVirmanlar.Count > 0 && toplamGecerliVirman < hedefStopajTutari)
+        {
+            // Durum: İptal var, yerine yenisi YAPILMAMIŞ (Senaryo B veya D)
+            status = StopajStatus.WarningPending;
+            message = toplamGecerliVirman == 0
+                ? "⚠️ Tüm virman işlemleri iptal edildi. Stopaj virmanı yapılmamış durumda."
+                : $"⚠️ {iptalEdilenVirmanlar.Sum(x => x.Tutar):N2} ₺ virman iptal edildi, ancak yerine yeni virman yapılmamış. Stopaj askıda.";
+        }
+        else if (iptalEdilenVirmanlar.Count == 0 && toplamGecerliVirman < hedefStopajTutari)
+        {
+            // Durum: Gerçek eksik — mevcut KIRMIZI uyarı (mevcut davranış korunur)
+            status = StopajStatus.Error;
+            message = toplamGecerliVirman == 0
+                ? $"⚠️ Stopaj Hesabına {hedefStopajTutari:N2} ₺ Virman yapılmadığını görüyorum. Lütfen Hesapları kontrol ediniz."
+                : $"❌ Stopaj Hesabına {hedefStopajTutari:N2} ₺ virman bekleniyor, en yakın virman: {toplamGecerliVirman:N2} ₺.";
+        }
+        else
+        {
+            // Durum: Normal başarılı
+            status = StopajStatus.Ok;
+            message = $"✅ Stopaj virmanı başarıyla yapılmış: {toplamGecerliVirman:N2} ₺";
         }
 
-        var enYakin = virmanTutarlar.MinBy(v => Math.Abs(v - toplamStopaj));
-        return new StopajVirmanDurum(
-            false, toplamStopaj, enYakin,
-            $"⚠️ Stopaj Hesabına {toplamStopaj:N2}₺ Virman bekleniyor, " +
-            $"en yakın virman: {enYakin:N2}₺. Lütfen kontrol ediniz.");
+        bool isOk = status is StopajStatus.Ok or StopajStatus.OkWithNote;
+        decimal? bulunanVirman = toplamGecerliVirman > 0 ? toplamGecerliVirman : null;
+
+        return new StopajVirmanDurum(isOk, hedefStopajTutari, bulunanVirman, message, status);
     }
 }

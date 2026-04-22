@@ -21,6 +21,7 @@ public partial class KasaOrchestrator : IKasaOrchestrator
 {
     private readonly IKasaDraftService _drafts;
     private readonly IFormulaEngineService _formulaEngine;
+    private readonly IKasaRaporSnapshotService _snapshots;
     private readonly IKasaGlobalDefaultsService _globalDefaults;
     private readonly IFormulaSetStore _formulaSetStore;
     private readonly IDataPipeline _dataPipeline;
@@ -30,6 +31,7 @@ public partial class KasaOrchestrator : IKasaOrchestrator
     public KasaOrchestrator(
         IKasaDraftService drafts,
         IFormulaEngineService formulaEngine,
+        IKasaRaporSnapshotService snapshots,
         IKasaGlobalDefaultsService globalDefaults,
         IFormulaSetStore formulaSetStore,
         IDataPipeline dataPipeline,
@@ -38,6 +40,7 @@ public partial class KasaOrchestrator : IKasaOrchestrator
     {
         _drafts = drafts;
         _formulaEngine = formulaEngine;
+        _snapshots = snapshots;
         _globalDefaults = globalDefaults;
         _formulaSetStore = formulaSetStore;
         _dataPipeline = dataPipeline;
@@ -82,8 +85,8 @@ public partial class KasaOrchestrator : IKasaOrchestrator
         // (e.g. devreden_kasa, vergi_kasa, yt_tahsilat_degistir_*) causing FormulaEngine wrong results.
         // Genel Kasa is unaffected (uses separate SSOT path inside BuildUnifiedPoolAsync).
         var dailyPoolRes = useRange
-            ? await _drafts.BuildUnifiedPoolAsync(date, uploadBasePath, finalize, dto.GenelKasaStartDate, dto.GenelKasaEndDate, false, null, effectiveMesaiSonu, ct)
-            : await _drafts.BuildUnifiedPoolAsync(date, uploadBasePath, finalize, rangeStart: null, rangeEnd: null, fullExcelTotals: false, kasaScope: null, mesaiSonuModu: effectiveMesaiSonu, ct: ct);
+            ? await _drafts.BuildUnifiedPoolAsync(date, uploadBasePath, finalize, dto.GenelKasaStartDate, dto.GenelKasaEndDate, false, scopeHint, effectiveMesaiSonu, true, ct)
+            : await _drafts.BuildUnifiedPoolAsync(date, uploadBasePath, finalize, rangeStart: null, rangeEnd: null, fullExcelTotals: false, kasaScope: scopeHint, mesaiSonuModu: effectiveMesaiSonu, skipSlimPoolFilter: true, ct: ct);
         if (!dailyPoolRes.Ok || dailyPoolRes.Value is null)
         {
             dto.Errors.Add(dailyPoolRes.Error ?? "UnifiedPool (günlük) üretilemedi.");
@@ -91,6 +94,9 @@ public partial class KasaOrchestrator : IKasaOrchestrator
         }
 
         dto.PoolEntries = dailyPoolRes.Value.ToList();
+
+        // Commit 5: İptal edilen işlem toplamını ComparisonService'ten çek (stopaj fark düzeltmesi)
+        await HydrateIptalEdilenCikisTutarAsync(dto, uploadBasePath, date, ct);
 
          // Append UI overrides (manual fields) to Pool for visibility
         AppendUiOnlyOverridePoolEntries(dto);
@@ -132,9 +138,10 @@ public partial class KasaOrchestrator : IKasaOrchestrator
 
         // FIX: kasaScope=null — same as LoadPreviewAsync fix. SlimPool filtering must not run
         // for Aksam/Sabah, otherwise essential pool entries get stripped before FormulaEngine.
+        // WE NOW PASS skipSlimPoolFilter = true to bypass filtering while still allowing scope detection for Genel Kasa SSOT!
         var poolRes = useRange
-           ? await _drafts.BuildUnifiedPoolAsync(date, uploadBasePath, finalize, dto.GenelKasaStartDate, dto.GenelKasaEndDate, false, null, effectiveMesaiSonu, ct)
-           : await _drafts.BuildUnifiedPoolAsync(date, uploadBasePath, finalize, null, null, false, null, effectiveMesaiSonu, ct);
+           ? await _drafts.BuildUnifiedPoolAsync(date, uploadBasePath, finalize, dto.GenelKasaStartDate, dto.GenelKasaEndDate, false, scopeHint, effectiveMesaiSonu, true, ct)
+           : await _drafts.BuildUnifiedPoolAsync(date, uploadBasePath, finalize, rangeStart: null, rangeEnd: null, fullExcelTotals: false, kasaScope: scopeHint, mesaiSonuModu: effectiveMesaiSonu, skipSlimPoolFilter: true, ct: ct);
 
         if (!poolRes.Ok || poolRes.Value is null)
         {
@@ -144,6 +151,9 @@ public partial class KasaOrchestrator : IKasaOrchestrator
 
         dto.IsDataLoaded = true;
         dto.PoolEntries = poolRes.Value.ToList();
+
+        // Commit 5: İptal edilen işlem toplamını ComparisonService'ten çek (stopaj fark düzeltmesi)
+        await HydrateIptalEdilenCikisTutarAsync(dto, uploadBasePath, date, ct);
 
         AppendUiOnlyOverridePoolEntries(dto);
         EnsureSelectedKeysInPool(dto);
@@ -232,6 +242,56 @@ public partial class KasaOrchestrator : IKasaOrchestrator
         dto.SelectedInputKeys = new List<string>();
         dto.Warnings.Add("R5.1: Aksam Contract loaded (empty — legacy mode).");
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Commit 5: ComparisonService'ten iptal edilen işlem toplamını çeker.
+    /// Başarısız olursa (dosya eksik, format hatası vb.) IptalEdilenCikisTutar = 0 kalır.
+    /// Kasa hesaplaması kırılmaz — sadece warning loglanır.
+    /// </summary>
+    private async Task HydrateIptalEdilenCikisTutarAsync(
+        KasaPreviewDto dto, string uploadBasePath, DateOnly date, CancellationToken ct)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var comparisonService = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions
+                .GetRequiredService<IComparisonService>(scope.ServiceProvider);
+
+            var reddiyatResult = await comparisonService.CompareReddiyatCikisAsync(uploadBasePath, date, ct);
+            if (reddiyatResult.Ok && reddiyatResult.Value != null)
+            {
+                dto.IptalEdilenCikisTutar = reddiyatResult.Value.CancelledRecordsTotal;
+
+                // Commit 5.1: Sadece Virman türündeki iptaller — banka_virman_tahsilat düzeltmesi
+                var report = reddiyatResult.Value;
+                if (report.CancelledPairs?.Count > 0)
+                {
+                    dto.IptalEdilenVirmanTutar = report.CancelledPairs
+                        .Where(p => string.Equals(p.Tur, "Virman", StringComparison.OrdinalIgnoreCase))
+                        .Sum(p => p.Tutar);
+                }
+
+                if (dto.IptalEdilenCikisTutar > 0)
+                {
+                    _logger.LogInformation(
+                        "Commit 5: {Date} için {Tutar:N2} ₺ iptal edilen işlem tespit edildi (Virman: {VirmanTutar:N2} ₺). Stopaj fark hesabından düşülecek.",
+                        date, dto.IptalEdilenCikisTutar, dto.IptalEdilenVirmanTutar);
+                }
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "Commit 5: {Date} için Reddiyat karşılaştırma başarısız: {Error}. IptalEdilenCikisTutar = 0 kalacak.",
+                    date, reddiyatResult.Error ?? "Bilinmeyen hata");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Commit 5: {Date} için iptal edilen işlem toplamı çekilemedi. IptalEdilenCikisTutar = 0 kalacak.",
+                date);
+        }
     }
 
     /// <summary>

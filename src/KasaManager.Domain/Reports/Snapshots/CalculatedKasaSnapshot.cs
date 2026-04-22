@@ -107,6 +107,7 @@ public sealed class CalculatedKasaSnapshot
     /// Output'ları dictionary olarak getir.
     /// R19: Eksik alanlar otomatik olarak varsayılan değerle doldurulur.
     /// OB-5 FIX: Bare catch → JsonException. Kritik hatalar (OutOfMemory vb.) yutulmuyor.
+    /// CRUD-FIX: OutputsJson hem Dict&lt;string,decimal&gt; hem Dict&lt;string,string&gt; formatını destekler.
     /// </summary>
     public Dictionary<string, decimal> GetOutputs()
     {
@@ -120,8 +121,23 @@ public sealed class CalculatedKasaSnapshot
             }
             catch (System.Text.Json.JsonException)
             {
-                // Bozuk JSON — varsayılanlara düş. Kritik hatalar (OutOfMemory vb.) propagate olur.
-                System.Diagnostics.Debug.WriteLine($"[CalculatedKasaSnapshot] OutputsJson parse başarısız: {OutputsJson?[..Math.Min(100, OutputsJson?.Length ?? 0)]}");
+                // Fallback: string value formatını destekle (ExtractOutputsForSnapshot "F2" format)
+                try
+                {
+                    var stringDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(OutputsJson);
+                    if (stringDict != null)
+                    {
+                        parsed = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var kv in stringDict)
+                            if (decimal.TryParse(kv.Value, System.Globalization.NumberStyles.Any,
+                                System.Globalization.CultureInfo.InvariantCulture, out var d))
+                                parsed[kv.Key] = d;
+                    }
+                }
+                catch (System.Text.Json.JsonException)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[CalculatedKasaSnapshot] OutputsJson parse başarısız: {OutputsJson?[..Math.Min(100, OutputsJson?.Length ?? 0)]}");
+                }
             }
         }
         

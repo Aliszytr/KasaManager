@@ -111,7 +111,7 @@
                                 </div>
                                 <div class="col-6">
                                     <label class="form-label" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Başlangıç Tarihi</label>
-                                    <input asp-for="DefaultGenelKasaBaslangicTarihiSeed" class="form-control" type="date" />
+                                    <input asp-for="DefaultGenelKasaBaslangicTarihiSeed" class="form-control" type="date" asp-format="{0:yyyy-MM-dd}" />
                                     <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">
                                         Boş ise rapordan en erken tarih alınır
                                     </div>
@@ -177,8 +177,8 @@
                         @if (Model.VeznedarOptions.Count == 0)
                         {
                             <div style="text-align: center; padding: 30px 0; color: var(--text-muted);">
-                                <i class="fas fa-user-slash" style="font-size: 2rem; margin-bottom: 8px; display: block; opacity: 0.4;"></i>
-                                Veznedar listesi yok — önce KasaÜstRapor snapshot oluşturun
+                                <i class="fas fa-folder-open" style="font-size: 2rem; margin-bottom: 8px; display: block; opacity: 0.4;"></i>
+                                Veznedar listesi yok — önce 'kasa_ust_rapor' Excel dosyasını yükleyin
                             </div>
                         }
                         else
@@ -763,7 +763,9 @@ function bankaYazilariApp() {
             }
             try {
                 var resp = await fetch('@Url.Action("SaveTemplate", "KasaSettings")', { method: 'POST', body: body });
-                var data = await resp.json();
+                if (!resp.ok) throw new Error('Sunucu hatası: ' + resp.status);
+                var txt = await resp.text();
+                var data = (txt && txt.trim()) ? JSON.parse(txt) : { success: false, message: 'Sunucudan boş yanıt' };
                 if (data.success) {
                     this.showToast(data.message, 'success');
                     setTimeout(() => location.reload(), 800);
@@ -783,7 +785,9 @@ function bankaYazilariApp() {
             body.append('templateId', id);
             try {
                 var resp = await fetch('@Url.Action("DeleteTemplate", "KasaSettings")', { method: 'POST', body: body });
-                var data = await resp.json();
+                if (!resp.ok) throw new Error('Sunucu hatası: ' + resp.status);
+                var txt = await resp.text();
+                var data = (txt && txt.trim()) ? JSON.parse(txt) : { success: false, message: 'Sunucudan boş yanıt' };
                 if (data.success) {
                     this.showToast(data.message, 'success');
                     setTimeout(() => location.reload(), 800);

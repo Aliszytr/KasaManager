@@ -187,13 +187,42 @@
             </div>
         }
 
-        @* ═══════ Stopaj/Virman Durumu ═══════ *@
+        @* ═══════ Stopaj/Virman Durumu (Commit 4: 4 durumlu renk mapping) ═══════ *@
         @if (dashboard.LastStopajDurum != null)
         {
             var s = dashboard.LastStopajDurum;
-            var cardBorder = s.VirmanYapildiMi ? "#2ecc71" : "#e74c3c";
-            var cardBg = s.VirmanYapildiMi ? "rgba(46,204,113,0.08)" : "rgba(231,76,60,0.08)";
-            var icon = s.VirmanYapildiMi ? "fa-check-circle text-success" : "fa-exclamation-triangle text-danger";
+            var cardBorder = s.Status switch
+            {
+                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.Ok => "#2ecc71",
+                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.OkWithNote => "#3498db",
+                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.WarningPending => "#f39c12",
+                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.Error => "#e74c3c",
+                _ => "#7f8c8d"
+            };
+            var cardBg = s.Status switch
+            {
+                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.Ok => "rgba(46,204,113,0.08)",
+                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.OkWithNote => "rgba(52,152,219,0.08)",
+                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.WarningPending => "rgba(243,156,18,0.08)",
+                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.Error => "rgba(231,76,60,0.08)",
+                _ => "rgba(127,140,141,0.08)"
+            };
+            var icon = s.Status switch
+            {
+                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.Ok => "fa-check-circle text-success",
+                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.OkWithNote => "fa-info-circle text-info",
+                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.WarningPending => "fa-exclamation-triangle text-warning",
+                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.Error => "fa-times-circle text-danger",
+                _ => "fa-question-circle text-secondary"
+            };
+            var textClass = s.Status switch
+            {
+                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.Ok => "text-success",
+                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.OkWithNote => "text-info",
+                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.WarningPending => "text-warning",
+                KasaManager.Domain.Reports.HesapKontrol.StopajStatus.Error => "text-danger",
+                _ => "text-secondary"
+            };
             <div class="row mb-4">
                 <div class="col-12">
                     <div class="card" style="border-left: 5px solid @cardBorder; background: @cardBg;">
@@ -203,7 +232,7 @@
                                 <h6 class="mb-1 fw-bold">
                                     <i class="fas fa-exchange-alt me-1"></i>Stopaj Virman Durumu
                                 </h6>
-                                <span class="@(s.VirmanYapildiMi ? "text-success" : "text-danger")">
+                                <span class="@textClass">
                                     @s.Mesaj
                                 </span>
                                 @if (s.BeklenenTutar > 0)

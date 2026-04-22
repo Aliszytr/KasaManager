@@ -208,7 +208,7 @@ public sealed class FormulaEngineService : IFormulaEngineService
         {
             if (e.Type == UnifiedPoolValueType.Override && e.IncludeInCalculations)
             {
-                if (TryParseDecimal(e.Value, out var dv))
+                if (Draft.Helpers.DecimalParsingHelper.TryParseFromJson(e.Value, out var dv))
                     overrideMap[e.CanonicalKey] = dv;
             }
         }
@@ -350,27 +350,13 @@ public sealed class FormulaEngineService : IFormulaEngineService
         {
             if (string.IsNullOrWhiteSpace(e.CanonicalKey)) continue;
             if (!e.IncludeInCalculations) continue;
-            if (TryParseDecimal(e.Value, out var d))
+            if (Draft.Helpers.DecimalParsingHelper.TryParseFromJson(e.Value, out var d))
                 map[e.CanonicalKey] = d;
         }
         return map;
     }
 
-    private static bool TryParseDecimal(string? raw, out decimal value)
-    {
-        value = 0m;
-        if (string.IsNullOrWhiteSpace(raw)) return false;
 
-        var s = raw.Trim().Replace("\u00A0", " ").Replace("₺", "").Replace("TL", "", StringComparison.OrdinalIgnoreCase).Trim();
-
-        // 1. Invariant (NCalc genelde nokta kullanır)
-        if (decimal.TryParse(s, NumberStyles.Any, _invariant, out value)) return true;
-
-        // 2. TR Culture
-        if (decimal.TryParse(s, NumberStyles.Any, new CultureInfo("tr-TR"), out value)) return true;
-
-        return false;
-    }
 
     private static IReadOnlyList<FormulaTemplate> OrderByDependencies(IReadOnlyList<FormulaTemplate> templates)
     {

@@ -110,6 +110,10 @@
                                     .Any(d => string.Equals(d, veznedarVal, StringComparison.OrdinalIgnoreCase));
                                 <tr class="@(isDefault ? "row-selected" : "")"
                                     id="@(panelId)-row-@i">
+                                    @{
+                                        var bakiyeValString = Model.BakiyeColumn != null && row.ContainsKey(Model.BakiyeColumn) ? row[Model.BakiyeColumn]?.ToString() : "0";
+                                        decimal.TryParse(bakiyeValString, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.GetCultureInfo("tr-TR"), out var bakiyeVal);
+                                    }
                                     @if (Model.ShowSaveButton)
                                     {
                                         <td>
@@ -119,6 +123,8 @@
                                                    value="@i"
                                                    @(isDefault ? "checked" : "")
                                                    data-panel="@panelId"
+                                                   data-bakiye="@bakiyeVal.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                                   data-veznedar="@veznedarVal"
                                                    onchange="updateRowHighlight('@panelId', @i, this.checked)" />
                                         </td>
                                     }
@@ -274,6 +280,21 @@
 
         const hasCheckedRows = panel.querySelectorAll('.row-check:checked').length > 0;
         saveBtn.disabled = !(approveBox.checked && hasCheckedRows);
+
+        // EXTRA: Update Vergi Kasa values globally across the form if we are in preview context
+        if (typeof window.updateVergiKasaInputs === "function") {
+            window.updateVergiKasaInputs(panelId);
+        } else {
+            let sum = 0;
+            let veznedarlar = [];
+            panel.querySelectorAll('.row-check:checked').forEach(cb => {
+                let v = parseFloat(cb.dataset.bakiye) || 0;
+                sum += v;
+                if (cb.dataset.veznedar) veznedarlar.push(cb.dataset.veznedar);
+            });
+            document.querySelectorAll('input[name="VergiKasaBakiyeToplam"]').forEach(el => el.value = sum.toString().replace('.', ','));
+            document.querySelectorAll('input[name="RptVergiCalisanlari"]').forEach(el => el.value = veznedarlar.join(','));
+        }
     }
 
     // --- Prepare form submission ---

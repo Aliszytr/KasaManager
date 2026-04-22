@@ -71,7 +71,8 @@ public static class PersistenceDependencyInjection
 
         // R17: Field Chooser ve Calculated Kasa servisleri
         services.AddScoped<IFieldPreferenceService, KasaManager.Infrastructure.Services.FieldPreferenceService>();
-        // services.AddScoped<ICalculatedKasaSnapshotService, KasaManager.Infrastructure.Services.CalculatedKasaSnapshotService>(); // P4.4 İptali
+        services.AddScoped<ICalculatedKasaSnapshotService, KasaManager.Infrastructure.Services.CalculatedKasaSnapshotService>(); // P4.4 İptali Geri Alındı - Okuma için hala controller'larda inject ediliyor.
+        services.AddScoped<KasaManager.Application.Abstractions.IKasaRaporSnapshotService, KasaManager.Infrastructure.Persistence.KasaRaporSnapshotService>();
 
         // R19: InMemory caching - performans optimizasyonu
         services.AddMemoryCache();

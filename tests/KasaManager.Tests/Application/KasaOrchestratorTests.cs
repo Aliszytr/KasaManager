@@ -25,6 +25,7 @@ public sealed class KasaOrchestratorTests
     private readonly Mock<IKasaDraftService> _draftsMock = new();
     private readonly Mock<IFormulaEngineService> _engineMock = new();
 
+    private readonly Mock<IKasaRaporSnapshotService> _snapshotMock = new();
     private readonly Mock<IKasaGlobalDefaultsService> _globalDefaultsMock = new();
     private readonly Mock<IFormulaSetStore> _formulaStoreMock = new();
     private readonly Mock<IDataPipeline> _dataPipelineMock = new();
@@ -34,6 +35,7 @@ public sealed class KasaOrchestratorTests
     private KasaOrchestrator CreateSut() => new(
         _draftsMock.Object,
         _engineMock.Object,
+        _snapshotMock.Object,
         _globalDefaultsMock.Object,
         _formulaStoreMock.Object,
         _dataPipelineMock.Object,
@@ -50,7 +52,7 @@ public sealed class KasaOrchestratorTests
         _globalDefaultsMock
             .Setup(g => g.GetAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new KasaGlobalDefaultsSettings { Id = 1 });
-        _draftsMock.Setup(d => d.BuildUnifiedPoolAsync(It.IsAny<DateOnly>(), It.IsAny<string>(), It.IsAny<KasaDraftFinalizeInputs>(), It.IsAny<DateOnly?>(), It.IsAny<DateOnly?>(), It.IsAny<bool>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+        _draftsMock.Setup(d => d.BuildUnifiedPoolAsync(It.IsAny<DateOnly>(), It.IsAny<string>(), It.IsAny<KasaDraftFinalizeInputs>(), It.IsAny<DateOnly?>(), It.IsAny<DateOnly?>(), It.IsAny<bool>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<UnifiedPoolEntry>>.Success(new List<UnifiedPoolEntry>()));
 
         _draftsMock.Setup(d => d.BuildAsync(It.IsAny<DateOnly>(), It.IsAny<string>(), It.IsAny<KasaDraftFinalizeInputs>(), It.IsAny<CancellationToken>()))
@@ -65,10 +67,8 @@ public sealed class KasaOrchestratorTests
 
         await sut.LoadPreviewAsync(dto, @"C:\temp", CancellationToken.None);
 
-        // Without snapshots, if default loaded successfully, IsDataLoaded will actually be true now because snapshot block was removed.
-        // Wait, the orchestrator now sets IsDataLoaded = true unconditionally in Hydrate function!
-        // We probably need to assert Assert.True(dto.IsDataLoaded) because it no longer fails when snapshot is absent.
-        Assert.True(dto.IsDataLoaded);
+        // Without snapshots and using legacy logic, IsDataLoaded will be false because we no longer set it true by default.
+        Assert.False(dto.IsDataLoaded);
     }
 
     // ───────────────────────────────────────────
@@ -173,7 +173,56 @@ public sealed class KasaOrchestratorTests
 
         await sut.HydrateFromSnapshotAndDefaultsAsync(dto, CancellationToken.None);
 
-        Assert.Equal(50m, dto.BozukPara);
-        Assert.Equal(100m, dto.NakitPara);
+        Assert.Null(dto.BozukPara);
+        Assert.Null(dto.NakitPara);
+    }
+    // ───────────────────────────────────────────
+    // Commit 5: HydrateIptalEdilenCikisTutarAsync
+    // ───────────────────────────────────────────
+
+    /// <summary>
+    /// ComparisonService çözümlenemediğinde (dosya eksik, DI hata vb.)
+    /// IptalEdilenCikisTutar = 0 kalmalı, pipeline kırılmamalı.
+    /// </summary>
+    [Fact]
+    public async Task LoadPreviewAsync_ComparisonServiceFails_IptalEdilenCikisTutarRemainsZero()
+    {
+        // Arrange: Snapshot + Pool başarılı, ama ScopeFactory IComparisonService çözümleyemiyor
+        _globalDefaultsMock
+            .Setup(g => g.GetAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new KasaGlobalDefaultsSettings { Id = 1 });
+        _globalDefaultsMock
+            .Setup(g => g.GetOrCreateAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new KasaGlobalDefaultsSettings { Id = 1 });
+
+        _draftsMock.Setup(d => d.BuildUnifiedPoolAsync(
+                It.IsAny<DateOnly>(), It.IsAny<string>(), It.IsAny<KasaDraftFinalizeInputs>(),
+                It.IsAny<DateOnly?>(), It.IsAny<DateOnly?>(), It.IsAny<bool>(),
+                It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<UnifiedPoolEntry>>.Success(new List<UnifiedPoolEntry>()));
+
+        _draftsMock.Setup(d => d.BuildAsync(
+                It.IsAny<DateOnly>(), It.IsAny<string>(), It.IsAny<KasaDraftFinalizeInputs>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<KasaDraftBundle>.Success(new KasaDraftBundle()));
+
+        // ScopeFactory: CreateScope() fırlatır — IComparisonService çözümlenemez
+        _scopeFactoryMock
+            .Setup(f => f.CreateScope())
+            .Throws(new InvalidOperationException("IComparisonService kayıtlı değil (test senaryosu)"));
+
+        var sut = CreateSut();
+        var dto = new KasaPreviewDto
+        {
+            SelectedDate = new DateOnly(2026, 4, 21),
+            KasaType = "Aksam"
+        };
+
+        // Act — kırılmamalı
+        await sut.LoadPreviewAsync(dto, @"C:\temp", CancellationToken.None);
+
+        // Assert
+        Assert.Equal(0m, dto.IptalEdilenCikisTutar);
+        // Pipeline devam etmeli — hata listesinde iptal hatası OLMAMALI (warning loga gider, error listesine değil)
+        Assert.DoesNotContain(dto.Errors, e => e.Contains("iptal", StringComparison.OrdinalIgnoreCase));
     }
 }

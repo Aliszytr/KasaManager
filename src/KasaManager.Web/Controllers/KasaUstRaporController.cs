@@ -25,6 +25,7 @@ public sealed class KasaUstRaporController : Controller
     private readonly IFileStorage _storage;
     private readonly IImportOrchestrator _orchestrator;
     private readonly IKasaReportDateRulesService _dateRules;
+    private readonly IKasaRaporSnapshotService _snapshots;
 
     private readonly IKasaGlobalDefaultsService _globalDefaults;
     private readonly IExportService _exportService;
@@ -34,6 +35,7 @@ public sealed class KasaUstRaporController : Controller
         IFileStorage storage,
         IImportOrchestrator orchestrator,
         IKasaReportDateRulesService dateRules,
+        IKasaRaporSnapshotService snapshots,
         IKasaGlobalDefaultsService globalDefaults,
         IExportService exportService,
         IConfiguration cfg)
@@ -41,6 +43,7 @@ public sealed class KasaUstRaporController : Controller
         _storage = storage;
         _orchestrator = orchestrator;
         _dateRules = dateRules;
+        _snapshots = snapshots;
         _globalDefaults = globalDefaults;
         _exportService = exportService;
         _cfg = cfg;
@@ -169,7 +172,7 @@ public sealed class KasaUstRaporController : Controller
             var isSelected = sel.Contains(i);
 
             var veznedar = TryGet(r, veznedarColumn) ?? string.Empty;
-            var bakiye = TryParseDecimal(TryGet(r, bakiyeColumn), out var b) ? b : 0m;
+            var bakiye = Application.Services.Draft.Helpers.DecimalParsingHelper.TryParseFromTurkish(TryGet(r, bakiyeColumn), out var b) ? b : 0m;
 
             if (isSelected)
                 selectionTotal += bakiye;
@@ -202,10 +205,12 @@ public sealed class KasaUstRaporController : Controller
             Rows = rows
         };
 
-        // KasaUstRapor snapshot save işlemi P4.1 ile iptal edilmiştir (Stateless)
-        // var saved = await _snapshots.SaveAsync(snapshot, ct);
+        // P4.1 iptalinden sonra yeniden etkinleştirildi:
+        // Sabah/Aksam kasa pipeline'ı o güne ait Genel snapshot'a bağımlıdır.
+        // Snapshot kaydedilmezse HydrateFromSnapshotAndDefaultsInternalAsync hata verir.
+        var saved = await _snapshots.SaveAsync(snapshot, ct);
 
-        TempData["Info"] = $"✅ KasaÜstRapor doğrulandı (Snapshot DB Kaydı Kapatıldı) — {finalDate.Value:dd.MM.yyyy} ({snapshot.Rows.Count} satır okundu)";
+        TempData["Info"] = $"✅ KasaÜstRapor doğrulandı — {finalDate.Value:dd.MM.yyyy} ({saved.Rows?.Count ?? 0} satır, v{saved.Version})";
         return RedirectToAction("Index", "Import");
     }
 
@@ -336,25 +341,7 @@ public sealed class KasaUstRaporController : Controller
         return row.TryGetValue(canonical, out var v) ? v : null;
     }
 
-    private static bool TryParseDecimal(string? raw, out decimal value)
-    {
-        value = 0m;
-        if (string.IsNullOrWhiteSpace(raw)) return false;
 
-        raw = raw.Trim();
-
-        // 1.234,56 veya 1,234.56 olasılıkları
-        raw = raw.Replace("₺", "", StringComparison.OrdinalIgnoreCase);
-        raw = raw.Replace(" ", "");
-
-        if (decimal.TryParse(raw, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.GetCultureInfo("tr-TR"), out value))
-            return true;
-
-        if (decimal.TryParse(raw, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out value))
-            return true;
-
-        return false;
-    }
 
     private List<string> ListUploadedFiles()
     {

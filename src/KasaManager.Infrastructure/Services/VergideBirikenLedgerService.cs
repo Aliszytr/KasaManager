@@ -96,21 +96,29 @@ public sealed class VergideBirikenLedgerService : IVergideBirikenLedgerService
 
             try
             {
-                var raporData = JsonSerializer.Deserialize<KasaRaporData>(snap.KasaRaporDataJson, _jsonOptions);
-                if (raporData == null) continue;
+                using var doc = JsonDocument.Parse(snap.KasaRaporDataJson);
+                var root = doc.RootElement;
+                
+                decimal vk = 0m;
+                if (root.TryGetProperty("VergiKasa", out var vkProp) && vkProp.ValueKind == JsonValueKind.Number)
+                    vk = vkProp.GetDecimal();
+                    
+                decimal vg = 0m;
+                if (root.TryGetProperty("VergidenGelen", out var vgProp) && vgProp.ValueKind == JsonValueKind.Number)
+                    vg = vgProp.GetDecimal();
 
-                totalVergiKasa += raporData.VergiKasa;
-                totalVergidenGelen += raporData.VergidenGelen;
+                totalVergiKasa += vk;
+                totalVergidenGelen += vg;
                 count++;
                 lastDate = snap.RaporTarihi;
 
                 _log.LogDebug(
                     "VergideBiriken ledger: {Tarih} {Tip} → VergiKasa={VK:N2}, VergidenGelen={VG:N2}",
-                    snap.RaporTarihi, snap.KasaTuru, raporData.VergiKasa, raporData.VergidenGelen);
+                    snap.RaporTarihi, snap.KasaTuru, vk, vg);
             }
-            catch (JsonException ex)
+            catch (Exception ex)
             {
-                _log.LogWarning(ex, "VergideBiriken: Snapshot JSON parse hatası (tarih={Tarih})", snap.RaporTarihi);
+                _log.LogDebug(ex, "VergideBiriken: Snapshot JSON parse hatası (tarih={Tarih})", snap.RaporTarihi);
             }
         }
 

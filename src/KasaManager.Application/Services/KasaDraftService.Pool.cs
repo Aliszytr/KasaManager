@@ -22,6 +22,7 @@ public sealed partial class KasaDraftService
         bool fullExcelTotals = false,
         string? kasaScope = null,
         bool mesaiSonuModu = false,
+        bool skipSlimPoolFilter = false,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(uploadFolderAbsolute))
@@ -58,7 +59,10 @@ public sealed partial class KasaDraftService
         }
         else
         {
-            devredenKasa = await DetermineDevredenKasaAsync(raporTarihi, issues, ct);
+            var scopeForCarryover = kasaScope?.StartsWith("Sabah", StringComparison.OrdinalIgnoreCase) == true 
+                ? CarryoverScope.SabahKasaNakit 
+                : CarryoverScope.AksamKasaNakit;
+            devredenKasa = await DetermineDevredenKasaAsync(raporTarihi, scopeForCarryover, issues, ct);
         }
 
         // Raw kaynaklar
@@ -121,8 +125,9 @@ public sealed partial class KasaDraftService
                 fullExcelTotals: useFullExcel);
         }
         // R15B parity kilitleri
-        var toplamTahsilat = ust.Tahsilat;
-        var toplamReddiyat = ust.Reddiyat;
+        // R10.9 Doğruluk Yaması: Genel Kasa, KasaUstRapor (tek günlük) tahsilatı yerine, MasrafveReddiyat (tarih aralığı) üzerinden hesaplanan kümülatif sonucu kullanmalıdır.
+        var toplamTahsilat = isGenel ? masrafReddiyatAgg.Masraf : ust.Tahsilat;
+        var toplamReddiyat = isGenel ? masrafReddiyatAgg.Reddiyat : ust.Reddiyat;
         var onlineReddiyat = online.OnlineReddiyat;
 
         // NormalReddiyat = ToplamReddiyat - OnlineReddiyat (negatif beklenmez)
@@ -242,8 +247,9 @@ public sealed partial class KasaDraftService
         }
         else
         {
-            // SABAH / AKŞAM KASA: Eski (legacy) davranışı koru — ayarlardan gelen değerleri kullan
-            AddOverride("dunden_devreden_kasa_nakit", defaultDundenDevredenKasaNakit, "Ayarlar: Dünden devreden kasa nakit (eski sistem)." );
+            // SABAH / AKŞAM KASA: Eski (legacy) davranışı koru — ayarlardan gelen veya DB'den çözülen değerleri kullan
+            var overridesActive = defaultDundenDevredenKasaNakit > 0m;
+            AddOverride("dunden_devreden_kasa_nakit", devredenKasa, overridesActive ? "Ayarlar override: Dünden devreden kasa nakit." : "Önceki hesaplama snapshot (Fallback)." );
             AddOverride("kasa_eksik_fazla", defaultKasaEksikFazla, "Ayarlar: Önceki günden devreden (+/-) bakiye / eksik-fazla (eski sistem)." );
         }
 
@@ -328,18 +334,20 @@ public sealed partial class KasaDraftService
             issues.Add($"R15B UYARI: NormalStopaj negatif çıktı (ToplamStopaj={ust.Stopaj:N2} - OnlineStopaj={online.OnlineStopaj:N2} = {normalStopaj:N2}). 0'a clamp edildi; kaynak dosyaları kontrol edin.");
             normalStopaj = 0m;
         }
-        AddDerived("normal_stopaj", normalStopaj, "KİLİTLİ: NormalStopaj = max(0, ToplamStopaj - OnlineStopaj).");
+        // ORPHAN: AddDerived("normal_stopaj", normalStopaj, "KİLİTLİ: NormalStopaj = max(0, ToplamStopaj - OnlineStopaj).");
 
         // Override alanlar (genişletilebilir)
 
         // Contract-First: Kasada kalacak hedef (0 ise etkisiz). "Yatırılacak Tahsilat" auto düzeltmesi bu hedefe göre türetilir.
-        AddOverride("kasada_kalacak_hedef", ov(null, finalizeInputs.KasadaKalacakHedef), "0 ise etkisiz (Kasada Kalacak Hedef)." );
+        // ORPHAN: AddOverride("kasada_kalacak_hedef", ov(null, finalizeInputs.KasadaKalacakHedef), "0 ise etkisiz (Kasada Kalacak Hedef)." );
         AddOverride("bankaya_yatirilacak_harci_degistir", ov(null, finalizeInputs.BankayaYatirilacakHarciDegistir), "+/- düzeltme (0 ise etkisiz)." );
         AddOverride("bankaya_yatirilacak_tahsilati_degistir", ov(null, finalizeInputs.BankayaYatirilacakTahsilatiDegistir), "+/- düzeltme (0 ise etkisiz)." );
-        AddOverride("kayden_tahsilat", ov(null, finalizeInputs.KaydenTahsilat), "0 ise etkisiz." );
+        var defaultKayden = isGenel ? masrafReddiyatAgg.Diger : 0m;
+        AddOverride("kayden_tahsilat", finalizeInputs.KaydenTahsilat ?? defaultKayden, isGenel ? "MasrafveReddiyat 'Kayden' (Diğer) toplamı." : "0 ise etkisiz.");
         AddOverride("kayden_harc", ov(null, finalizeInputs.KaydenHarc), "0 ise etkisiz." );
-        AddOverride("bankadan_cekilen", ov(null, finalizeInputs.BankadanCekilen), "0 ise etkisiz." );        AddOverride("cesitli_nedenlerle_bankadan_cikamayan_tahsilat", ov(null, finalizeInputs.CesitliNedenlerleBankadanCikamayanTahsilat), "0 ise etkisiz." );
-        AddOverride("bankaya_gonderilmis_deger", ov(null, finalizeInputs.BankayaGonderilmisDeger), "0 ise etkisiz." );
+        // ORPHAN: AddOverride("bankadan_cekilen", ov(null, finalizeInputs.BankadanCekilen), "0 ise etkisiz." );
+        AddOverride("cesitli_nedenlerle_bankadan_cikamayan_tahsilat", ov(null, finalizeInputs.CesitliNedenlerleBankadanCikamayanTahsilat), "0 ise etkisiz." );
+        // ORPHAN: AddOverride("bankaya_gonderilmis_deger", ov(null, finalizeInputs.BankayaGonderilmisDeger), "0 ise etkisiz." );
         AddOverride("vergiden_gelen", ov(null, finalizeInputs.VergidenGelen), "0 ise etkisiz." );
         AddOverride("bozuk_para", ov(null, finalizeInputs.BozukPara), "0 ise etkisiz." );
         AddOverride("nakit_para", ov(null, finalizeInputs.NakitPara), "0 ise etkisiz." );
@@ -357,8 +365,7 @@ public sealed partial class KasaDraftService
         // - devreden_kasa: DetermineDevredenKasaAsync çıktısı (snapshot/ayar)
         // - vergi_kasa / vergi_bina_kasa: legacy rapordaki iki farklı başlık aynı kaynaktan (vergi_kasa_bakiye_toplam) beslenir
         // - yt_tahsilat_degistir_*: "Kasada Kalacak Hedef" kuralı için auto + manuel + effective
-        AddDerived("devreden_kasa", devredenKasa, "KİLİTLİ: DevredenKasa = önceki Akşam GenelKasa (snapshot) veya ayar fallback.");
-        AddDerived("dunden_devreden_kasa", devredenKasa, "Alias: devreden_kasa");
+        // ORPHAN: AddDerived("devreden_kasa", devredenKasa, "KİLİTLİ: DevredenKasa = önceki Akşam GenelKasa (snapshot) veya ayar fallback.");
 
         var vergiKasaBakiyeToplam = ov(null, finalizeInputs.VergiKasaBakiyeToplam);
         if (vergiKasaBakiyeToplam != 0m)
@@ -412,7 +419,7 @@ public sealed partial class KasaDraftService
 
         // R25: SlimPool - Kasa scope filtresi
         // Excel ham verileri HER ZAMAN dahil + seçilen kasanın alanları
-        if (!string.IsNullOrWhiteSpace(kasaScope))
+        if (!skipSlimPoolFilter && !string.IsNullOrWhiteSpace(kasaScope))
         {
             var requiredKeys = FieldCatalog.GetRequiredKeysFor(kasaScope);
             entries = entries
@@ -472,7 +479,7 @@ public sealed partial class KasaDraftService
             rawJson = JsonSerializer.Serialize(last);
 
             var s = TryGet(last, "islem_sonrasi_bakiye");
-            if (!TryParseDecimal(s, out var bakiye))
+            if (!Draft.Helpers.DecimalParsingHelper.TryParseFromJson(s, out var bakiye))
             {
                 issues.Add("BankaTahsilat: 'islem_sonrasi_bakiye' kolonu okunamadı/parse edilemedi. Banka bakiye hesaplanamadı.");
                 return null;

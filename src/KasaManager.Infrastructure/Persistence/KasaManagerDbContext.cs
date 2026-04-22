@@ -481,6 +481,7 @@ b.Property(x => x.ColumnsJson)
             b.Property(x => x.InputsFingerprint).HasMaxLength(255);
             b.Property(x => x.ResultsJson).HasColumnType("nvarchar(max)");
             b.HasIndex(x => new { x.ForDate, x.KasaTuru })
+                .IsUnique()
                 .HasDatabaseName("IX_DailyCalcResults_Date_Type");
             b.HasIndex(x => x.PreviousResultId)
                 .HasDatabaseName("IX_DailyCalcResults_PrevId");

@@ -212,7 +212,8 @@ public sealed record StopajVirmanDurum(
     bool VirmanYapildiMi,
     decimal BeklenenTutar,
     decimal? BulunanVirmanTutar,
-    string Mesaj);
+    string Mesaj,
+    StopajStatus Status = StopajStatus.Ok);
 
 /// <summary>
 /// Dashboard özet kartı.
