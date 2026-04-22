@@ -81,7 +81,12 @@ public sealed class CheckStopajFromAllVirmansTests
         // Assert
         Assert.True(result.VirmanYapildiMi);
         Assert.Equal(StopajStatus.Ok, result.Status);
-        Assert.Contains("16.419,44", result.Mesaj);
+        
+        // Linux (en-US) vs Windows (tr-TR) culture farklılıklarından dolayı
+        // string formatting ("16.419,44" vs "16,419.44") patlamaması için 
+        // dinamik formatlayarak kontrol ediyoruz.
+        string expectedFormatted = 16419.44m.ToString("N2");
+        Assert.Contains(expectedFormatted, result.Mesaj);
     }
 
     [Fact]
