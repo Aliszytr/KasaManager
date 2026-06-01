@@ -436,6 +436,9 @@ b.Property(x => x.ColumnsJson)
             b.Property(x => x.ImportProfileVersion).HasMaxLength(50);
             
             b.HasIndex(x => x.TargetDate).HasDatabaseName("IX_ImportBatches_TargetDate");
+            b.HasIndex(x => new { x.TargetDate, x.FileHash })
+                .IsUnique()
+                .HasDatabaseName("IX_ImportBatches_TargetDate_FileHash");
         });
 
         modelBuilder.Entity<DailyFact>(b =>
@@ -452,6 +455,9 @@ b.Property(x => x.ColumnsJson)
 
             b.HasIndex(x => new { x.ForDate, x.CanonicalKey })
                 .HasDatabaseName("IX_DailyFacts_Date_Key");
+
+            b.HasIndex(x => x.ImportBatchId)
+                .HasDatabaseName("IX_DailyFacts_ImportBatchId");
         });
 
         modelBuilder.Entity<DailyOverride>(b =>

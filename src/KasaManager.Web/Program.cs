@@ -83,6 +83,7 @@ builder.Services.AddScoped<ImportOrchestrator>();
 builder.Services.AddScoped<IImportOrchestrator, CachingImportOrchestrator>();
 builder.Services.AddScoped<KasaManager.Application.Services.DataFirst.IFactNormalizationService, KasaManager.Infrastructure.Services.FactNormalizationService>();
 builder.Services.AddScoped<KasaManager.Application.Services.DataFirst.IParityCheckService, KasaManager.Infrastructure.Services.ParityCheckService>();
+builder.Services.AddScoped<KasaManager.Application.Services.DataFirst.IProjectionDbReadService, KasaManager.Infrastructure.Services.ProjectionDbReadService>();
 // FAZ 12: Trust DB isolation — Repository pattern
 builder.Services.AddScoped<KasaManager.Application.Services.DataFirst.IDataFirstTrustReadRepository, KasaManager.Infrastructure.Services.DataFirstTrustReadRepository>();
 builder.Services.AddScoped<KasaManager.Application.Services.DataFirst.IDataFirstTrustService, KasaManager.Infrastructure.Services.DataFirstTrustService>();

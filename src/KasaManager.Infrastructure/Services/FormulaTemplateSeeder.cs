@@ -68,8 +68,11 @@ public sealed class FormulaTemplateSeeder : IFormulaTemplateSeeder
             ("bankaya_yatirilacak_toplam", "Max(0.0, bankaya_yatirilacak_tahsilat + bankaya_yatirilacak_harc + normal_stopaj - bankaya_gonderilmis_deger)"),
             // Kontrol — SABAH sabit 0
             ("stopaj_kontrol", "0"),
-            // Final
-            ("genel_kasa", "dunden_devreden_kasa_nakit + bankadan_cekilen + vergiden_gelen + toplam_tahsilat + normal_stopaj + cesitli_nedenlerle_bankadan_cikamayan_tahsilat - normal_reddiyat - bankaya_yatirilacak_tahsilat - kayden_tahsilat"),
+            // Final — Reconciliation Gateway
+            ("takip_kasa_etkisi_tahsilat", "takip_kasa_etkisi_tahsilat"),
+            ("takip_kasa_etkisi_harc", "takip_kasa_etkisi_harc"),
+            ("takip_kasa_etkisi_net", "takip_kasa_etkisi_tahsilat - takip_kasa_etkisi_harc"),
+            ("genel_kasa", "dunden_devreden_kasa_nakit + bankadan_cekilen + vergiden_gelen + toplam_tahsilat + normal_stopaj + cesitli_nedenlerle_bankadan_cikamayan_tahsilat - normal_reddiyat - bankaya_yatirilacak_tahsilat - kayden_tahsilat + takip_kasa_etkisi_tahsilat"),
             ("bozuk_para_haric_kasa", "genel_kasa - bozuk_para"),
             // Muhasebe fark
             ("tahsil_red_fark", "kayden_tahsilat - bankaya_giren_tahsilat"),
@@ -139,6 +142,7 @@ public sealed class FormulaTemplateSeeder : IFormulaTemplateSeeder
             
             // V2: Mevcut DB'deki Genel Kasa formüllerini kontrol et ve gerekirse düzelt
             await MigrateGenelKasaFormulasIfNeededAsync(ct);
+            await MigrateSabahFormulaSemanticsIfNeededAsync(ct);
             return;
         }
 
@@ -171,6 +175,7 @@ public sealed class FormulaTemplateSeeder : IFormulaTemplateSeeder
         }
 
         await _db.SaveChangesAsync(ct);
+        await MigrateSabahFormulaSemanticsIfNeededAsync(ct);
     }
 
     /// <summary>
@@ -303,6 +308,65 @@ public sealed class FormulaTemplateSeeder : IFormulaTemplateSeeder
             _logger.LogError(ex,
                 "V2 Migration: Genel Kasa formül düzeltme hatası. " +
                 "Transaction rollback edildi — DB orijinal formülleriyle çalışmaya devam ediyor.");
+        }
+    }
+
+    /// <summary>
+    /// Sabah Kasa DB formüllerinde takip_kasa_etkisi_net → takip_kasa_etkisi_tahsilat düzeltmesi.
+    /// Harç farkının Genel Kasa'yı şişirmesini (cross-contamination) önler.
+    /// </summary>
+    private async Task MigrateSabahFormulaSemanticsIfNeededAsync(CancellationToken ct)
+    {
+        try
+        {
+            var sabahSets = await _db.FormulaSets
+                .AsNoTracking()
+                .Where(s => s.ScopeType == "Sabah" && s.IsActive)
+                .Select(s => new { s.Id, s.Name })
+                .ToListAsync(ct);
+
+            if (sabahSets.Count == 0) return;
+
+            var setIds = sabahSets.Select(s => s.Id).ToList();
+            var lines = await _db.FormulaLines
+                .Where(l => setIds.Contains(l.SetId))
+                .ToListAsync(ct);
+
+            var changed = false;
+            foreach (var set in sabahSets)
+            {
+                var setLines = lines.Where(l => l.SetId == set.Id).ToList();
+
+                foreach (var line in setLines)
+                {
+                    if (line.TargetKey != "genel_kasa") continue;
+                    var expr = line.Expression ?? string.Empty;
+
+                    // DB'deki genel_kasa formülünde takip_kasa_etkisi_net varsa
+                    // ve takip_kasa_etkisi_tahsilat yoksa → düzelt
+                    if (expr.Contains("takip_kasa_etkisi_net") && !expr.Contains("takip_kasa_etkisi_tahsilat"))
+                    {
+                        line.Expression = expr.Replace("takip_kasa_etkisi_net", "takip_kasa_etkisi_tahsilat");
+                        _logger.LogWarning(
+                            "[HARC-XCONTAM-FIX] SetId={SetId} genel_kasa formülünde takip_kasa_etkisi_net → takip_kasa_etkisi_tahsilat düzeltildi.",
+                            set.Id);
+                        changed = true;
+                    }
+                }
+            }
+
+            if (!changed) return;
+
+            await _db.SaveChangesAsync(ct);
+            await _db.FormulaSets
+                .Where(s => setIds.Contains(s.Id))
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.UpdatedAtUtc, DateTime.UtcNow), ct);
+
+            _logger.LogInformation("[HARC-XCONTAM-FIX] Sabah Kasa formül düzeltmesi tamamlandı.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[HARC-XCONTAM-FIX] Sabah Kasa formül düzeltmesi sırasında hata.");
         }
     }
 }

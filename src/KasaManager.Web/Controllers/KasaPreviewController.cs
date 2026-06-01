@@ -44,6 +44,19 @@ public sealed partial class KasaPreviewController : Controller
     private readonly KasaManager.Application.Services.ReadAdapter.IKasaReadModelService _readModelService;
     private readonly ICalculatedKasaSnapshotService _calcSnapshots;
     private readonly IKasaRaporSnapshotService _raporSnapshots;
+    private static readonly string[] DiagnosticTargetKeys =
+    [
+        "genel_kasa",
+        "bankaya_yatirilacak_tahsilat",
+        "bankaya_yatirilacak_harc",
+        "toplam_tahsilat",
+        "toplam_harc",
+        "kasa_eksik_fazla",
+        "gune_ait_eksik_fazla_tahsilat",
+        "gune_ait_eksik_fazla_harc",
+        "dunden_eksik_fazla_tahsilat",
+        "dunden_eksik_fazla_harc"
+    ];
 
     public KasaPreviewController(
         IKasaOrchestrator orchestrator,
@@ -451,21 +464,6 @@ public sealed partial class KasaPreviewController : Controller
         await _orchestrator.HydrateDbFormulaSetsAsync(dto, ct);
         model.UpdateFromDto(dto);
 
-        // ── 3. Hesapla (Calculate logic) ──
-        dto = model.ToDto(); // dto'yu güncellenmiş model'den yenile
-        await _orchestrator.RunFormulaEnginePreviewAsync(dto, uploadPath, ct);
-        await _orchestrator.HydrateDbFormulaSetsAsync(dto, ct);
-        model.UpdateFromDto(dto);
-
-        if (model.Errors.Count == 0 && (model.Drafts != null || model.FormulaRun != null))
-        {
-            model.HasResults = true;
-        }
-
-        // ── 4. Panel + IBAN + Vergide Biriken + Veznedarlar ──
-        await HydrateCommonAsync(model, ct);
-
-        // ─── B5: HesapKontrol Otomatik Analiz (Sabah + Akşam Tam Gün) ───
         var isSabahLC = model.KasaType?.Equals("Sabah", StringComparison.OrdinalIgnoreCase) == true;
         var isAksamTamGunLC = model.KasaType?.Equals("Aksam", StringComparison.OrdinalIgnoreCase) == true
                               && !model.AksamMesaiSonuModu;
@@ -483,6 +481,28 @@ public sealed partial class KasaPreviewController : Controller
                 _log.LogWarning(ex, "HesapKontrol otomatik analiz başarısız, sonuçlar etkilenmedi");
             }
         }
+
+        _log.LogDebug(
+            "[LOADANDCALC-GATEWAY] Before formula: TakipKasaEtkisiTahsilat={TakipKasaEtkisiTahsilat} TakipKasaEtkisiHarc={TakipKasaEtkisiHarc} TakipKasaEtkisiNet={TakipKasaEtkisiNet}",
+            model.TakipKasaEtkisiTahsilat,
+            model.TakipKasaEtkisiHarc,
+            model.TakipKasaEtkisiNet);
+
+        // ── 3. Hesapla (Calculate logic) ──
+        dto = model.ToDto(); // dto'yu güncellenmiş model'den yenile
+        await _orchestrator.RunFormulaEnginePreviewAsync(dto, uploadPath, ct);
+        await _orchestrator.HydrateDbFormulaSetsAsync(dto, ct);
+        model.UpdateFromDto(dto);
+
+        if (model.Errors.Count == 0 && (model.Drafts != null || model.FormulaRun != null))
+        {
+            model.HasResults = true;
+        }
+
+        // ── 4. Panel + IBAN + Vergide Biriken + Veznedarlar ──
+        await HydrateCommonAsync(model, ct);
+
+        LogValueSourceDiagnostics(model, actionName: "LoadAndCalculate");
 
         await HydrateValidationAsync(model, ct);
 
@@ -519,26 +539,8 @@ public sealed partial class KasaPreviewController : Controller
         // Vergide Biriken: Tüm kasa tipleri için hesaplama ÖNCESİ
         await HydrateVergideBirikenSeedAsync(model, ct);
         await ApplyAutoVergiKasaFromDefaultsAsync(model, ct);
-        var dto = model.ToDto();
         var uploadPath = ResolveUploadFolderAbsolute();
 
-        var effectiveKasaType = !string.IsNullOrEmpty(model.KasaType) ? model.KasaType : "Aksam";
-        await _orchestrator.LoadActiveFormulaSetByScopeAsync(dto, effectiveKasaType, ct);
-        await _orchestrator.RunFormulaEnginePreviewAsync(dto, uploadPath, ct);
-        await _orchestrator.HydrateDbFormulaSetsAsync(dto, ct);
-
-        model.UpdateFromDto(dto);
-
-        // Progressive Disclosure: Hesaplama başarılıysa sonuçlar var
-        if (model.Errors.Count == 0 && (model.Drafts != null || model.FormulaRun != null))
-        {
-            model.HasResults = true;
-        }
-
-        // Panel persistence & Common Hydration
-        await HydrateCommonAsync(model, ct);
-
-        // ─── B5: HesapKontrol Otomatik Analiz (Sabah + Akşam Tam Gün) ───
         var isSabah = model.KasaType?.Equals("Sabah", StringComparison.OrdinalIgnoreCase) == true;
         var isAksamTamGun = model.KasaType?.Equals("Aksam", StringComparison.OrdinalIgnoreCase) == true
                             && !model.AksamMesaiSonuModu;
@@ -556,6 +558,31 @@ public sealed partial class KasaPreviewController : Controller
                 _log.LogWarning(ex, "HesapKontrol otomatik analiz başarısız, sonuçlar etkilenmedi");
             }
         }
+
+        _log.LogDebug(
+            "[CALCULATE-GATEWAY] Before formula: TakipKasaEtkisiTahsilat={TakipKasaEtkisiTahsilat} TakipKasaEtkisiHarc={TakipKasaEtkisiHarc} TakipKasaEtkisiNet={TakipKasaEtkisiNet}",
+            model.TakipKasaEtkisiTahsilat,
+            model.TakipKasaEtkisiHarc,
+            model.TakipKasaEtkisiNet);
+
+        var dto = model.ToDto();
+        var effectiveKasaType = !string.IsNullOrEmpty(model.KasaType) ? model.KasaType : "Aksam";
+        await _orchestrator.LoadActiveFormulaSetByScopeAsync(dto, effectiveKasaType, ct);
+        await _orchestrator.RunFormulaEnginePreviewAsync(dto, uploadPath, ct);
+        await _orchestrator.HydrateDbFormulaSetsAsync(dto, ct);
+
+        model.UpdateFromDto(dto);
+
+        // Progressive Disclosure: Hesaplama başarılıysa sonuçlar var
+        if (model.Errors.Count == 0 && (model.Drafts != null || model.FormulaRun != null))
+        {
+            model.HasResults = true;
+        }
+
+        // Panel persistence & Common Hydration
+        await HydrateCommonAsync(model, ct);
+
+        LogValueSourceDiagnostics(model, actionName: "Calculate");
 
         // ─── Validation Uyarı Sistemi ───
         await HydrateValidationAsync(model, ct);
@@ -698,6 +725,8 @@ public sealed partial class KasaPreviewController : Controller
             var outputsJson = Request.Form["SaveOutputsJson"].ToString();
             var confirmOverwrite = Request.Form["ConfirmOverwrite"].ToString()
                 .Equals("true", StringComparison.OrdinalIgnoreCase);
+
+            LogHiddenConsistency(outputsJson);
 
             // ── Banka doğrulama key'lerini OutputsJson'a enjekte et ──
             // Bu key'ler Pool girdisi olduğu için FormulaEngine çıktısına dahil değildir.
@@ -1018,6 +1047,7 @@ public sealed partial class KasaPreviewController : Controller
                 catch { /* tamamen okunamayan json — boş outputs ile devam */ }
             }
         }
+        LogSnapshotRestoreOutputs(outputs);
 
         // CalculationRun oluştur (sonuçlar görünsün)
         model.FormulaRun = new Domain.Calculation.CalculationRun
@@ -1047,6 +1077,7 @@ public sealed partial class KasaPreviewController : Controller
 
                 if (raporData != null)
                 {
+                    LogSnapshotRestoreRaporData(raporData, outputs);
                     // ── Vergi Bilgileri (Kritik: Bu alanlar daha önce restore edilmiyordu) ──
                     model.VergiKasaBakiyeToplam = raporData.VergiKasa;
                     model.VergideBirikenKasa = raporData.VergideBirikenKasa;
@@ -1133,6 +1164,224 @@ public sealed partial class KasaPreviewController : Controller
         {
             _log.LogError(ex, "KasaPreview DeleteSnapshot hatası - Id={Id}", snapshotId);
             return Json(new { ok = false, message = $"❌ Silme hatası: {ex.Message}" });
+        }
+    }
+
+    private void LogValueSourceDiagnostics(KasaPreviewViewModel model, string actionName)
+    {
+        var snapshotSource = model.LoadedSnapshotId.HasValue;
+        foreach (var key in DiagnosticTargetKeys)
+        {
+            var formulaExists = TryGetFormulaValue(model, key, out var formulaValue);
+            var poolExists = TryGetPoolValue(model, key, out var poolValue);
+            var modelExists = TryGetModelValue(model, key, out var modelValue);
+            var draftExists = TryGetDraftValue(model, key, out var draftValue);
+
+            var hasAutoFillSignal = key is "gune_ait_eksik_fazla_tahsilat"
+                or "gune_ait_eksik_fazla_harc"
+                or "dunden_eksik_fazla_tahsilat"
+                or "dunden_eksik_fazla_harc";
+
+            var autoFillLikelyChanged = hasAutoFillSignal && modelExists && poolExists && modelValue != poolValue;
+            var finalDisplayed = ResolveFinalDisplayedCandidate(model, key, formulaExists, formulaValue, poolExists, poolValue, modelExists, modelValue, draftExists, draftValue);
+            var winner = EstimateWinnerSource(model, key, formulaExists, poolExists, modelExists, draftExists);
+
+            _log.LogInformation(
+                "[VALUE-SOURCE] Action={Action} Field={Field} FormulaExists={FormulaExists} FormulaValue={FormulaValue} PoolExists={PoolExists} PoolValue={PoolValue} ModelExists={ModelExists} ModelValue={ModelValue} DraftExists={DraftExists} DraftValue={DraftValue} SnapshotSource={SnapshotSource} HKAutoFillChanged={HKAutoFillChanged} FinalDisplayedCandidate={FinalDisplayed} WinnerSource={Winner}",
+                actionName,
+                key,
+                formulaExists,
+                formulaExists ? formulaValue : (decimal?)null,
+                poolExists,
+                poolExists ? poolValue : (decimal?)null,
+                modelExists,
+                modelExists ? modelValue : (decimal?)null,
+                draftExists,
+                draftExists ? draftValue : (decimal?)null,
+                snapshotSource,
+                autoFillLikelyChanged,
+                finalDisplayed,
+                winner);
+        }
+    }
+
+    private static decimal ResolveFinalDisplayedCandidate(
+        KasaPreviewViewModel model,
+        string key,
+        bool formulaExists,
+        decimal formulaValue,
+        bool poolExists,
+        decimal poolValue,
+        bool modelExists,
+        decimal modelValue,
+        bool draftExists,
+        decimal draftValue)
+    {
+        if (formulaExists) return formulaValue;
+        if (poolExists) return poolValue;
+        if (modelExists) return modelValue;
+        if (draftExists) return draftValue;
+        return 0m;
+    }
+
+    private static string EstimateWinnerSource(
+        KasaPreviewViewModel model,
+        string key,
+        bool formulaExists,
+        bool poolExists,
+        bool modelExists,
+        bool draftExists)
+    {
+        if (formulaExists) return "FormulaOutput";
+        if (poolExists) return "Pool";
+        if (modelExists) return "Model";
+        if (draftExists) return "Draft";
+        return "Unknown/Default";
+    }
+
+    private static bool TryGetFormulaValue(KasaPreviewViewModel model, string key, out decimal value)
+    {
+        value = 0m;
+        if (model.FormulaRun?.Outputs == null) return false;
+        return model.FormulaRun.Outputs.TryGetValue(key, out value);
+    }
+
+    private static bool TryGetPoolValue(KasaPreviewViewModel model, string key, out decimal value)
+    {
+        value = 0m;
+        var item = model.PoolEntries?.FirstOrDefault(x =>
+            x.CanonicalKey.Equals(key, StringComparison.OrdinalIgnoreCase));
+        if (item == null) return false;
+        return decimal.TryParse(item.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out value);
+    }
+
+    private static bool TryGetDraftValue(KasaPreviewViewModel model, string key, out decimal value)
+    {
+        value = 0m;
+        if (model.Drafts == null) return false;
+        var scope = (model.KasaType ?? "Aksam").Trim().ToLowerInvariant();
+        var draft = scope switch
+        {
+            "sabah" => model.Drafts.Sabah,
+            "genel" => model.Drafts.Genel,
+            _ => model.Drafts.Aksam
+        };
+
+        if (!draft.Fields.TryGetValue(key, out var raw) || string.IsNullOrWhiteSpace(raw))
+            return false;
+        return decimal.TryParse(raw, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out value);
+    }
+
+    private static bool TryGetModelValue(KasaPreviewViewModel model, string key, out decimal value)
+    {
+        value = 0m;
+        decimal? nullable = key switch
+        {
+            "gune_ait_eksik_fazla_tahsilat" => model.GuneAitEksikFazlaTahsilat,
+            "gune_ait_eksik_fazla_harc" => model.GuneAitEksikFazlaHarc,
+            "dunden_eksik_fazla_tahsilat" => model.DundenEksikFazlaTahsilat,
+            "dunden_eksik_fazla_harc" => model.DundenEksikFazlaHarc,
+            _ => null
+        };
+
+        if (!nullable.HasValue) return false;
+        value = nullable.Value;
+        return true;
+    }
+
+    private void LogSnapshotRestoreOutputs(Dictionary<string, decimal> outputs)
+    {
+        foreach (var key in DiagnosticTargetKeys)
+        {
+            if (outputs.TryGetValue(key, out var value))
+            {
+                _log.LogInformation("[SNAPSHOT-RESTORE] Source=OutputsJson Field={Field} Value={Value}", key, value);
+            }
+        }
+    }
+
+    private void LogSnapshotRestoreRaporData(KasaRaporData raporData, Dictionary<string, decimal> outputs)
+    {
+        var raporValues = new Dictionary<string, decimal>
+        {
+            ["genel_kasa"] = raporData.GenelKasa,
+            ["bankaya_yatirilacak_tahsilat"] = raporData.BankayaTahsilat,
+            ["bankaya_yatirilacak_harc"] = raporData.BankayaHarc,
+            ["gune_ait_eksik_fazla_tahsilat"] = raporData.GuneAitEksikFazlaTahsilat,
+            ["gune_ait_eksik_fazla_harc"] = raporData.GuneAitEksikFazlaHarc,
+            ["dunden_eksik_fazla_tahsilat"] = raporData.DundenEksikFazlaTahsilat,
+            ["dunden_eksik_fazla_harc"] = raporData.DundenEksikFazlaHarc
+        };
+
+        foreach (var kv in raporValues)
+        {
+            _log.LogInformation("[SNAPSHOT-RESTORE] Source=KasaRaporDataJson Field={Field} Value={Value}", kv.Key, kv.Value);
+            if (outputs.TryGetValue(kv.Key, out var outValue) && outValue != kv.Value)
+            {
+                _log.LogWarning("[SNAPSHOT-RESTORE] OutputsJson/KasaRaporDataJson mismatch Field={Field} OutputsValue={OutputsValue} RaporDataValue={RaporDataValue}", kv.Key, outValue, kv.Value);
+            }
+        }
+    }
+
+    private void LogHiddenConsistency(string outputsJson)
+    {
+        var outputMap = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(outputsJson) && outputsJson != "{}")
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(outputsJson);
+                foreach (var prop in doc.RootElement.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind == JsonValueKind.Number)
+                    {
+                        if (prop.Value.TryGetDecimal(out var num))
+                            outputMap[prop.Name] = num;
+                    }
+                    else if (prop.Value.ValueKind == JsonValueKind.String
+                             && decimal.TryParse(prop.Value.GetString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+                    {
+                        outputMap[prop.Name] = parsed;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "[HIDDEN-CONSISTENCY] SaveOutputsJson parse başarısız");
+            }
+        }
+
+        var hiddenMap = new Dictionary<string, string>
+        {
+            ["genel_kasa"] = "RptGenelKasa",
+            ["bankaya_yatirilacak_tahsilat"] = "RptBankayaTahsilat",
+            ["bankaya_yatirilacak_harc"] = "RptBankayaHarc",
+            ["gune_ait_eksik_fazla_tahsilat"] = "RptEfGuneT",
+            ["gune_ait_eksik_fazla_harc"] = "RptEfGuneH",
+            ["dunden_eksik_fazla_tahsilat"] = "RptEfDundenT",
+            ["dunden_eksik_fazla_harc"] = "RptEfDundenH"
+        };
+
+        foreach (var key in DiagnosticTargetKeys)
+        {
+            outputMap.TryGetValue(key, out var outputValue);
+            decimal hiddenValue = 0m;
+            var hasHidden = hiddenMap.TryGetValue(key, out var hiddenName)
+                            && decimal.TryParse(Request.Form[hiddenName], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out hiddenValue);
+
+            _log.LogInformation(
+                "[HIDDEN-CONSISTENCY] Field={Field} SaveOutputsValue={SaveOutputsValue} HiddenField={HiddenField} HiddenValue={HiddenValue}",
+                key,
+                outputMap.ContainsKey(key) ? outputValue : (decimal?)null,
+                hasHidden ? hiddenName : "N/A",
+                hasHidden ? hiddenValue : (decimal?)null);
+
+            if (outputMap.ContainsKey(key) && hasHidden && outputValue != hiddenValue)
+            {
+                _log.LogWarning(
+                    "[HIDDEN-CONSISTENCY] Mismatch Field={Field} SaveOutputsValue={SaveOutputsValue} HiddenValue={HiddenValue}",
+                    key, outputValue, hiddenValue);
+            }
         }
     }
 }

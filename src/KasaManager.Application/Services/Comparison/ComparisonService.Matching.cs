@@ -3,6 +3,7 @@ using KasaManager.Application.Abstractions;
 using KasaManager.Application.Services.Draft.Helpers;
 using KasaManager.Domain.Abstractions;
 using KasaManager.Domain.Reports;
+using Microsoft.Extensions.Logging;
 
 namespace KasaManager.Application.Services.Comparison;
 
@@ -17,55 +18,52 @@ public sealed partial class ComparisonService
     private ComparisonMatchResult FindBestMatch(
         OnlineRecord online,
         List<BankaRecord> bankaRecords,
-        HashSet<int> usedIndices)
+        HashSet<int> usedIndices,
+        ComparisonType type)
     {
         var candidates = new List<(BankaRecord Record, double Score, string Reason)>();
 
         foreach (var banka in bankaRecords)
         {
-            // Zaten kullanılmış mı?
             if (usedIndices.Contains(banka.RowIndex))
                 continue;
 
-            // Tutar kontrolü (zorunlu)
             if (!IsAmountMatch(online.Miktar, banka.Tutar))
                 continue;
 
-            // Puan hesapla
             double score = 0;
             var reasons = new List<string>();
 
-            // 1. Tutar eşleşmesi bazal puan
             score += 0.1;
-            reasons.Add("Tutar eşleşti");
+            reasons.Add("Tutar eslesti");
+            LogHarcCandidate(type, online, banka, "AmountMatched");
 
-            // 2. Esas No eşleşmesi (+0.4)
             if (!string.IsNullOrEmpty(online.DosyaNo) && !string.IsNullOrEmpty(banka.Parsed.EsasNo))
             {
                 if (NormalizeDosyaNo(banka.Parsed.EsasNo) == online.DosyaNo)
                 {
                     score += 0.4;
-                    reasons.Add("EsasNo tam eşleşti");
+                    reasons.Add("EsasNo tam eslesti");
                 }
                 else if (banka.Aciklama?.Contains(online.DosyaNo, StringComparison.OrdinalIgnoreCase) == true)
                 {
                     score += 0.3;
-                    reasons.Add("EsasNo açıklamada bulundu");
+                    reasons.Add("EsasNo aciklamada bulundu");
                 }
             }
 
-            // 3. Birim Adı eşleşmesi (+0.3)
-            // NOT: Mahkeme numarası farklı olsa bile diğer kriterlerle eşleşebilir
-            bool courtNumberMismatch = false;
+            var courtNumberMismatch = false;
             if (!string.IsNullOrEmpty(online.BirimAdi) && !string.IsNullOrEmpty(banka.Aciklama))
             {
                 var birimMatch = MatchBirimAdi(online.BirimAdi, banka.Aciklama, banka.Parsed.Mahkeme);
-                
                 if (birimMatch.score < 0)
                 {
-                    // Mahkeme numarası farklı - sadece işaretle, henüz diskalifiye etme
                     courtNumberMismatch = true;
-                    // BirimAdı skoru 0 kalacak, bonus yok
+                }
+                else if (birimMatch.score == 0 && HasSameCourtIdentity(online.BirimAdi, banka.Aciklama))
+                {
+                    score += 0.3;
+                    reasons.Add("Mahkeme tarih/tutar fallback eslesti");
                 }
                 else
                 {
@@ -74,56 +72,56 @@ public sealed partial class ComparisonService
                         reasons.Add(birimMatch.reason);
                 }
             }
-            
-            // KRİTİK KURAL: Esas No TAM eşleşiyor VE mahkeme numarası farklı ise → diskalifiye
-            // Çünkü aynı esas no farklı mahkemelere ait olamaz
-            bool esasNoMatches = !string.IsNullOrEmpty(online.DosyaNo) && 
-                                 !string.IsNullOrEmpty(banka.Parsed.EsasNo) &&
-                                 NormalizeDosyaNo(banka.Parsed.EsasNo) == online.DosyaNo;
-            
+
+            var esasNoMatches = !string.IsNullOrEmpty(online.DosyaNo)
+                && !string.IsNullOrEmpty(banka.Parsed.EsasNo)
+                && NormalizeDosyaNo(banka.Parsed.EsasNo) == online.DosyaNo;
+
             if (esasNoMatches && courtNumberMismatch)
             {
-                // Esas no eşleşiyor ama mahkeme numarası farklı - bu kesinlikle yanlış eşleşme
-                continue;
+                score -= 0.4;
+                if (score < 0.1) score = 0.1;
+                reasons.Add("Mahkeme numarasi uyusmuyor (EsasNo eslesti ama teyit gerekli)");
             }
 
-            // 4. Tarih eşleşmesi (+0.2)
             if (online.Tarih.HasValue && banka.Tarih.HasValue)
             {
                 var daysDiff = Math.Abs((online.Tarih.Value - banka.Tarih.Value).Days);
                 if (daysDiff == 0)
                 {
                     score += 0.2;
-                    reasons.Add("Aynı gün");
+                    reasons.Add("Ayni gun");
                 }
                 else if (daysDiff <= 1)
                 {
                     score += 0.15;
-                    reasons.Add("±1 gün");
+                    reasons.Add("+/-1 gun");
                 }
                 else if (daysDiff <= DateToleranceDays)
                 {
                     score += 0.1;
-                    reasons.Add($"±{daysDiff} gün");
+                    reasons.Add($"+/-{daysDiff} gun");
                 }
             }
 
-            if (score > 0.1) // Sadece tutardan fazla eşleşme varsa
-            {
-                candidates.Add((banka, score, string.Join(", ", reasons)));
-            }
+            var reason = string.Join(", ", reasons);
+            LogHarcScore(type, online, banka, score, reason);
+
+            if (score > 0.1)
+                candidates.Add((banka, score, reason));
+            else
+                LogHarcRejected(type, online, banka, score, "BelowCandidateFloor");
         }
 
-        // En yüksek puanlı eşleşmeyi seç
         if (candidates.Count == 0)
         {
+            LogHarcRejected(type, online, null, 0, "NoCandidate");
             return CreateNotFoundResult(online);
         }
 
         candidates.Sort((a, b) => b.Score.CompareTo(a.Score));
         var best = candidates[0];
 
-        // Çoklu eşleşme kontrolü
         MatchStatus status;
         if (candidates.Count > 1 && Math.Abs(candidates[0].Score - candidates[1].Score) < 0.05)
         {
@@ -140,7 +138,11 @@ public sealed partial class ComparisonService
         else
         {
             status = MatchStatus.NotFound;
+            LogHarcRejected(type, online, best.Record, best.Score, "BelowPartialThreshold");
         }
+
+        if (status == MatchStatus.PartialMatch)
+            LogHarcPartialCreated(type, online, best.Record, best.Score, best.Reason);
 
         return new ComparisonMatchResult
         {
@@ -164,6 +166,78 @@ public sealed partial class ComparisonService
         };
     }
 
+    private void LogHarcCandidate(ComparisonType type, OnlineRecord online, BankaRecord banka, string reason)
+    {
+        if (type != ComparisonType.HarcamaHarc) return;
+        _logger.LogInformation(
+            "[HARC-MATCH-CANDIDATE] OnlineRow={OnlineRow} DosyaNo={DosyaNo} Birim={Birim} Miktar={Miktar} Tarih={OnlineTarih} BankaRow={BankaRow} BankaTutar={BankaTutar} BankaTarih={BankaTarih} ParsedMahkeme={ParsedMahkeme} ParsedEsasNo={ParsedEsasNo} Reason={Reason}",
+            online.RowIndex, online.DosyaNo, online.BirimAdi, online.Miktar, online.Tarih,
+            banka.RowIndex, banka.Tutar, banka.Tarih, banka.Parsed.Mahkeme, banka.Parsed.EsasNo, reason);
+    }
+
+    private void LogHarcScore(ComparisonType type, OnlineRecord online, BankaRecord banka, double score, string reason)
+    {
+        if (type != ComparisonType.HarcamaHarc) return;
+        _logger.LogInformation(
+            "[HARC-MATCH-SCORE] OnlineRow={OnlineRow} DosyaNo={DosyaNo} BankaRow={BankaRow} Score={Score} Reason={Reason}",
+            online.RowIndex, online.DosyaNo, banka.RowIndex, score, reason);
+    }
+
+    private void LogHarcRejected(ComparisonType type, OnlineRecord online, BankaRecord? banka, double score, string reason)
+    {
+        if (type != ComparisonType.HarcamaHarc) return;
+        _logger.LogInformation(
+            "[HARC-MATCH-REJECTED] OnlineRow={OnlineRow} DosyaNo={DosyaNo} BankaRow={BankaRow} Score={Score} Reason={Reason} Consumed=false",
+            online.RowIndex, online.DosyaNo, banka?.RowIndex, score, reason);
+    }
+
+    private void LogHarcPartialCreated(ComparisonType type, OnlineRecord online, BankaRecord banka, double score, string reason)
+    {
+        if (type != ComparisonType.HarcamaHarc) return;
+        _logger.LogInformation(
+            "[HARC-PARTIAL-CANDIDATE-CREATED] OnlineRow={OnlineRow} DosyaNo={DosyaNo} Birim={Birim} Miktar={Miktar} BankaRow={BankaRow} Score={Score} Reason={Reason}",
+            online.RowIndex, online.DosyaNo, online.BirimAdi, online.Miktar, banka.RowIndex, score, reason);
+    }
+
+    private static bool HasSameCourtIdentity(string? onlineBirim, string? bankaAciklama)
+    {
+        var onlineCourt = TryExtractCourtIdentity(onlineBirim);
+        var bankaCourt = TryExtractCourtIdentity(bankaAciklama);
+        return onlineCourt.HasValue
+            && bankaCourt.HasValue
+            && onlineCourt.Value.Number == bankaCourt.Value.Number
+            && onlineCourt.Value.Kind == bankaCourt.Value.Kind;
+    }
+
+    private static (string Number, string Kind)? TryExtractCourtIdentity(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var normalized = NormalizeCourtSearchText(text);
+        var match = System.Text.RegularExpressions.Regex.Match(
+            normalized,
+            @"(?<no>\d{1,2})\s*\.?\s*(?<kind>IDARE|VERGI|ICRA|ASLIYE|HUKUK|CEZA|SULH|TICARET|IS|KADASTRO|TUKETICI)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        return match.Success
+            ? (match.Groups["no"].Value, match.Groups["kind"].Value.ToUpperInvariant())
+            : null;
+    }
+
+    private static string NormalizeCourtSearchText(string text)
+    {
+        return text.ToUpperInvariant()
+            .Replace("\u0130", "I")
+            .Replace("\u0131", "I")
+            .Replace("\u00dc", "U")
+            .Replace("\u00fc", "U")
+            .Replace("\u00d6", "O")
+            .Replace("\u00f6", "O")
+            .Replace("\u015e", "S")
+            .Replace("\u015f", "S")
+            .Replace("\u00c7", "C")
+            .Replace("\u00e7", "C")
+            .Replace("\u011e", "G")
+            .Replace("\u011f", "G");
+    }
     /// <summary>
     /// Eşleşme bulunamayan sonuç oluşturur.
     /// </summary>

@@ -133,6 +133,12 @@ public sealed partial class KasaDraftService
             ["masraf_diger"] = masrafReddiyat.Diger.ToString("N2", CultureInfo.InvariantCulture),
             ["online_masraf"] = onlineMasraf.ToString("N2", CultureInfo.InvariantCulture),
 
+            ["dunden_eksik_fazla_tahsilat"] = efChain.DundenTahsilat.ToString("N2", CultureInfo.InvariantCulture),
+            ["gune_ait_eksik_fazla_tahsilat"] = efChain.GuneTahsilat.ToString("N2", CultureInfo.InvariantCulture),
+            ["onceki_gune_ait_eksik_fazla_tahsilat"] = efChain.OncekiTahsilat.ToString("N2", CultureInfo.InvariantCulture),
+            ["dunden_eksik_fazla_harc"] = efChain.DundenHarc.ToString("N2", CultureInfo.InvariantCulture),
+            ["gune_ait_eksik_fazla_harc"] = efChain.GuneHarc.ToString("N2", CultureInfo.InvariantCulture),
+            ["onceki_gune_ait_eksik_fazla_harc"] = efChain.OncekiHarc.ToString("N2", CultureInfo.InvariantCulture),
             ["dunden_eksik_yada_fazla_tahsilat"] = efChain.DundenTahsilat.ToString("N2", CultureInfo.InvariantCulture),
             ["gune_ait_eksik_yada_fazla_tahsilat"] = efChain.GuneTahsilat.ToString("N2", CultureInfo.InvariantCulture),
             ["onceki_gune_ait_eksik_yada_fazla_tahsilat"] = efChain.OncekiTahsilat.ToString("N2", CultureInfo.InvariantCulture),

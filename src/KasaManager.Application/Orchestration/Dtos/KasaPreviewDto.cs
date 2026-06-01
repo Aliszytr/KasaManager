@@ -71,6 +71,9 @@ public sealed class KasaPreviewDto
     public decimal? DundenEksikFazlaHarc { get; set; }
     public decimal? DundenEksikFazlaGelenTahsilat { get; set; }
     public decimal? DundenEksikFazlaGelenHarc { get; set; }
+    public decimal? TakipKasaEtkisiTahsilat { get; set; }
+    public decimal? TakipKasaEtkisiHarc { get; set; }
+    public decimal? TakipKasaEtkisiNet { get; set; }
 
     public string? KasayiYapan { get; set; }
     public string? Aciklama { get; set; }

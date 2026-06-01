@@ -145,6 +145,13 @@ public sealed class KasaDraftFinalizeInputs
     public decimal? DundenEksikFazlaGelenTahsilat { get; init; }
     /// <summary>Dünden gelen eksik/fazla harç (manuel).</summary>
     public decimal? DundenEksikFazlaGelenHarc { get; init; }
+
+    /// <summary>HK reconciliation gateway tahsilat etkisi.</summary>
+    public decimal? TakipKasaEtkisiTahsilat { get; init; }
+    /// <summary>HK reconciliation gateway harç etkisi.</summary>
+    public decimal? TakipKasaEtkisiHarc { get; init; }
+    /// <summary>HK reconciliation gateway net etkisi.</summary>
+    public decimal? TakipKasaEtkisiNet { get; init; }
 }
 
 public sealed class KasaDraftBundle

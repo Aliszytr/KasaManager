@@ -56,7 +56,9 @@ public static class SabahKasaCalculator
         decimal PreviousDayGuneAitEksikFazlaTahsilat,
         decimal PreviousDayOncekiEksikFazlaTahsilat,
         decimal PreviousDayGuneAitEksikFazlaHarc,
-        decimal PreviousDayOncekiEksikFazlaHarc);
+        decimal PreviousDayOncekiEksikFazlaHarc,
+        decimal? HkActiveTahsilat = null,
+        decimal? HkActiveHarc = null);
 
     /// <summary>
     /// Sabah Kasa hesaplaması yapar.
@@ -71,9 +73,12 @@ public static class SabahKasaCalculator
 
         // --- Eksik/Fazla Tahsilat Hesaplamaları ---
         // Gün içi Ek.Faz T = BankayaGiren - ((OnlineTahsilat - OnlineReddiyat) + (ToplamTahsilat - BankayaYatirilacakNakit))
-        var guneAitEksikFazlaTahsilat = inputs.BankaGiren - (
+        var rawGuneAitEksikFazlaTahsilat = inputs.BankaGiren - (
             (inputs.OnlineTahsilat - inputs.AksamInputs.OnlineReddiyat) +
             (inputs.AksamInputs.UstTahsilat - aksamResult.BankayaYatirilacakNakit));
+        var guneAitEksikFazlaTahsilat = inputs.HkActiveTahsilat ?? rawGuneAitEksikFazlaTahsilat;
+        if (!inputs.HkActiveTahsilat.HasValue)
+            System.Diagnostics.Trace.WriteLine("[HK-ACTIVE-TOTAL-FALLBACK] Target=SabahKasaCalculator Field=GuneAitEksikFazlaTahsilat Source=RawExcelFormula");
 
         // Dünden Ek.Faz T = Önceki günün Gün içi değeri
         var dundenEksikFazlaTahsilat = inputs.PreviousDayGuneAitEksikFazlaTahsilat;
@@ -83,7 +88,10 @@ public static class SabahKasaCalculator
 
         // --- Eksik/Fazla Harç Hesaplamaları ---
         // Gün içi Ek.Faz H = BankaHarcGiren - (OnlineHarc + ToplamHarc)
-        var guneAitEksikFazlaHarc = inputs.BankaHarcGiren - (inputs.OnlineHarc + inputs.ToplamHarc);
+        var rawGuneAitEksikFazlaHarc = inputs.BankaHarcGiren - (inputs.OnlineHarc + inputs.ToplamHarc);
+        var guneAitEksikFazlaHarc = inputs.HkActiveHarc ?? rawGuneAitEksikFazlaHarc;
+        if (!inputs.HkActiveHarc.HasValue)
+            System.Diagnostics.Trace.WriteLine("[HK-ACTIVE-TOTAL-FALLBACK] Target=SabahKasaCalculator Field=GuneAitEksikFazlaHarc Source=RawExcelFormula");
 
         // Dünden Ek.Faz H = Önceki günün Gün içi değeri
         var dundenEksikFazlaHarc = inputs.PreviousDayGuneAitEksikFazlaHarc;

@@ -7,6 +7,7 @@ using KasaManager.Domain.Abstractions;
 using KasaManager.Domain.Constants;
 using KasaManager.Domain.FormulaEngine;
 using KasaManager.Domain.Reports;
+using Microsoft.Extensions.Logging;
 
 namespace KasaManager.Application.Services;
 
@@ -201,6 +202,11 @@ public sealed partial class KasaDraftService
             });
         }
 
+        void SkipCalculatedOutputOverride(string key)
+        {
+            _log.LogInformation("[EF-OVERRIDE-GUARD] SkippedTargetKey={SkippedTargetKey} Reason=CalculatedOutputFieldNotAllowedAsOverride", key);
+        }
+
         void AddDerived(string key, decimal value, string? notes = null)
         {
             Upsert(new UnifiedPoolEntry
@@ -354,12 +360,56 @@ public sealed partial class KasaDraftService
         AddOverride("vergi_kasa_bakiye_toplam", ov(null, finalizeInputs.VergiKasaBakiyeToplam), "Snapshot seçimine göre gelir (0 ise etkisiz)." );
 
         // Eksik/Fazla kullanıcı girişleri (Sabah Kasa)
-        AddOverride("gune_ait_eksik_fazla_tahsilat", ov(null, finalizeInputs.GuneAitEksikFazlaTahsilat), "Kullanıcı girişi (0 ise etkisiz).");
-        AddOverride("gune_ait_eksik_fazla_harc", ov(null, finalizeInputs.GuneAitEksikFazlaHarc), "Kullanıcı girişi (0 ise etkisiz).");
-        AddOverride("dunden_eksik_fazla_tahsilat", ov(null, finalizeInputs.DundenEksikFazlaTahsilat), "Kullanıcı girişi (0 ise etkisiz).");
-        AddOverride("dunden_eksik_fazla_harc", ov(null, finalizeInputs.DundenEksikFazlaHarc), "Kullanıcı girişi (0 ise etkisiz).");
+        SkipCalculatedOutputOverride("gune_ait_eksik_fazla_tahsilat");
+        SkipCalculatedOutputOverride("gune_ait_eksik_fazla_harc");
+        SkipCalculatedOutputOverride("dunden_eksik_fazla_tahsilat");
+        SkipCalculatedOutputOverride("dunden_eksik_fazla_harc");
         AddOverride("dunden_eksik_fazla_gelen_tahsilat", ov(null, finalizeInputs.DundenEksikFazlaGelenTahsilat), "Kullanıcı girişi (0 ise etkisiz).");
         AddOverride("dunden_eksik_fazla_gelen_harc", ov(null, finalizeInputs.DundenEksikFazlaGelenHarc), "Kullanıcı girişi (0 ise etkisiz).");
+
+        ActiveFollowTotals? activeFollowTotals = null;
+        if (kasaScope?.StartsWith("Sabah", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            try
+            {
+                activeFollowTotals = await _hesapKontrol.GetActiveFollowTotalsAsync(raporTarihi, ct);
+                _log.LogInformation(
+                    "[HK-ACTIVE-TOTAL-APPLIED] Date={Date} Scope={Scope} Source=HesapKontrol TahsilatNet={TahsilatNet} HarcNet={HarcNet} Count={Count}",
+                    raporTarihi,
+                    kasaScope,
+                    activeFollowTotals.TahsilatNet,
+                    activeFollowTotals.HarcNet,
+                    activeFollowTotals.KayitSayisi);
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex,
+                    "[HK-ACTIVE-TOTAL-FALLBACK] Date={Date} Scope={Scope} Reason=HesapKontrolActiveTotalsUnavailable",
+                    raporTarihi,
+                    kasaScope);
+            }
+        }
+
+        if (activeFollowTotals is not null)
+        {
+            AddDerived(KasaCanonicalKeys.GuneAitEksikFazlaTahsilat, activeFollowTotals.TahsilatNet, "HK active follow SSOT: Acik/Takipte tahsilat net.");
+            AddDerived(KasaCanonicalKeys.GuneAitEksikFazlaHarc, activeFollowTotals.HarcNet, "HK active follow SSOT: Acik/Takipte harc net.");
+        }
+        var takipKasaEtkisiTahsilat = activeFollowTotals?.TahsilatNet ?? ov(null, finalizeInputs.TakipKasaEtkisiTahsilat);
+        var takipKasaEtkisiHarc = activeFollowTotals?.HarcNet ?? ov(null, finalizeInputs.TakipKasaEtkisiHarc);
+        var takipKasaEtkisiNet = activeFollowTotals is not null
+            ? takipKasaEtkisiTahsilat - takipKasaEtkisiHarc
+            : finalizeInputs.TakipKasaEtkisiNet ?? (takipKasaEtkisiTahsilat - takipKasaEtkisiHarc);
+        AddDerived("takip_kasa_etkisi_tahsilat", takipKasaEtkisiTahsilat, "HK reconciliation gateway: tahsilat etkisi.");
+        AddDerived("takip_kasa_etkisi_harc", takipKasaEtkisiHarc, "HK reconciliation gateway: harç etkisi.");
+        AddDerived("takip_kasa_etkisi_net", takipKasaEtkisiNet, "HK reconciliation gateway: tahsilat - harç.");
+        _log.LogInformation(
+            "[RECON-GATEWAY] Date={Date} Scope={Scope} takip_kasa_etkisi_tahsilat={TakipTahsilat} takip_kasa_etkisi_harc={TakipHarc} takip_kasa_etkisi_net={TakipNet}",
+            raporTarihi,
+            kasaScope ?? "Unknown",
+            takipKasaEtkisiTahsilat,
+            takipKasaEtkisiHarc,
+            takipKasaEtkisiNet);
 
         // Contract-First (Akşam/Sabah parity):
         // - devreden_kasa: DetermineDevredenKasaAsync çıktısı (snapshot/ayar)

@@ -527,6 +527,9 @@
             <input type="hidden" asp-for="IsDataLoaded" />
             <input type="hidden" name="GenelKasaStartDate" value="@(Model.GenelKasaStartDate?.ToString("yyyy-MM-dd"))" />
             <input type="hidden" name="GenelKasaEndDate" value="@(Model.GenelKasaEndDate?.ToString("yyyy-MM-dd"))" />
+            <input type="hidden" name="TakipKasaEtkisiTahsilat" value="@(Model.TakipKasaEtkisiTahsilat?.ToString(System.Globalization.CultureInfo.InvariantCulture))" />
+            <input type="hidden" name="TakipKasaEtkisiHarc" value="@(Model.TakipKasaEtkisiHarc?.ToString(System.Globalization.CultureInfo.InvariantCulture))" />
+            <input type="hidden" name="TakipKasaEtkisiNet" value="@(Model.TakipKasaEtkisiNet?.ToString(System.Globalization.CultureInfo.InvariantCulture))" />
 
             <div class="row g-3">
                 <div class="col-md-4 col-lg-3">
@@ -631,9 +634,9 @@
             <!-- Financial Exceptions Özet Kartı (vNext Faz 1) -->
             <partial name="_FinansalIstisnaKart" model="Model" />
 
-            @if (kasaTypeClass == "sabah")
+            @if (kasaTypeClass == "sabah" || kasaTypeClass == "aksam")
             {
-            <!-- Accordion: Eksik/Fazla Girişleri (Sabah Kasa) -->
+            <!-- Accordion: Eksik/Fazla Girişleri (Sabah / Akşam Kasa) -->
             <div class="mt-4" x-data="{ openEF: localStorage.getItem('kasaEskikFazlaOpen') === 'true' }">
                 <button type="button" class="btn w-100 text-start d-flex justify-content-between align-items-center shadow-sm"
                         style="background: linear-gradient(135deg, #4c1d95, #6d28d9); color: white; border-radius: 8px; padding: 14px 20px; font-weight: 600; border: none;"
@@ -937,6 +940,47 @@
             ["mutabakat_farki"]      = new[] { "MutabakatFarki", "Mutabakat_Farki", "mutabakatFarki" },
             ["kayden_tahsilat"]      = new[] { "kaydenTahsilat", "Kayden_Tahsilat" },
             ["gelmeyen_d"]           = new[] { "gelmeyenD", "Gelmeyen_D" },
+
+            // Sabah Kasa EF canonical aliases (legacy *_yada_* / *_veya_*)
+            ["dunden_eksik_fazla_tahsilat"] = new[]
+            {
+                "dunden_eksik_yada_fazla_tahsilat",
+                "dunden_eksik_veya_fazla_tahsilat"
+            },
+            ["dunden_eksik_fazla_harc"] = new[]
+            {
+                "dunden_eksik_yada_fazla_harc",
+                "dunden_eksik_veya_fazla_harc"
+            },
+            ["dunden_eksik_fazla_gelen_tahsilat"] = new[]
+            {
+                "dunden_eksik_yada_fazla_gelen_tahsilat",
+                "dunden_eksik_veya_fazla_gelen_tahsilat"
+            },
+            ["dunden_eksik_fazla_gelen_harc"] = new[]
+            {
+                "dunden_eksik_yada_fazla_gelen_harc",
+                "dunden_eksik_veya_fazla_gelen_harc"
+            },
+            ["gune_ait_eksik_fazla_tahsilat"] = new[]
+            {
+                "gune_ait_eksik_yada_fazla_tahsilat",
+                "gune_ait_eksik_veya_fazla_tahsilat"
+            },
+            ["gune_ait_eksik_fazla_harc"] = new[]
+            {
+                "gune_ait_eksik_yada_fazla_harc",
+                "gune_ait_eksik_veya_fazla_harc"
+            }
+        };
+        var efCanonicalKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "gune_ait_eksik_fazla_tahsilat",
+            "gune_ait_eksik_fazla_harc",
+            "dunden_eksik_fazla_tahsilat",
+            "dunden_eksik_fazla_harc",
+            "dunden_eksik_fazla_gelen_tahsilat",
+            "dunden_eksik_fazla_gelen_harc"
         };
 
         // Pool'dan ham değerleri oku (FormulaRun çıktısında olmayanlar için)
@@ -957,7 +1001,7 @@
                     if (resultFields.TryGetValue(alt, out var av)) return av;
                 }
             }
-            return "—";
+            return efCanonicalKeys.Contains(key) ? "0,00" : "—";
         }
 
         // ResultVal: Formül çıktıları > Pool
@@ -987,7 +1031,18 @@
                     if (ap != null) return ap.Value;
                 }
             }
-            return "—";
+            // EF model-property fallback: LoadSnapshot akışında PoolEntries null olabilir.
+            decimal? efMv = key switch {
+                "gune_ait_eksik_fazla_harc"         => Model.GuneAitEksikFazlaHarc,
+                "gune_ait_eksik_fazla_tahsilat"     => Model.GuneAitEksikFazlaTahsilat,
+                "dunden_eksik_fazla_harc"           => Model.DundenEksikFazlaHarc,
+                "dunden_eksik_fazla_tahsilat"       => Model.DundenEksikFazlaTahsilat,
+                "dunden_eksik_fazla_gelen_harc"     => Model.DundenEksikFazlaGelenHarc,
+                "dunden_eksik_fazla_gelen_tahsilat" => Model.DundenEksikFazlaGelenTahsilat,
+                _                                   => null
+            };
+            if (efMv.HasValue) return efMv.Value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
+            return efCanonicalKeys.Contains(key) ? "0,00" : "—";
         }
 
         // ResultValRaw: ham decimal değer — Banka Fişi hidden input'ları için
@@ -1002,7 +1057,17 @@
             }
             var p = Model.PoolEntries?.FirstOrDefault(x => x.CanonicalKey.Equals(key, StringComparison.OrdinalIgnoreCase));
             if (p != null && decimal.TryParse(p.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var pv)) return pv;
-            return 0m;
+            // EF model-property fallback: LoadSnapshot akışında PoolEntries null,
+            // model property KasaPreviewController.cs:1089 satırında restore edilmiş olabilir.
+            return key switch {
+                "gune_ait_eksik_fazla_harc"         => Model.GuneAitEksikFazlaHarc ?? 0m,
+                "gune_ait_eksik_fazla_tahsilat"     => Model.GuneAitEksikFazlaTahsilat ?? 0m,
+                "dunden_eksik_fazla_harc"           => Model.DundenEksikFazlaHarc ?? 0m,
+                "dunden_eksik_fazla_tahsilat"       => Model.DundenEksikFazlaTahsilat ?? 0m,
+                "dunden_eksik_fazla_gelen_harc"     => Model.DundenEksikFazlaGelenHarc ?? 0m,
+                "dunden_eksik_fazla_gelen_tahsilat" => Model.DundenEksikFazlaGelenTahsilat ?? 0m,
+                _                                   => 0m
+            };
         }
 
         // ════════════════════════════════════════════════════════════════
@@ -2121,11 +2186,9 @@
         </div>
         }
 
-        @if (kasaTypeClass == "sabah")
+        @if (kasaTypeClass == "sabah" || kasaTypeClass == "aksam")
         {
-        <!-- ═══════════════════════════════════════════════════════════════ -->
-        <!-- ROW 4C: Bankaya Hesaplarına Beklenmeyen Olağandışı Akışlar     -->
-        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- ROW 4C: Bankaya Hesaplarına Beklenmeyen Olağandışı Akışlar -->
         <div class="row g-3 mb-3">
             <div class="col-12">
                 <div class="kasa-card" style="border: 2px solid var(--kasa-warning); border-radius: var(--radius-md); overflow: hidden;">
@@ -2136,7 +2199,6 @@
                     </div>
                     <div class="kasa-card-body" style="padding: 0;">
                         <div class="row g-0">
-                            <!-- SOL: Tahsilat -->
                             <div class="col-md-6" style="border-right: 2px solid var(--border-light);">
                                 <div style="padding: 10px 20px; background: rgba(8,145,178,0.03); border-bottom: 1px solid var(--border-light);">
                                     <span style="font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px; color: var(--kasa-info);">
@@ -2149,10 +2211,23 @@
                                     </span>
                                     <div style="text-align: right;">
                                         @{
-                                            var efTahsilatVal = Model.ToplamFarkTahsilat != 0 ? Model.ToplamFarkTahsilat : (ResultValRaw("gune_ait_eksik_fazla_tahsilat"));
+                                            var efTahsilatVal = ResultValRaw("gune_ait_eksik_fazla_tahsilat");
                                             var efTahsilatColor = efTahsilatVal > 0 ? "var(--kasa-success)" : efTahsilatVal < 0 ? "var(--kasa-danger)" : "inherit";
                                         }
                                         <span style="font-size: 16px; font-weight: 700; color: @efTahsilatColor;">@efTahsilatVal.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR")) ₺</span>
+                                    </div>
+                                </div>
+                                @if (Model.ToplamFarkTahsilat != 0m)
+                                {
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border-light); background: rgba(245,158,11,0.04);">
+                                    <span style="font-size: 13px; color: #92400e; font-weight: 700;">
+                                        <i class="fas fa-exclamation-triangle me-2" style="color: var(--kasa-warning); width: 16px;"></i>Hesap Kontrol Aktif Tahsilat Farkı
+                                    </span>
+                                    <div style="text-align: right;">
+                                        @{
+                                            var hkTahsilatColor = Model.ToplamFarkTahsilat > 0 ? "var(--kasa-success)" : "var(--kasa-danger)";
+                                        }
+                                        <span style="font-size: 16px; font-weight: 800; color: @hkTahsilatColor;">@Model.ToplamFarkTahsilat.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR")) ₺</span>
                                         @if (!string.IsNullOrEmpty(Model.BreakdownMesajTahsilat))
                                         {
                                             <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;" title="@Model.BreakdownMesajTahsilat">
@@ -2161,6 +2236,7 @@
                                         }
                                     </div>
                                 </div>
+                                }
                                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border-light);">
                                     <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
                                         <i class="fas fa-history me-2" style="color: var(--kasa-warning); width: 16px;"></i>Dünden Eksik/Fazla
@@ -2175,17 +2251,16 @@
                                         }
                                         @if (takipDurumTahsilat?.Durum == "Geldi")
                                         {
-                                            <span style="font-size: 9px; padding: 1px 6px; background: rgba(34,197,94,0.15); color: #22c55e; border-radius: 4px; font-weight: 700; margin-left: 6px;">Geldi ✅</span>
+                                            <span style="font-size: 9px; padding: 1px 6px; background: rgba(34,197,94,0.15); color: #22c55e; border-radius: 4px; font-weight: 700; margin-left: 6px;">Geldi</span>
                                         }
                                         else if (takipDurumTahsilat?.Durum == "TakipteDevam")
                                         {
-                                            <span style="font-size: 9px; padding: 1px 6px; background: rgba(245,158,11,0.15); color: #f59e0b; border-radius: 4px; font-weight: 700; margin-left: 6px;">Takipte 📌</span>
+                                            <span style="font-size: 9px; padding: 1px 6px; background: rgba(245,158,11,0.15); color: #f59e0b; border-radius: 4px; font-weight: 700; margin-left: 6px;">Takipte</span>
                                         }
                                     </span>
                                     <span style="font-size: 16px; font-weight: 700;">@ResultVal("dunden_eksik_fazla_gelen_tahsilat") ₺</span>
                                 </div>
                             </div>
-                            <!-- SAĞ: Harç -->
                             <div class="col-md-6">
                                 <div style="padding: 10px 20px; background: rgba(245,158,11,0.03); border-bottom: 1px solid var(--border-light);">
                                     <span style="font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px; color: var(--kasa-warning);">
@@ -2198,10 +2273,23 @@
                                     </span>
                                     <div style="text-align: right;">
                                         @{
-                                            var efHarcVal = Model.ToplamFarkHarc != 0 ? Model.ToplamFarkHarc : (ResultValRaw("gune_ait_eksik_fazla_harc"));
+                                            var efHarcVal = ResultValRaw("gune_ait_eksik_fazla_harc");
                                             var efHarcColor = efHarcVal > 0 ? "var(--kasa-success)" : efHarcVal < 0 ? "var(--kasa-danger)" : "inherit";
                                         }
                                         <span style="font-size: 16px; font-weight: 700; color: @efHarcColor;">@efHarcVal.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR")) ₺</span>
+                                    </div>
+                                </div>
+                                @if (Model.ToplamFarkHarc != 0m)
+                                {
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border-light); background: rgba(245,158,11,0.04);">
+                                    <span style="font-size: 13px; color: #92400e; font-weight: 700;">
+                                        <i class="fas fa-exclamation-triangle me-2" style="color: var(--kasa-warning); width: 16px;"></i>Hesap Kontrol Aktif Harç Farkı
+                                    </span>
+                                    <div style="text-align: right;">
+                                        @{
+                                            var hkHarcColor = Model.ToplamFarkHarc > 0 ? "var(--kasa-success)" : "var(--kasa-danger)";
+                                        }
+                                        <span style="font-size: 16px; font-weight: 800; color: @hkHarcColor;">@Model.ToplamFarkHarc.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR")) ₺</span>
                                         @if (!string.IsNullOrEmpty(Model.BreakdownMesajHarc))
                                         {
                                             <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;" title="@Model.BreakdownMesajHarc">
@@ -2210,6 +2298,7 @@
                                         }
                                     </div>
                                 </div>
+                                }
                                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border-light);">
                                     <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
                                         <i class="fas fa-history me-2" style="color: var(--kasa-warning); width: 16px;"></i>Dünden Eksik/Fazla
@@ -2224,11 +2313,11 @@
                                         }
                                         @if (takipDurumHarc?.Durum == "Geldi")
                                         {
-                                            <span style="font-size: 9px; padding: 1px 6px; background: rgba(34,197,94,0.15); color: #22c55e; border-radius: 4px; font-weight: 700; margin-left: 6px;">Geldi ✅</span>
+                                            <span style="font-size: 9px; padding: 1px 6px; background: rgba(34,197,94,0.15); color: #22c55e; border-radius: 4px; font-weight: 700; margin-left: 6px;">Geldi</span>
                                         }
                                         else if (takipDurumHarc?.Durum == "TakipteDevam")
                                         {
-                                            <span style="font-size: 9px; padding: 1px 6px; background: rgba(245,158,11,0.15); color: #f59e0b; border-radius: 4px; font-weight: 700; margin-left: 6px;">Takipte 📌</span>
+                                            <span style="font-size: 9px; padding: 1px 6px; background: rgba(245,158,11,0.15); color: #f59e0b; border-radius: 4px; font-weight: 700; margin-left: 6px;">Takipte</span>
                                         }
                                     </span>
                                     <span style="font-size: 16px; font-weight: 700;">@ResultVal("dunden_eksik_fazla_gelen_harc") ₺</span>
@@ -2240,8 +2329,6 @@
             </div>
         </div>
         }
-
-        <!-- ═══════════════════════════════════════════════════════════════ -->
         <!-- ROW 5: Banka Devir + Kasayı Yapan                             -->
         <!-- ═══════════════════════════════════════════════════════════════ -->
         <div class="row g-3 mb-3">
@@ -2628,10 +2715,10 @@
                         <input type="hidden" name="RptEftIade" value="@InvExp(ResultValRaw("eft_otomatik_iade"))" />
                         <input type="hidden" name="RptGelenHavale" value="@InvExp(ResultValRaw("gelen_havale"))" />
                         <input type="hidden" name="RptIadeKelimesi" value="@InvExp(ResultValRaw("iade_kelimesi_giris"))" />
-                        <input type="hidden" name="RptEfGuneT" value="@InvExp(Model.ToplamFarkTahsilat != 0 ? Model.ToplamFarkTahsilat : (Model.GuneAitEksikFazlaTahsilat ?? 0m))" />
+                        <input type="hidden" name="RptEfGuneT" value="@InvExp(Model.GuneAitEksikFazlaTahsilat ?? 0m)" />
                         <input type="hidden" name="RptEfDundenT" value="@InvExp(Model.DundenEksikFazlaTahsilat ?? 0m)" />
                         <input type="hidden" name="RptEfGelenT" value="@InvExp(Model.DundenEksikFazlaGelenTahsilat ?? 0m)" />
-                        <input type="hidden" name="RptEfGuneH" value="@InvExp(Model.ToplamFarkHarc != 0 ? Model.ToplamFarkHarc : (Model.GuneAitEksikFazlaHarc ?? 0m))" />
+                        <input type="hidden" name="RptEfGuneH" value="@InvExp(Model.GuneAitEksikFazlaHarc ?? 0m)" />
                         <input type="hidden" name="RptEfDundenH" value="@InvExp(Model.DundenEksikFazlaHarc ?? 0m)" />
                         <input type="hidden" name="RptEfGelenH" value="@InvExp(Model.DundenEksikFazlaGelenHarc ?? 0m)" />
                         <input type="hidden" name="RptBankaMevduatTahsilat" value="@InvExp(ResultValRaw("banka_mevduat_tahsilat"))" />
@@ -2659,10 +2746,10 @@
                         <input type="hidden" name="RptVergidenGelen" value="@InvExp(ResultValRaw("vergiden_gelen"))" />
                         <input type="hidden" name="VergiKasaBakiyeToplam" value="@InvExp(Model.VergiKasaBakiyeToplam)" />
                         <input type="hidden" name="RptVergideBiriken" value="@InvExp(Model.VergideBirikenKasa ?? 0m)" />
-                        <input type="hidden" name="RptEfGuneT" value="@InvExp(Model.ToplamFarkTahsilat != 0 ? Model.ToplamFarkTahsilat : (Model.GuneAitEksikFazlaTahsilat ?? 0m))" />
+                        <input type="hidden" name="RptEfGuneT" value="@InvExp(Model.GuneAitEksikFazlaTahsilat ?? 0m)" />
                         <input type="hidden" name="RptEfDundenT" value="@InvExp(Model.DundenEksikFazlaTahsilat ?? 0m)" />
                         <input type="hidden" name="RptEfGelenT" value="@InvExp(Model.DundenEksikFazlaGelenTahsilat ?? 0m)" />
-                        <input type="hidden" name="RptEfGuneH" value="@InvExp(Model.ToplamFarkHarc != 0 ? Model.ToplamFarkHarc : (Model.GuneAitEksikFazlaHarc ?? 0m))" />
+                        <input type="hidden" name="RptEfGuneH" value="@InvExp(Model.GuneAitEksikFazlaHarc ?? 0m)" />
                         <input type="hidden" name="RptEfDundenH" value="@InvExp(Model.DundenEksikFazlaHarc ?? 0m)" />
                         <input type="hidden" name="RptEfGelenH" value="@InvExp(Model.DundenEksikFazlaGelenHarc ?? 0m)" />
                         <button type="submit" class="kasa-btn" style="font-size: 12px; padding: 8px 16px; border-radius: 8px; background: rgba(239,68,68,0.08); color: #dc2626; border: 1px solid rgba(239,68,68,0.2);" title="PDF Özet Rapor (A5)">
@@ -2739,10 +2826,10 @@
                         <input type="hidden" name="RptEftIade" value="@InvExp(ResultValRaw("eft_otomatik_iade"))" />
                         <input type="hidden" name="RptGelenHavale" value="@InvExp(ResultValRaw("gelen_havale"))" />
                         <input type="hidden" name="RptIadeKelimesi" value="@InvExp(ResultValRaw("iade_kelimesi_giris"))" />
-                        <input type="hidden" name="RptEfGuneT" value="@InvExp(Model.ToplamFarkTahsilat != 0 ? Model.ToplamFarkTahsilat : (Model.GuneAitEksikFazlaTahsilat ?? 0m))" />
+                        <input type="hidden" name="RptEfGuneT" value="@InvExp(Model.GuneAitEksikFazlaTahsilat ?? 0m)" />
                         <input type="hidden" name="RptEfDundenT" value="@InvExp(Model.DundenEksikFazlaTahsilat ?? 0m)" />
                         <input type="hidden" name="RptEfGelenT" value="@InvExp(Model.DundenEksikFazlaGelenTahsilat ?? 0m)" />
-                        <input type="hidden" name="RptEfGuneH" value="@InvExp(Model.ToplamFarkHarc != 0 ? Model.ToplamFarkHarc : (Model.GuneAitEksikFazlaHarc ?? 0m))" />
+                        <input type="hidden" name="RptEfGuneH" value="@InvExp(Model.GuneAitEksikFazlaHarc ?? 0m)" />
                         <input type="hidden" name="RptEfDundenH" value="@InvExp(Model.DundenEksikFazlaHarc ?? 0m)" />
                         <input type="hidden" name="RptEfGelenH" value="@InvExp(Model.DundenEksikFazlaGelenHarc ?? 0m)" />
                         <button type="submit" class="kasa-btn" style="font-size: 12px; padding: 8px 16px; border-radius: 8px; background: rgba(34,197,94,0.08); color: #16a34a; border: 1px solid rgba(34,197,94,0.2);" title="Excel Çıktısı (.xlsx)">
@@ -2780,10 +2867,10 @@
                         <input type="hidden" name="RptEftIade" value="@InvExp(ResultValRaw("eft_otomatik_iade"))" />
                         <input type="hidden" name="RptGelenHavale" value="@InvExp(ResultValRaw("gelen_havale"))" />
                         <input type="hidden" name="RptIadeKelimesi" value="@InvExp(ResultValRaw("iade_kelimesi_giris"))" />
-                        <input type="hidden" name="RptEfGuneT" value="@InvExp(Model.ToplamFarkTahsilat != 0 ? Model.ToplamFarkTahsilat : (Model.GuneAitEksikFazlaTahsilat ?? 0m))" />
+                        <input type="hidden" name="RptEfGuneT" value="@InvExp(Model.GuneAitEksikFazlaTahsilat ?? 0m)" />
                         <input type="hidden" name="RptEfDundenT" value="@InvExp(Model.DundenEksikFazlaTahsilat ?? 0m)" />
                         <input type="hidden" name="RptEfGelenT" value="@InvExp(Model.DundenEksikFazlaGelenTahsilat ?? 0m)" />
-                        <input type="hidden" name="RptEfGuneH" value="@InvExp(Model.ToplamFarkHarc != 0 ? Model.ToplamFarkHarc : (Model.GuneAitEksikFazlaHarc ?? 0m))" />
+                        <input type="hidden" name="RptEfGuneH" value="@InvExp(Model.GuneAitEksikFazlaHarc ?? 0m)" />
                         <input type="hidden" name="RptEfDundenH" value="@InvExp(Model.DundenEksikFazlaHarc ?? 0m)" />
                         <input type="hidden" name="RptEfGelenH" value="@InvExp(Model.DundenEksikFazlaGelenHarc ?? 0m)" />
                         <button type="submit" class="kasa-btn" style="font-size: 12px; padding: 8px 16px; border-radius: 8px; background: rgba(107,114,128,0.08); color: #4b5563; border: 1px solid rgba(107,114,128,0.2);" title="CSV Çıktısı (.csv)">
@@ -2847,10 +2934,10 @@
                 <input type="hidden" name="RptGelenHavale" value="@Inv(ResultValRaw("gelen_havale"))" />
                 <input type="hidden" name="RptIadeKelimesi" value="@Inv(ResultValRaw("iade_kelimesi_giris"))" />
                 @* Eksik/Fazla *@
-                <input type="hidden" name="RptEfGuneT" value="@Inv(Model.ToplamFarkTahsilat != 0 ? Model.ToplamFarkTahsilat : (Model.GuneAitEksikFazlaTahsilat ?? 0m))" />
+                <input type="hidden" name="RptEfGuneT" value="@Inv(Model.GuneAitEksikFazlaTahsilat ?? 0m)" />
                 <input type="hidden" name="RptEfDundenT" value="@Inv(Model.DundenEksikFazlaTahsilat ?? 0m)" />
                 <input type="hidden" name="RptEfGelenT" value="@Inv(Model.DundenEksikFazlaGelenTahsilat ?? 0m)" />
-                <input type="hidden" name="RptEfGuneH" value="@Inv(Model.ToplamFarkHarc != 0 ? Model.ToplamFarkHarc : (Model.GuneAitEksikFazlaHarc ?? 0m))" />
+                <input type="hidden" name="RptEfGuneH" value="@Inv(Model.GuneAitEksikFazlaHarc ?? 0m)" />
                 <input type="hidden" name="RptEfDundenH" value="@Inv(Model.DundenEksikFazlaHarc ?? 0m)" />
                 <input type="hidden" name="RptEfGelenH" value="@Inv(Model.DundenEksikFazlaGelenHarc ?? 0m)" />
                 <button type="submit" class="kasa-btn" style="background: linear-gradient(135deg, #1e88e5, #1565c0); color: white; border: none;">
@@ -2881,10 +2968,10 @@
                 <input type="hidden" name="VergiKasaBakiyeToplam" value="@Inv(Model.VergiKasaBakiyeToplam)" />
                 <input type="hidden" name="RptVergideBiriken" value="@Inv(Model.VergideBirikenKasa ?? 0m)" />
                 @* Eksik/Fazla *@
-                <input type="hidden" name="RptEfGuneT" value="@Inv(Model.ToplamFarkTahsilat != 0 ? Model.ToplamFarkTahsilat : (Model.GuneAitEksikFazlaTahsilat ?? 0m))" />
+                <input type="hidden" name="RptEfGuneT" value="@Inv(Model.GuneAitEksikFazlaTahsilat ?? 0m)" />
                 <input type="hidden" name="RptEfDundenT" value="@Inv(Model.DundenEksikFazlaTahsilat ?? 0m)" />
                 <input type="hidden" name="RptEfGelenT" value="@Inv(Model.DundenEksikFazlaGelenTahsilat ?? 0m)" />
-                <input type="hidden" name="RptEfGuneH" value="@Inv(Model.ToplamFarkHarc != 0 ? Model.ToplamFarkHarc : (Model.GuneAitEksikFazlaHarc ?? 0m))" />
+                <input type="hidden" name="RptEfGuneH" value="@Inv(Model.GuneAitEksikFazlaHarc ?? 0m)" />
                 <input type="hidden" name="RptEfDundenH" value="@Inv(Model.DundenEksikFazlaHarc ?? 0m)" />
                 <input type="hidden" name="RptEfGelenH" value="@Inv(Model.DundenEksikFazlaGelenHarc ?? 0m)" />
                 <button type="submit" class="kasa-btn" style="background: linear-gradient(135deg, #43a047, #2e7d32); color: white; border: none;">
@@ -3534,7 +3621,14 @@
             ['RptKasadaKalacakHedef', 'KasadaKalacakHedef'],
             ['RptBozukPara', 'BozukPara'],
             ['RptNakitPara', 'NakitPara'],
-            ['RptGelmeyenD', 'GelmeyenD']
+            ['RptGelmeyenD', 'GelmeyenD'],
+            // Eksik/Fazla alanları — Modal Save senkronizasyonu (defense-in-depth)
+            ['RptEfGuneT', 'GuneAitEksikFazlaTahsilat'],
+            ['RptEfDundenT', 'DundenEksikFazlaTahsilat'],
+            ['RptEfGelenT', 'DundenEksikFazlaGelenTahsilat'],
+            ['RptEfGuneH', 'GuneAitEksikFazlaHarc'],
+            ['RptEfDundenH', 'DundenEksikFazlaHarc'],
+            ['RptEfGelenH', 'DundenEksikFazlaGelenHarc']
         ];
         userInputMappings.forEach(function(pair) {
             var saveField = form.querySelector('input[name="' + pair[0] + '"]');
@@ -4172,6 +4266,38 @@
                     </div>
                 </div>
             }
+
+            @if (Model.ParityDiffs?.Any() == true)
+            {
+                <div class="alert alert-warning mt-3 mb-0 py-2 px-3" style="border-left: 4px solid #f59e0b; font-size: 0.85rem;">
+                    <div class="fw-semibold mb-2"><i class="fas fa-exclamation-triangle me-2"></i>Diagnostik / Parity Uyarısı</div>
+                    <div class="table-responsive">
+                        <table class="kasa-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Alan</th>
+                                    <th>Durum</th>
+                                    <th class="text-end">Draft</th>
+                                    <th class="text-end">FormulaEngine</th>
+                                    <th class="text-end">Delta</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var diff in Model.ParityDiffs)
+                                {
+                                    <tr>
+                                        <td class="font-mono" style="font-size: 12.5px;">@diff.CanonicalKey</td>
+                                        <td>@diff.Status</td>
+                                        <td class="text-end money-value">@(diff.LegacyValue?.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR")) ?? "-")</td>
+                                        <td class="text-end money-value">@(diff.EngineValue?.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR")) ?? "-")</td>
+                                        <td class="text-end money-value">@(diff.Delta?.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR")) ?? "-")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
         </form>
     </div>
 </div>
@@ -4218,4 +4344,5 @@
     </div>
 </div>
 }
+
 

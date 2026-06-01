@@ -3,6 +3,7 @@ using KasaManager.Application.Abstractions;
 using KasaManager.Domain.Reports;
 using KasaManager.Domain.Reports.HesapKontrol;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace KasaManager.Infrastructure.Services;
 
@@ -274,6 +275,51 @@ public sealed partial class BankaHesapKontrolService
     // B6: Auto-Fill (Sabah Kasa Textbox Doldurma)
     // ═════════════════════════════════════════════════════════════
 
+    public async Task<ActiveFollowTotals> GetActiveFollowTotalsAsync(
+        DateOnly analizTarihi,
+        CancellationToken ct = default)
+    {
+        var aktifKayitlar = await _db.HesapKontrolKayitlari
+            .Where(x => x.AnalizTarihi <= analizTarihi
+                     && x.HesapTuru != BankaHesapTuru.Stopaj
+                     && x.Durum == KayitDurumu.Takipte)
+            .ToListAsync(ct);
+
+        decimal Net(BankaHesapTuru hesap) => aktifKayitlar
+            .Where(x => x.HesapTuru == hesap && x.Sinif != FarkSinifi.Beklenen)
+            .Sum(x => x.Yon == KayitYonu.Fazla ? x.Tutar : -x.Tutar);
+
+        decimal Eksik(BankaHesapTuru hesap) => aktifKayitlar
+            .Where(x => x.HesapTuru == hesap && x.Yon == KayitYonu.Eksik && x.Sinif != FarkSinifi.Beklenen)
+            .Sum(x => x.Tutar);
+
+        decimal Fazla(BankaHesapTuru hesap) => aktifKayitlar
+            .Where(x => x.HesapTuru == hesap && x.Yon == KayitYonu.Fazla && x.Sinif != FarkSinifi.Beklenen)
+            .Sum(x => x.Tutar);
+
+        var totals = new ActiveFollowTotals(
+            analizTarihi,
+            TahsilatNet: Net(BankaHesapTuru.Tahsilat),
+            HarcNet: Net(BankaHesapTuru.Harc),
+            TahsilatEksik: Eksik(BankaHesapTuru.Tahsilat),
+            HarcEksik: Eksik(BankaHesapTuru.Harc),
+            TahsilatFazla: Fazla(BankaHesapTuru.Tahsilat),
+            HarcFazla: Fazla(BankaHesapTuru.Harc),
+            KayitSayisi: aktifKayitlar.Count);
+
+        _logger.LogInformation(
+            "[HK-ACTIVE-TOTAL-SSOT] Date={Date} IncludedStatuses=Takipte Count={Count} TahsilatNet={TahsilatNet} HarcNet={HarcNet} TahsilatEksik={TahsilatEksik} HarcEksik={HarcEksik} TahsilatFazla={TahsilatFazla} HarcFazla={HarcFazla}",
+            analizTarihi,
+            totals.KayitSayisi,
+            totals.TahsilatNet,
+            totals.HarcNet,
+            totals.TahsilatEksik,
+            totals.HarcEksik,
+            totals.TahsilatFazla,
+            totals.HarcFazla);
+
+        return totals;
+    }
     public async Task<EksikFazlaAutoFill> GetAutoFillDataAsync(
         DateOnly analizTarihi,
         CancellationToken ct = default)
@@ -290,13 +336,9 @@ public sealed partial class BankaHesapKontrolService
 
         var aktifKayitlar = bugunKayitlar
             .Where(x => x.HesapTuru != BankaHesapTuru.Stopaj
-                     && x.Durum != KayitDurumu.Iptal)
+                     && (x.Durum == KayitDurumu.Acik || x.Durum == KayitDurumu.Takipte))
             .ToList();
 
-        decimal ToplamFark(BankaHesapTuru hesap) =>
-            aktifKayitlar
-                .Where(x => x.HesapTuru == hesap && x.Sinif != FarkSinifi.Beklenen)
-                .Sum(x => x.Yon == KayitYonu.Fazla ? x.Tutar : -x.Tutar);
 
         decimal BeklenenNet(BankaHesapTuru hesap) =>
             aktifKayitlar
@@ -369,26 +411,56 @@ public sealed partial class BankaHesapKontrolService
         var cozulenHarc = bugunCozulenler
             .Where(x => x.HesapTuru == BankaHesapTuru.Harc).Sum(x => x.Tutar);
 
-        var toplamFarkTahsilat = ToplamFark(BankaHesapTuru.Tahsilat);
-        var toplamFarkHarc = ToplamFark(BankaHesapTuru.Harc);
+        var activeTotals = await GetActiveFollowTotalsAsync(analizTarihi, ct);
+        var toplamFarkTahsilat = activeTotals.TahsilatNet;
+        var toplamFarkHarc = activeTotals.HarcNet;
+        var resolvedExcluded = bugunKayitlar.Count(x => x.HesapTuru != BankaHesapTuru.Stopaj
+                                                     && (x.Durum == KayitDurumu.Cozuldu || x.Durum == KayitDurumu.Onaylandi));
+        var cancelledExcluded = bugunKayitlar.Count(x => x.HesapTuru != BankaHesapTuru.Stopaj
+                                                      && x.Durum == KayitDurumu.Iptal);
 
-        // BUG-AUTOFILL-1 FIX: GuneAitNet artık Acik + Onaylandi durumundaki kayıtları kapsar.
-        // ESKİ: Sadece Onaylandi → yeni tespit edilen farklar (Acik) dışarıda kalıyordu → ToplamFark ile uyumsuzluk.
-        // YENİ: Acik + Onaylandi → ToplamFark ile matematiksel tutarlılık sağlanır.
-        // NOT: Cozuldu/Takipte/Iptal dahil edilmez — bunlar ayrı alanlarda (BugunCozulen, Takipte paneli) gösterilir.
-        decimal GuneAitNet(BankaHesapTuru hesap) =>
-            bugunKayitlar
-                .Where(x => x.HesapTuru == hesap
-                         && x.Sinif != FarkSinifi.Beklenen
-                         && (x.Durum == KayitDurumu.Acik || x.Durum == KayitDurumu.Onaylandi))
-                .Sum(x => x.Yon == KayitYonu.Fazla ? x.Tutar : -x.Tutar);
+        _logger.LogInformation(
+            "[HK-AUTOFILL-SOURCE] TotalRecords={TotalRecords} ActiveIncluded={ActiveIncluded} ResolvedExcluded={ResolvedExcluded} CancelledExcluded={CancelledExcluded} TotalFarkTahsilat={TotalFarkTahsilat} TotalFarkHarc={TotalFarkHarc}",
+            bugunKayitlar.Count,
+            aktifKayitlar.Count,
+            resolvedExcluded,
+            cancelledExcluded,
+            toplamFarkTahsilat,
+            toplamFarkHarc);
 
-        var guneAitTahsilat = GuneAitNet(BankaHesapTuru.Tahsilat);
-        var guneAitHarc = GuneAitNet(BankaHesapTuru.Harc);
+        var guneAitTahsilat = activeTotals.TahsilatNet;
+        var guneAitHarc = activeTotals.HarcNet;
+
+        _logger.LogInformation(
+            "[HK-ACTIVE-TOTAL-APPLIED] Date={Date} Target=AutoFill GuneAitTahsilat={GuneAitTahsilat} GuneAitHarc={GuneAitHarc}",
+            analizTarihi,
+            guneAitTahsilat,
+            guneAitHarc);
+
+        var reconciliationKayitlar = bugunKayitlar
+            .Where(x => (x.Durum == KayitDurumu.Cozuldu || x.Durum == KayitDurumu.Onaylandi)
+                     && x.Sinif == FarkSinifi.Askida)
+            .ToList();
+
+        var takipKasaEtkisiTahsilat = reconciliationKayitlar
+            .Where(x => x.HesapTuru == BankaHesapTuru.Tahsilat && x.Yon == KayitYonu.Eksik)
+            .Sum(x => x.Tutar);
+        var takipKasaEtkisiHarc = reconciliationKayitlar
+            .Where(x => x.HesapTuru == BankaHesapTuru.Harc && x.Yon == KayitYonu.Fazla)
+            .Sum(x => x.Tutar);
+        var takipKasaEtkisiNet = takipKasaEtkisiTahsilat - takipKasaEtkisiHarc;
+
+        _logger.LogInformation(
+            "[RECON-GATEWAY] Date={Date} Scope=Sabah takip_kasa_etkisi_tahsilat={TakipTahsilat} takip_kasa_etkisi_harc={TakipHarc} takip_kasa_etkisi_net={TakipNet}",
+            analizTarihi,
+            takipKasaEtkisiTahsilat,
+            takipKasaEtkisiHarc,
+            takipKasaEtkisiNet);
 
         var hasData = toplamFarkTahsilat != 0 || toplamFarkHarc != 0
                    || guneAitTahsilat != 0 || guneAitHarc != 0
-                   || oncekiAcikTahsilat != 0 || oncekiAcikHarc != 0;
+                   || oncekiAcikTahsilat != 0 || oncekiAcikHarc != 0
+                   || takipKasaEtkisiNet != 0;
 
         var bekleyenSayisi = bugunKayitlar.Count(x => x.Sinif != FarkSinifi.Beklenen
                                                    && x.Durum == KayitDurumu.Acik
@@ -470,6 +542,9 @@ public sealed partial class BankaHesapKontrolService
             OlaganDisiHarc: olaganDisiHarc,
             ToplamFarkTahsilat: toplamFarkTahsilat,
             ToplamFarkHarc: toplamFarkHarc,
+            TakipKasaEtkisiTahsilat: takipKasaEtkisiTahsilat,
+            TakipKasaEtkisiHarc: takipKasaEtkisiHarc,
+            TakipKasaEtkisiNet: takipKasaEtkisiNet,
             BreakdownMesajTahsilat: BuildBreakdown(BankaHesapTuru.Tahsilat),
             BreakdownMesajHarc: BuildBreakdown(BankaHesapTuru.Harc),
             TakipCozumleri: takipDetaylar.Count > 0 ? takipDetaylar : null,

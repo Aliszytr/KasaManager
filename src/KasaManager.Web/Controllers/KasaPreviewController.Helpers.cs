@@ -160,6 +160,13 @@ public sealed partial class KasaPreviewController
             => decimal.TryParse(Request.Form[name], System.Globalization.NumberStyles.Any,
                    System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 0;
 
+        // FIX: Quick Save formu Rpt... hidden alanlarını içermez.
+        // Form alanı gerçekten gönderildiyse form değerini, gönderilmediyse model
+        // property'sini (MVC binding ile doğru gelen) kullanır.
+        // Bilinçli 0 girişleri korunur çünkü ContainsKey ile varlık kontrolü yapılır.
+        decimal PFM(string formKey, decimal? modelValue)
+            => Request.Form.ContainsKey(formKey) ? PF(formKey) : (modelValue ?? 0m);
+
         var defaults = await _globalDefaults.GetAsync(ct);
         var effectiveKasaType = !string.IsNullOrEmpty(model.KasaType) ? model.KasaType : "Aksam";
         var tarih = model.SelectedDate ?? DateOnly.FromDateTime(DateTime.Today);
@@ -192,11 +199,14 @@ public sealed partial class KasaPreviewController
             // Banka Reconciliation
             BankaGirenTahsilat = PF("RptBankaGirenTahsilat"), BankaGirenHarc = PF("RptBankaGirenHarc"),
             OnlineTahsilat = PF("RptOnlineTahsilat"), OnlineHarc = PF("RptOnlineHarc"),
-            // Eksik/Fazla
+            // Eksik/Fazla — PFM: Quick Save'de Rpt alanları yoksa model property fallback
             IsSabahKasa = isSabah,
-            GuneAitEksikFazlaTahsilat = PF("RptEfGuneT"), DundenEksikFazlaTahsilat = PF("RptEfDundenT"),
-            DundenEksikFazlaGelenTahsilat = PF("RptEfGelenT"), GuneAitEksikFazlaHarc = PF("RptEfGuneH"),
-            DundenEksikFazlaHarc = PF("RptEfDundenH"), DundenEksikFazlaGelenHarc = PF("RptEfGelenH"),
+            GuneAitEksikFazlaTahsilat = PFM("RptEfGuneT", model.GuneAitEksikFazlaTahsilat),
+            DundenEksikFazlaTahsilat = PFM("RptEfDundenT", model.DundenEksikFazlaTahsilat),
+            DundenEksikFazlaGelenTahsilat = PFM("RptEfGelenT", model.DundenEksikFazlaGelenTahsilat),
+            GuneAitEksikFazlaHarc = PFM("RptEfGuneH", model.GuneAitEksikFazlaHarc),
+            DundenEksikFazlaHarc = PFM("RptEfDundenH", model.DundenEksikFazlaHarc),
+            DundenEksikFazlaGelenHarc = PFM("RptEfGelenH", model.DundenEksikFazlaGelenHarc),
             // ROW 4D: Bankaya Yatırılacak Doğrulama (Sabah Kasa)
             BankaMevduatTahsilat = PF("RptBankaMevduatTahsilat"),
             BankaVirmanTahsilat = PF("RptBankaVirmanTahsilat"), BankaMevduatHarc = PF("RptBankaMevduatHarc"),
@@ -262,6 +272,11 @@ public sealed partial class KasaPreviewController
     {
         try
         {
+            var beforeGuneT = model.GuneAitEksikFazlaTahsilat;
+            var beforeGuneH = model.GuneAitEksikFazlaHarc;
+            var beforeDundenT = model.DundenEksikFazlaTahsilat;
+            var beforeDundenH = model.DundenEksikFazlaHarc;
+
             var analizTarihi = model.SelectedDate ?? DateOnly.FromDateTime(DateTime.Now);
             var fill = await _hesapKontrol.GetAutoFillDataAsync(analizTarihi, ct);
             model.HesapKontrolAutoFillMessage = fill.InfoMessage;
@@ -283,6 +298,9 @@ public sealed partial class KasaPreviewController
             // Faz 1: Breakdown alanları
             model.ToplamFarkTahsilat = fill.ToplamFarkTahsilat;
             model.ToplamFarkHarc = fill.ToplamFarkHarc;
+            model.TakipKasaEtkisiTahsilat = fill.TakipKasaEtkisiTahsilat;
+            model.TakipKasaEtkisiHarc = fill.TakipKasaEtkisiHarc;
+            model.TakipKasaEtkisiNet = fill.TakipKasaEtkisiNet;
             model.BeklenenTahsilat = fill.BeklenenTahsilat;
             model.BeklenenHarc = fill.BeklenenHarc;
             model.OlaganDisiTahsilat = fill.OlaganDisiTahsilat;
@@ -296,6 +314,14 @@ public sealed partial class KasaPreviewController
             // BUG-2 FIX: CrossDay burada tekrar çağrılmıyor.
             // AnalyzeFromComparisonAsync zaten CrossDayReconcileAsync'i çalıştırır.
             // Çift çalıştırma gereksiz DB yükü ve potansiyel orphan sorunu yaratıyordu.
+            _log.LogInformation(
+                "[HK-AUTOFILL-DIFF] HasData={HasData} GuneAitEksikFazlaTahsilat: {BeforeGuneT} -> {AfterGuneT} Changed={ChangedGuneT} GuneAitEksikFazlaHarc: {BeforeGuneH} -> {AfterGuneH} Changed={ChangedGuneH} DundenEksikFazlaTahsilat: {BeforeDundenT} -> {AfterDundenT} Changed={ChangedDundenT} DundenEksikFazlaHarc: {BeforeDundenH} -> {AfterDundenH} Changed={ChangedDundenH} TakipKasaEtkisiNet={TakipKasaEtkisiNet}",
+                fill.HasData,
+                beforeGuneT, model.GuneAitEksikFazlaTahsilat, beforeGuneT != model.GuneAitEksikFazlaTahsilat,
+                beforeGuneH, model.GuneAitEksikFazlaHarc, beforeGuneH != model.GuneAitEksikFazlaHarc,
+                beforeDundenT, model.DundenEksikFazlaTahsilat, beforeDundenT != model.DundenEksikFazlaTahsilat,
+                beforeDundenH, model.DundenEksikFazlaHarc, beforeDundenH != model.DundenEksikFazlaHarc,
+                model.TakipKasaEtkisiNet);
         }
         catch (Exception ex)
         {

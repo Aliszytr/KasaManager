@@ -53,6 +53,9 @@ public static class KasaPreviewMapper
             DundenEksikFazlaHarc = vm.DundenEksikFazlaHarc,
             DundenEksikFazlaGelenTahsilat = vm.DundenEksikFazlaGelenTahsilat,
             DundenEksikFazlaGelenHarc = vm.DundenEksikFazlaGelenHarc,
+            TakipKasaEtkisiTahsilat = vm.TakipKasaEtkisiTahsilat,
+            TakipKasaEtkisiHarc = vm.TakipKasaEtkisiHarc,
+            TakipKasaEtkisiNet = vm.TakipKasaEtkisiNet,
             KasayiYapan = vm.KasayiYapan,
             Aciklama = vm.Aciklama,
             BozukPara = vm.BozukPara,
@@ -165,6 +168,9 @@ public static class KasaPreviewMapper
         vm.DundenEksikFazlaHarc = dto.DundenEksikFazlaHarc;
         vm.DundenEksikFazlaGelenTahsilat = dto.DundenEksikFazlaGelenTahsilat;
         vm.DundenEksikFazlaGelenHarc = dto.DundenEksikFazlaGelenHarc;
+        vm.TakipKasaEtkisiTahsilat = dto.TakipKasaEtkisiTahsilat;
+        vm.TakipKasaEtkisiHarc = dto.TakipKasaEtkisiHarc;
+        vm.TakipKasaEtkisiNet = dto.TakipKasaEtkisiNet;
         vm.KasayiYapan = dto.KasayiYapan;
         vm.Aciklama = dto.Aciklama;
         vm.BozukPara = dto.BozukPara;

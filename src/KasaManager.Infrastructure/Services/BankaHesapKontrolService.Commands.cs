@@ -1,6 +1,7 @@
 #nullable enable
 using KasaManager.Domain.Reports.HesapKontrol;
 using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
 
 namespace KasaManager.Infrastructure.Services;
 
@@ -55,6 +56,52 @@ public sealed partial class BankaHesapKontrolService
         var kayit = await _db.HesapKontrolKayitlari.FindAsync(new object[] { kayitId }, ct);
         if (kayit == null || kayit.Durum != KayitDurumu.Acik) return false;
 
+        var followFp = GetFollowIdentityFingerprint(kayit);
+        _logger.LogInformation(
+            "[HK-FOLLOW-FINGERPRINT] Action=StartTracking KayitId={KayitId} Date={Date} FollowIdentity={FollowIdentity} HesapTuru={HesapTuru} Yon={Yon} DosyaNo={DosyaNo} Birim={Birim} Tutar={Tutar}",
+            kayit.Id,
+            kayit.AnalizTarihi,
+            followFp,
+            kayit.HesapTuru,
+            kayit.Yon,
+            kayit.DosyaNo,
+            kayit.BirimAdi,
+            kayit.Tutar);
+
+        var takipteAyniGercekKayitlar = await _db.HesapKontrolKayitlari
+            .Where(x => x.Id != kayitId
+                     && x.Durum == KayitDurumu.Takipte
+                     && x.HesapTuru != BankaHesapTuru.Stopaj)
+            .ToListAsync(ct);
+        var takipteDuplicate = takipteAyniGercekKayitlar
+            .FirstOrDefault(x => GetFollowIdentityFingerprint(x) == followFp);
+
+        if (takipteDuplicate != null)
+        {
+            var eskiTarih = takipteDuplicate.AnalizTarihi;
+            var orijinalTarih = takipteDuplicate.AnalizTarihi <= kayit.AnalizTarihi
+                ? takipteDuplicate.AnalizTarihi
+                : kayit.AnalizTarihi;
+
+            takipteDuplicate.AnalizTarihi = orijinalTarih;
+            takipteDuplicate.Notlar = (takipteDuplicate.Notlar ?? "") +
+                $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] Duplicate takip talebi ile orijinal eksik tarihi {orijinalTarih:dd.MM.yyyy} olarak hizalandi. Kaynak: {kayit.Id:N}";
+
+            kayit.Durum = KayitDurumu.Iptal;
+            kayit.CozulmeTarihi = DateOnly.FromDateTime(DateTime.Now);
+            kayit.Notlar = (kayit.Notlar ?? "") +
+                $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] Duplicate takip kaydi ile birlestirildi. Aktif takip: {takipteDuplicate.Id:N}";
+
+            await _db.SaveChangesAsync(ct);
+            _logger.LogInformation(
+                "[HK-DUPLICATE-FOLLOW-MERGED] Action=StartTracking FollowIdentity={FollowIdentity} TrackedId={TrackedId} OldTrackedDate={OldTrackedDate} NewTrackedDate={NewTrackedDate} PassiveDuplicateId={PassiveDuplicateId}",
+                followFp,
+                takipteDuplicate.Id,
+                eskiTarih,
+                takipteDuplicate.AnalizTarihi,
+                kayit.Id);
+            return true;
+        }
         kayit.Durum = KayitDurumu.Takipte;
         kayit.OnaylayanKullanici = kullanici;
         kayit.OnayTarihi = DateTime.UtcNow;

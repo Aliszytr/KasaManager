@@ -1,10 +1,12 @@
 #nullable enable
 using KasaManager.Application.Abstractions;
+using KasaManager.Application.Services.DataFirst;
 using KasaManager.Domain.Projection;
 using KasaManager.Domain.Reports;
 using KasaManager.Domain.Reports.HesapKontrol;
 using KasaManager.Application.Observability;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 namespace KasaManager.Application.Services;
 
@@ -26,6 +28,7 @@ public sealed class EksikFazlaProjectionEngine : IEksikFazlaProjectionEngine
     private readonly IBankaHesapKontrolService _hesapKontrol;
     private readonly ILogger<EksikFazlaProjectionEngine> _log;
     private readonly IAlertService _alertService;
+    private readonly IProjectionDbReadService? _projectionDbReadService;
 
     // Excel reader delegates — legacy partial class methods ile aynı
     // Bunlar KasaDraftService'den inject edilemez (private).
@@ -34,11 +37,13 @@ public sealed class EksikFazlaProjectionEngine : IEksikFazlaProjectionEngine
     public EksikFazlaProjectionEngine(
         IBankaHesapKontrolService hesapKontrol,
         ILogger<EksikFazlaProjectionEngine> log,
-        IAlertService alertService)
+        IAlertService alertService,
+        IProjectionDbReadService? projectionDbReadService = null)
     {
         _hesapKontrol = hesapKontrol;
         _log = log;
         _alertService = alertService;
+        _projectionDbReadService = projectionDbReadService;
     }
 
     public async Task<ProjectionResult> ProjectAsync(
@@ -210,10 +215,73 @@ public sealed class EksikFazlaProjectionEngine : IEksikFazlaProjectionEngine
     /// Snapshot veya DB fallback YASAK. Eğer input yoksa, anında log atar ve NULL döner.
     /// Shadow fail ederek sessiz davranışı (silent failure) engeller.
     /// </summary>
-    private Task<ProjectionDayInput?> ResolveDayInputAsync(
+    private async Task<ProjectionDayInput?> ResolveDayInputAsync(
         DateOnly date, string uploadFolderAbsolute, CancellationToken ct)
     {
-        return Task.FromResult<ProjectionDayInput?>(null);
+        const string preferredScope = "Sabah";
+        try
+        {
+            if (_projectionDbReadService is null)
+            {
+                _log.LogWarning("[PROJECTION-DB-RESOLVER] Date={Date} Scope={Scope} Result=NullBecauseNoDbData Reason=NoReadService uploadHint={UploadHint}",
+                    date, preferredScope, uploadFolderAbsolute);
+                return null;
+            }
+
+            var snapshot = await _projectionDbReadService.GetSnapshotAsync(date, preferredScope, ct);
+            var resultMap = ParseResultMap(snapshot.DailyResult?.ResultsJson);
+            var factMap = BuildFactMap(snapshot.DailyFacts);
+            var overrideMap = BuildOverrideMap(snapshot.DailyOverrides);
+
+            var missing = new List<string>();
+            var traces = new List<ProjectionFieldTrace>(9);
+            var bankaGirenTahsilat = ResolveRequiredDecimalWithTrace("BankaGirenTahsilat", "bankaya_giren_tahsilat", resultMap, factMap, overrideMap, missing, traces);
+            var bankaGirenHarc = ResolveRequiredDecimalWithTrace("BankaGirenHarc", "bankaya_giren_harc", resultMap, factMap, overrideMap, missing, traces);
+            var toplamTahsilat = ResolveRequiredDecimalWithTrace("ToplamTahsilat", "toplam_tahsilat", resultMap, factMap, overrideMap, missing, traces);
+            var onlineTahsilat = ResolveRequiredDecimalWithTrace("OnlineTahsilat", "online_tahsilat", resultMap, factMap, overrideMap, missing, traces);
+            var toplamHarc = ResolveRequiredDecimalWithTrace("ToplamHarc", "toplam_harc", resultMap, factMap, overrideMap, missing, traces);
+            var onlineReddiyat = ResolveRequiredDecimalWithTrace("OnlineReddiyat", "online_reddiyat", resultMap, factMap, overrideMap, missing, traces);
+            var onlineHarc = ResolveRequiredDecimalWithTrace("OnlineHarc", "online_harcama", resultMap, factMap, overrideMap, missing, traces);
+            var bankayaYatirilacakNakit = ResolveRequiredDecimalWithTrace("BankayaYatirilacakNakit", "bankaya_yatirilacak_nakit", resultMap, factMap, overrideMap, missing, traces);
+            var normalHarc = ResolveRequiredDecimalWithTrace("NormalHarc", "normal_harc", resultMap, factMap, overrideMap, missing, traces);
+
+            var traceSummary = BuildTraceSummary(traces);
+
+            if (snapshot.DailyResult is null && snapshot.DailyFacts.Count == 0 && snapshot.DailyOverrides.Count == 0)
+            {
+                _log.LogWarning("[PROJECTION-DB-RESOLVER] Date={Date} Scope={Scope} DailyCalculationResultFound={ResultFound} DailyFactsCount={FactsCount} DailyOverridesCount={OverridesCount} MissingFields={MissingFields} FieldTrace={FieldTrace} Result=NullBecauseNoDbData",
+                    date, snapshot.ScopeUsed, false, snapshot.DailyFacts.Count, snapshot.DailyOverrides.Count, string.Join(",", missing), traceSummary);
+                return null;
+            }
+
+            if (missing.Count > 0)
+            {
+                _log.LogWarning("[PROJECTION-DB-RESOLVER] Date={Date} Scope={Scope} DailyCalculationResultFound={ResultFound} DailyFactsCount={FactsCount} DailyOverridesCount={OverridesCount} MissingFields={MissingFields} FieldTrace={FieldTrace} Result=NullBecauseMissingFields",
+                    date, snapshot.ScopeUsed, snapshot.DailyResult is not null, snapshot.DailyFacts.Count, snapshot.DailyOverrides.Count, string.Join(",", missing), traceSummary);
+                return null;
+            }
+
+            _log.LogInformation("[PROJECTION-DB-RESOLVER] Date={Date} Scope={Scope} DailyCalculationResultFound={ResultFound} DailyFactsCount={FactsCount} DailyOverridesCount={OverridesCount} MissingFields={MissingFields} FieldTrace={FieldTrace} Result=Success",
+                date, snapshot.ScopeUsed, snapshot.DailyResult is not null, snapshot.DailyFacts.Count, snapshot.DailyOverrides.Count, string.Empty, traceSummary);
+
+            return new ProjectionDayInput(
+                Date: date,
+                BankaGirenTahsilat: bankaGirenTahsilat,
+                BankaGirenHarc: bankaGirenHarc,
+                ToplamTahsilat: toplamTahsilat,
+                OnlineTahsilat: onlineTahsilat,
+                ToplamHarc: toplamHarc,
+                OnlineReddiyat: onlineReddiyat,
+                OnlineHarc: onlineHarc,
+                BankayaYatirilacakNakit: bankayaYatirilacakNakit,
+                NormalHarc: normalHarc,
+                Source: ProjectionDaySource.CalculatedSnapshot);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "[PROJECTION-DB-RESOLVER] Date={Date} Scope={Scope} Result=Error", date, preferredScope);
+            return null;
+        }
     }
 
     /// <summary>
@@ -309,4 +377,138 @@ public sealed class EksikFazlaProjectionEngine : IEksikFazlaProjectionEngine
 
         return 0m;
     }
+
+    private static Dictionary<string, decimal> ParseResultMap(string? resultsJson)
+    {
+        var map = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(resultsJson)) return map;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(resultsJson);
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                if (prop.Value.ValueKind == JsonValueKind.Number && prop.Value.TryGetDecimal(out var num))
+                {
+                    map[prop.Name] = num;
+                }
+                else if (prop.Value.ValueKind == JsonValueKind.String
+                         && decimal.TryParse(prop.Value.GetString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+                {
+                    map[prop.Name] = parsed;
+                }
+            }
+        }
+        catch
+        {
+            // parse error intentionally ignored; caller handles missing fields.
+        }
+
+        return map;
+    }
+
+    private static Dictionary<string, decimal> BuildFactMap(IReadOnlyList<Domain.Calculation.Data.DailyFact> facts)
+    {
+        var map = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        foreach (var fact in facts)
+        {
+            if (!fact.NumericValue.HasValue || string.IsNullOrWhiteSpace(fact.CanonicalKey))
+                continue;
+
+            var key = fact.CanonicalKey.Trim();
+            map[key] = fact.NumericValue.Value;
+            var idx = key.IndexOf('_');
+            if (idx >= 0 && idx < key.Length - 1)
+            {
+                var suffix = key[(idx + 1)..];
+                map[suffix] = fact.NumericValue.Value;
+            }
+        }
+
+        return map;
+    }
+
+    private static Dictionary<string, decimal> BuildOverrideMap(IReadOnlyList<Domain.Calculation.Data.DailyOverride> overrides)
+    {
+        var map = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        foreach (var o in overrides)
+        {
+            if (string.IsNullOrWhiteSpace(o.CanonicalKey)) continue;
+            if (o.NumericValue.HasValue)
+            {
+                map[o.CanonicalKey] = o.NumericValue.Value;
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(o.TextValue)
+                && decimal.TryParse(o.TextValue, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+            {
+                map[o.CanonicalKey] = parsed;
+            }
+        }
+
+        return map;
+    }
+
+    private static decimal ResolveRequiredDecimal(
+        string key,
+        IReadOnlyDictionary<string, decimal> resultMap,
+        IReadOnlyDictionary<string, decimal> factMap,
+        IReadOnlyDictionary<string, decimal> overrideMap,
+        ICollection<string> missing)
+    {
+        // Priority: DailyOverrides > DailyCalculationResults > DailyFacts
+        if (overrideMap.TryGetValue(key, out var ov)) return ov;
+        if (resultMap.TryGetValue(key, out var fromResult)) return fromResult;
+        if (factMap.TryGetValue(key, out var fromFact)) return fromFact;
+
+        missing.Add(key);
+        return 0m;
+    }
+
+    private static decimal ResolveRequiredDecimalWithTrace(
+        string fieldName,
+        string key,
+        IReadOnlyDictionary<string, decimal> resultMap,
+        IReadOnlyDictionary<string, decimal> factMap,
+        IReadOnlyDictionary<string, decimal> overrideMap,
+        ICollection<string> missing,
+        ICollection<ProjectionFieldTrace> traces)
+    {
+        var candidates = new[] { key };
+        if (overrideMap.TryGetValue(key, out var ov))
+        {
+            traces.Add(new ProjectionFieldTrace(fieldName, candidates, key, ov, false));
+            return ov;
+        }
+
+        if (resultMap.TryGetValue(key, out var fromResult))
+        {
+            traces.Add(new ProjectionFieldTrace(fieldName, candidates, key, fromResult, false));
+            return fromResult;
+        }
+
+        if (factMap.TryGetValue(key, out var fromFact))
+        {
+            traces.Add(new ProjectionFieldTrace(fieldName, candidates, key, fromFact, false));
+            return fromFact;
+        }
+
+        missing.Add(key);
+        traces.Add(new ProjectionFieldTrace(fieldName, candidates, null, null, true));
+        return 0m;
+    }
+
+    private static string BuildTraceSummary(IEnumerable<ProjectionFieldTrace> traces)
+    {
+        return string.Join(";", traces.Select(t =>
+            $"{t.Field}|c=[{string.Join(",", t.Candidates)}]|f={(t.FoundKey ?? "Missing")}|v={(t.FoundValue.HasValue ? t.FoundValue.Value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) : "Missing")}"));
+    }
+
+    private sealed record ProjectionFieldTrace(
+        string Field,
+        IReadOnlyList<string> Candidates,
+        string? FoundKey,
+        decimal? FoundValue,
+        bool Missing);
 }

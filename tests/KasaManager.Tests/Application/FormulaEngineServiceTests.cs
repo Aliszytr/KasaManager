@@ -208,4 +208,89 @@ public class FormulaEngineServiceTests
         Assert.True(result.Ok, result.Error);
         Assert.Empty(result.Value!.Outputs);
     }
+
+    [Fact]
+    public void Run_SabahEksikFazlaFormula_DoesNotDoubleCountCarryover()
+    {
+        var formulaSet = new FormulaSet
+        {
+            Id = "sabah-ef-r1",
+            Name = "Sabah EF R1",
+            Version = "1",
+            Templates = new List<FormulaTemplate>
+            {
+                new() { Id = "ef-1", TargetKey = "tespit_edilen_eksik_fazla", Expression = "0", Name = "Tespit", Version = "1" },
+                new() { Id = "ef-2", TargetKey = "gune_ait_eksik_fazla_tahsilat", Expression = "tespit_edilen_eksik_fazla", Name = "Gune Ait", Version = "1" }
+            }
+        };
+
+        var pool = new List<UnifiedPoolEntry>
+        {
+            new() { CanonicalKey = "dunden_eksik_fazla_gelen_tahsilat", Value = "7950", Type = UnifiedPoolValueType.Raw, IncludeInCalculations = true },
+            new() { CanonicalKey = "tespit_edilen_eksik_fazla", Value = "0", Type = UnifiedPoolValueType.Raw, IncludeInCalculations = true }
+        };
+
+        var result = _engine.Run(new DateOnly(2026, 5, 6), formulaSet, pool);
+
+        Assert.True(result.Ok, result.Error);
+        Assert.Equal(0m, result.Value!.Outputs["tespit_edilen_eksik_fazla"]);
+        Assert.Equal(0m, result.Value!.Outputs["gune_ait_eksik_fazla_tahsilat"]);
+        Assert.NotEqual(15900m, result.Value!.Outputs["gune_ait_eksik_fazla_tahsilat"]);
+    }
+    [Fact]
+    public void Run_SabahTakipKasaEtkisiNet_SubtractsHarc()
+    {
+        var formulaSet = new FormulaSet
+        {
+            Id = "sabah-gateway-net",
+            Name = "Sabah Gateway Net",
+            Version = "1",
+            Templates = new List<FormulaTemplate>
+            {
+                new() { Id = "gw-1", TargetKey = "takip_kasa_etkisi_net", Expression = "takip_kasa_etkisi_tahsilat - takip_kasa_etkisi_harc", Name = "Gateway Net", Version = "1" }
+            }
+        };
+
+        var pool = new List<UnifiedPoolEntry>
+        {
+            new() { CanonicalKey = "takip_kasa_etkisi_tahsilat", Value = "8836", Type = UnifiedPoolValueType.Derived, IncludeInCalculations = true },
+            new() { CanonicalKey = "takip_kasa_etkisi_harc", Value = "250", Type = UnifiedPoolValueType.Derived, IncludeInCalculations = true }
+        };
+
+        var result = _engine.Run(new DateOnly(2026, 5, 6), formulaSet, pool);
+
+        Assert.True(result.Ok, result.Error);
+        Assert.Equal(8586m, result.Value!.Outputs["takip_kasa_etkisi_net"]);
+    }
+
+    [Fact]
+    public void Run_SabahGenelKasaFormula_AddsGatewayNetOnly()
+    {
+        var formulaSet = new FormulaSet
+        {
+            Id = "sabah-gateway-genel-kasa",
+            Name = "Sabah Gateway Genel Kasa",
+            Version = "1",
+            Templates = new List<FormulaTemplate>
+            {
+                new() { Id = "gw-1", TargetKey = "takip_kasa_etkisi_net", Expression = "takip_kasa_etkisi_tahsilat - takip_kasa_etkisi_harc", Name = "Gateway Net", Version = "1" },
+                new() { Id = "gk-1", TargetKey = "genel_kasa", Expression = "base_genel_kasa + takip_kasa_etkisi_net", Name = "Genel Kasa", Version = "1" }
+            }
+        };
+
+        var pool = new List<UnifiedPoolEntry>
+        {
+            new() { CanonicalKey = "base_genel_kasa", Value = "1164", Type = UnifiedPoolValueType.Raw, IncludeInCalculations = true },
+            new() { CanonicalKey = "takip_kasa_etkisi_tahsilat", Value = "8836", Type = UnifiedPoolValueType.Derived, IncludeInCalculations = true },
+            new() { CanonicalKey = "takip_kasa_etkisi_harc", Value = "0", Type = UnifiedPoolValueType.Derived, IncludeInCalculations = true },
+            new() { CanonicalKey = "dunden_eksik_fazla_gelen_tahsilat", Value = "7950", Type = UnifiedPoolValueType.Raw, IncludeInCalculations = true },
+            new() { CanonicalKey = "dunden_eksik_fazla_gelen_harc", Value = "5444", Type = UnifiedPoolValueType.Raw, IncludeInCalculations = true }
+        };
+
+        var result = _engine.Run(new DateOnly(2026, 5, 6), formulaSet, pool);
+
+        Assert.True(result.Ok, result.Error);
+        Assert.Equal(8836m, result.Value!.Outputs["takip_kasa_etkisi_net"]);
+        Assert.Equal(10000m, result.Value!.Outputs["genel_kasa"]);
+    }
 }

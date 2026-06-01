@@ -97,6 +97,7 @@ class Program
         // ParityCheck, DataFirst, ReadAdapter (FAZ 4 / FAZ 12)
         services.AddScoped<KasaManager.Application.Services.DataFirst.IFactNormalizationService, KasaManager.Infrastructure.Services.FactNormalizationService>();
         services.AddScoped<KasaManager.Application.Services.DataFirst.IParityCheckService, KasaManager.Infrastructure.Services.ParityCheckService>();
+        services.AddScoped<KasaManager.Application.Services.DataFirst.IProjectionDbReadService, KasaManager.Infrastructure.Services.ProjectionDbReadService>();
         services.AddScoped<KasaManager.Application.Services.DataFirst.IDataFirstTrustReadRepository, KasaManager.Infrastructure.Services.DataFirstTrustReadRepository>();
         services.AddScoped<KasaManager.Application.Services.DataFirst.IDataFirstTrustService, KasaManager.Infrastructure.Services.DataFirstTrustService>();
 

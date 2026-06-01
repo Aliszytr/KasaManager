@@ -34,16 +34,16 @@ public sealed class KasaReportDateRulesService : IKasaReportDateRulesService
         _orchestrator = orchestrator;
     }
 
-    public async Task<DateRulesEvaluation> EvaluateAsync(string uploadFolderAbsolute, CancellationToken ct = default)
+    public Task<DateRulesEvaluation> EvaluateAsync(string uploadFolderAbsolute, CancellationToken ct = default)
     {
         var eval = new DateRulesEvaluation();
 
         if (string.IsNullOrWhiteSpace(uploadFolderAbsolute) || !Directory.Exists(uploadFolderAbsolute))
         {
-            return eval with
+            return Task.FromResult(eval with
             {
                 Errors = new List<string> { "Upload klasörü bulunamadı." }
-            };
+            });
         }
 
 
@@ -146,7 +146,7 @@ public sealed class KasaReportDateRulesService : IKasaReportDateRulesService
 
 
 
-        return new DateRulesEvaluation
+        return Task.FromResult(new DateRulesEvaluation
         {
             ProposedDate = proposed,
             FinalSuggestedDate = proposed,
@@ -154,7 +154,7 @@ public sealed class KasaReportDateRulesService : IKasaReportDateRulesService
             HasAnyDate = hasAny,
             Sources = sources,
             Warnings = warnings
-        };
+        });
     }
 
     private static FileInfo? PickBestFileForKind(List<FileInfo> files, ImportFileKind kind)

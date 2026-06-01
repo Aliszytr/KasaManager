@@ -4,6 +4,8 @@ using KasaManager.Application.Abstractions;
 using KasaManager.Application.Services.Draft.Helpers;
 using KasaManager.Domain.Abstractions;
 using KasaManager.Domain.Reports;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace KasaManager.Application.Services.Comparison;
 
@@ -15,6 +17,7 @@ public sealed partial class ComparisonService : IComparisonService
 {
     private readonly IImportOrchestrator _import;
     private readonly BankaAciklamaParser _parser;
+    private readonly ILogger<ComparisonService> _logger;
 
     // Tutar toleransı: ±%0.5 (banka masrafları/yuvarlamalar için)
     private const decimal AmountTolerancePercent = 0.005m;
@@ -26,10 +29,14 @@ public sealed partial class ComparisonService : IComparisonService
     private const double ConfidenceThresholdFull = 0.8;
     private const double ConfidenceThresholdPartial = 0.5;
 
-    public ComparisonService(IImportOrchestrator import, BankaAciklamaParser parser)
+    public ComparisonService(
+        IImportOrchestrator import,
+        BankaAciklamaParser parser,
+        ILogger<ComparisonService>? logger = null)
     {
         _import = import;
         _parser = parser;
+        _logger = logger ?? NullLogger<ComparisonService>.Instance;
     }
 
     /// <inheritdoc />
@@ -195,7 +202,7 @@ public sealed partial class ComparisonService : IComparisonService
             for (int oi = 0; oi < onlineRecords.Count; oi++)
             {
                 var online = onlineRecords[oi];
-                var matchResult = FindBestMatch(online, bankaRecords, new HashSet<int>());
+                var matchResult = FindBestMatch(online, bankaRecords, new HashSet<int>(), type);
                 allCandidates.Add((oi, online, matchResult));
             }
 
@@ -204,22 +211,27 @@ public sealed partial class ComparisonService : IComparisonService
 
             // 6c. En yüksek puandan başlayarak ata
             var resultsByOnlineIdx = new Dictionary<int, ComparisonMatchResult>();
+            static bool ConsumesBankaRow(ComparisonMatchResult result) =>
+                result.BankaRowIndex.HasValue
+                && (result.Status == MatchStatus.Matched
+                    || result.Status == MatchStatus.PartialMatch
+                    || result.Status == MatchStatus.MultipleMatches);
             foreach (var (onlineIdx, online, matchResult) in allCandidates)
             {
                 if (usedOnlineIndices.Contains(onlineIdx)) continue;
 
                 if (matchResult.BankaRowIndex.HasValue && usedBankaIndices.Contains(matchResult.BankaRowIndex.Value))
                 {
-                    var retryResult = FindBestMatch(online, bankaRecords, usedBankaIndices);
+                    var retryResult = FindBestMatch(online, bankaRecords, usedBankaIndices, type);
                     resultsByOnlineIdx[onlineIdx] = retryResult;
-                    if (retryResult.BankaRowIndex.HasValue)
-                        usedBankaIndices.Add(retryResult.BankaRowIndex.Value);
+                    if (ConsumesBankaRow(retryResult))
+                        usedBankaIndices.Add(retryResult.BankaRowIndex!.Value);
                 }
                 else
                 {
                     resultsByOnlineIdx[onlineIdx] = matchResult;
-                    if (matchResult.BankaRowIndex.HasValue)
-                        usedBankaIndices.Add(matchResult.BankaRowIndex.Value);
+                    if (ConsumesBankaRow(matchResult))
+                        usedBankaIndices.Add(matchResult.BankaRowIndex!.Value);
                 }
                 usedOnlineIndices.Add(onlineIdx);
             }

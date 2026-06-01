@@ -165,7 +165,10 @@ public partial class KasaOrchestrator
                 // Legacy: isSabah ? 0m : ...  [line 331-332]
 
                 // 4) Final hesaplar
-                ("genel_kasa", "dunden_devreden_kasa_nakit + bankadan_cekilen + vergiden_gelen + toplam_tahsilat + normal_stopaj + cesitli_nedenlerle_bankadan_cikamayan_tahsilat - normal_reddiyat - bankaya_yatirilacak_tahsilat - kayden_tahsilat"),
+                ("takip_kasa_etkisi_tahsilat", "takip_kasa_etkisi_tahsilat"),
+                ("takip_kasa_etkisi_harc", "takip_kasa_etkisi_harc"),
+                ("takip_kasa_etkisi_net", "takip_kasa_etkisi_tahsilat - takip_kasa_etkisi_harc"),
+                ("genel_kasa", "dunden_devreden_kasa_nakit + bankadan_cekilen + vergiden_gelen + toplam_tahsilat + normal_stopaj + cesitli_nedenlerle_bankadan_cikamayan_tahsilat - normal_reddiyat - bankaya_yatirilacak_tahsilat - kayden_tahsilat + takip_kasa_etkisi_tahsilat"),
                 ("bozuk_para_haric_kasa", "genel_kasa - bozuk_para"),
 
                 // 5) Muhasebe fark kontrolleri
@@ -179,7 +182,7 @@ public partial class KasaOrchestrator
                 ("sabah_kasa_devir", "dunden_devreden_kasa_nakit + dunden_eksik_veya_fazla_tahsilat"),
                 ("gune_ait_tahsilat_farki", "kayden_tahsilat - bankaya_giren_tahsilat"),
                 ("dunden_eksik_veya_fazla_tahsilat", "0"),
-                ("gune_ait_eksik_veya_fazla_tahsilat", "0")
+                ("gune_ait_eksik_veya_fazla_tahsilat", "0"),
             },
             "genel" => new()
             {
@@ -247,14 +250,14 @@ public partial class KasaOrchestrator
         return true;
     }
 
-    private async Task HydrateGenelKasaDateRangeAsync(KasaPreviewDto dto, DateOnly date, CancellationToken ct)
+    private Task HydrateGenelKasaDateRangeAsync(KasaPreviewDto dto, DateOnly date, CancellationToken ct)
     {
         // Kullanıcı zaten tarih girdiyse (UI'dan), o tarihleri koru — üzerine yazma
         if (dto.GenelKasaStartDate.HasValue && dto.GenelKasaEndDate.HasValue)
         {
             dto.GenelKasaStartDateSource ??= "Kullanıcı Girişi";
             dto.GenelKasaEndDateSource ??= "Kullanıcı Girişi";
-            return;
+            return Task.CompletedTask;
         }
 
         if (dto.DefaultGenelKasaBaslangicTarihiSeed.HasValue)
@@ -266,13 +269,14 @@ public partial class KasaOrchestrator
                 dto.GenelKasaEndDate ??= date;
                 dto.GenelKasaStartDateSource ??= "Ayarlar (Seed)";
                 dto.GenelKasaEndDateSource ??= "Rapor Tarihi";
-                return;
+                return Task.CompletedTask;
             }
         }
         
         dto.GenelKasaStartDate ??= date;
         dto.GenelKasaEndDate ??= date;
         dto.GenelKasaStartDateSource ??= "Ayar Bulunamadı (Günlük)";
+        return Task.CompletedTask;
     }
 
     // =========================================================================
@@ -301,7 +305,10 @@ public partial class KasaOrchestrator
         DundenEksikFazlaTahsilat = dto.DundenEksikFazlaTahsilat,
         DundenEksikFazlaHarc = dto.DundenEksikFazlaHarc,
         DundenEksikFazlaGelenTahsilat = dto.DundenEksikFazlaGelenTahsilat,
-        DundenEksikFazlaGelenHarc = dto.DundenEksikFazlaGelenHarc
+        DundenEksikFazlaGelenHarc = dto.DundenEksikFazlaGelenHarc,
+        TakipKasaEtkisiTahsilat = dto.TakipKasaEtkisiTahsilat,
+        TakipKasaEtkisiHarc = dto.TakipKasaEtkisiHarc,
+        TakipKasaEtkisiNet = dto.TakipKasaEtkisiNet
     };
 
     private List<KasaInputCatalogEntry> BuildInputCatalog(List<UnifiedPoolEntry> pool)
@@ -427,12 +434,83 @@ public partial class KasaOrchestrator
     }
     
     /// <summary>
-    /// Draft bundle ile FormulaEngine sonuçları arasındaki farkları hesaplar.
-    /// Gelecekte implemente edilecek — şu an boş liste döndürür.
+    /// Draft bundle ile FormulaEngine sonuçları arasındaki kritik farkları hesaplar.
+    /// R14.3-FIX2: False-positive üretmemek için yalnızca scope'u net olan kritik alanlar karşılaştırılır.
     /// </summary>
-    private List<ParityDiffItem> BuildParityDiffs(KasaDraftBundle bundle, CalculationRun run)
+    private List<ParityDiffItem> BuildParityDiffs(KasaDraftBundle bundle, CalculationRun run, string? scopeHint)
     {
-         return new List<ParityDiffItem>();
+        var diffs = new List<ParityDiffItem>();
+        AddCriticalDiff(diffs, bundle, run, scopeHint, "genel_kasa");
+        return diffs;
     }
 
+    private static void AddCriticalDiff(List<ParityDiffItem> diffs, KasaDraftBundle bundle, CalculationRun run, string? scopeHint, string key)
+    {
+        var scope = KasaScopeTypes.Normalize(scopeHint);
+        var draft = SelectDraftForScope(bundle, scope);
+        if (draft == null)
+        {
+            return;
+        }
+
+        var hasLegacy = TryReadDraftDecimal(draft, key, out var legacyValue);
+        var hasEngine = run.Outputs.TryGetValue(key, out var engineValue);
+
+        if (!hasLegacy && !hasEngine)
+        {
+            return;
+        }
+
+        var status = (hasLegacy, hasEngine) switch
+        {
+            (false, true) => ParityDiffStatus.MissingInLegacy,
+            (true, false) => ParityDiffStatus.MissingInEngine,
+            (true, true) when Math.Abs(legacyValue - engineValue) > 0.005m => ParityDiffStatus.Different,
+            (true, true) => ParityDiffStatus.Same,
+            _ => ParityDiffStatus.NotComparable
+        };
+
+        if (status == ParityDiffStatus.Same)
+        {
+            return;
+        }
+
+        diffs.Add(new ParityDiffItem
+        {
+            Scope = scope,
+            CanonicalKey = key,
+            LegacyKey = key,
+            EngineKey = key,
+            LegacyValue = hasLegacy ? legacyValue : null,
+            EngineValue = hasEngine ? engineValue : null,
+            Delta = hasLegacy && hasEngine ? engineValue - legacyValue : null,
+            Status = status,
+            Note = "Draft Fields ile FormulaEngine Outputs kritik alan farkı"
+        });
+    }
+
+    private static KasaDraftResult? SelectDraftForScope(KasaDraftBundle bundle, string scope)
+    {
+        return scope switch
+        {
+            KasaScopeTypes.Sabah => bundle.Sabah,
+            KasaScopeTypes.Aksam => bundle.Aksam,
+            KasaScopeTypes.Genel => bundle.Genel,
+            _ => null
+        };
+    }
+
+    private static bool TryReadDraftDecimal(KasaDraftResult draft, string key, out decimal value)
+    {
+        value = 0m;
+        if (!draft.Fields.TryGetValue(key, out var raw) || string.IsNullOrWhiteSpace(raw))
+        {
+            return false;
+        }
+
+        var cleaned = raw.Replace("₺", string.Empty).Trim();
+        return decimal.TryParse(cleaned, NumberStyles.Any, CultureInfo.InvariantCulture, out value)
+            || decimal.TryParse(cleaned, NumberStyles.Any, CultureInfo.GetCultureInfo("tr-TR"), out value);
+    }
 }
+

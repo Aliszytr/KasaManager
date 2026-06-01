@@ -2,6 +2,8 @@
 using KasaManager.Application.Abstractions;
 using KasaManager.Domain.Reports;
 using KasaManager.Domain.Reports.HesapKontrol;
+using System.Globalization;
+using System.Text;
 
 namespace KasaManager.Infrastructure.Services;
 
@@ -88,8 +90,48 @@ public sealed partial class BankaHesapKontrolService
     /// </summary>
     private static string GetRecordFingerprint(HesapKontrolKaydi k)
     {
-        var discriminator = !string.IsNullOrEmpty(k.DosyaNo) ? k.DosyaNo : (k.Aciklama ?? "");
-        return $"{k.HesapTuru}|{k.Yon}|{k.Tutar:F2}|{k.KarsilastirmaTuru ?? ""}|{k.TespitEdilenTip ?? ""}|{discriminator}";
+        return $"{GetFollowIdentityFingerprint(k)}|{k.AnalizTarihi:yyyy-MM-dd}";
+    }
+
+    private static string GetFollowIdentityFingerprint(HesapKontrolKaydi k)
+    {
+        var discriminator = !string.IsNullOrWhiteSpace(k.DosyaNo)
+            ? NormalizeFollowText(k.DosyaNo)
+            : NormalizeFollowText(k.Aciklama);
+        var birim = NormalizeFollowText(k.BirimAdi);
+        return string.Join('|',
+            k.HesapTuru,
+            k.Yon,
+            discriminator,
+            birim,
+            k.Tutar.ToString("F2", CultureInfo.InvariantCulture));
+    }
+
+    private static string NormalizeFollowText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+
+        var normalized = value.Trim().ToUpperInvariant()
+            .Replace('\u0130', 'I')
+            .Replace('\u0131', 'I')
+            .Replace('\u00dc', 'U')
+            .Replace('\u00fc', 'U')
+            .Replace('\u00d6', 'O')
+            .Replace('\u00f6', 'O')
+            .Replace('\u015e', 'S')
+            .Replace('\u015f', 'S')
+            .Replace('\u00c7', 'C')
+            .Replace('\u00e7', 'C')
+            .Replace('\u011e', 'G')
+            .Replace('\u011f', 'G');
+
+        var sb = new StringBuilder(normalized.Length);
+        foreach (var ch in normalized)
+        {
+            if (char.IsLetterOrDigit(ch))
+                sb.Append(ch);
+        }
+        return sb.ToString();
     }
 
     /// <summary>

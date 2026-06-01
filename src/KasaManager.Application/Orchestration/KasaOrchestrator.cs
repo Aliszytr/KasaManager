@@ -189,6 +189,22 @@ public partial class KasaOrchestrator : IKasaOrchestrator
         }
 
         dto.FormulaRun = runRes.Value;
+
+        if (scopeHint.Equals(KasaScopeTypes.Sabah, StringComparison.OrdinalIgnoreCase))
+        {
+            var includesGateway = uiSet.Templates.Any(t =>
+                string.Equals(t.TargetKey, "genel_kasa", StringComparison.OrdinalIgnoreCase) &&
+                (t.Expression?.Contains("takip_kasa_etkisi_tahsilat", StringComparison.OrdinalIgnoreCase) ?? false));
+            var takipTahsilat = dto.FormulaRun.Outputs.TryGetValue("takip_kasa_etkisi_tahsilat", out var tt) ? tt : 0m;
+            var genelKasa = dto.FormulaRun.Outputs.TryGetValue("genel_kasa", out var gk) ? gk : 0m;
+            _logger.LogInformation(
+                "[FORMULA-VALUE-SOURCE] Date={Date} Scope={Scope} TargetKey=genel_kasa IncludesTakipKasaEtkisiTahsilat={IncludesGateway} takip_kasa_etkisi_tahsilat={TakipTahsilat} genel_kasa={GenelKasa}",
+                date,
+                scopeHint,
+                includesGateway,
+                takipTahsilat,
+                genelKasa);
+        }
         
          if (dto.Drafts == null)
         {
@@ -197,7 +213,7 @@ public partial class KasaOrchestrator : IKasaOrchestrator
         }
         if (dto.Drafts != null)
         {
-            dto.ParityDiffs = BuildParityDiffs(dto.Drafts, dto.FormulaRun);
+            dto.ParityDiffs = BuildParityDiffs(dto.Drafts, dto.FormulaRun, scopeHint);
         }
 
         // FAZ 2: Shadow Parity Check (Fire and Forget)
@@ -396,3 +412,4 @@ public partial class KasaOrchestrator : IKasaOrchestrator
         await HydrateFromSnapshotAndDefaultsInternalAsync(dto, date, ct);
     }
 }
+

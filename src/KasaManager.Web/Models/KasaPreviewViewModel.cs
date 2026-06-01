@@ -129,6 +129,11 @@ public sealed class KasaPreviewViewModel
     public decimal? DundenEksikFazlaGelenTahsilat { get; set; }
     public decimal? DundenEksikFazlaGelenHarc { get; set; }
 
+    // ===== Reconciliation Gateway (Sabah Kasa) =====
+    public decimal? TakipKasaEtkisiTahsilat { get; set; }
+    public decimal? TakipKasaEtkisiHarc { get; set; }
+    public decimal? TakipKasaEtkisiNet { get; set; }
+
     /// <summary>
     /// HesapKontrol modülünden gelen auto-fill bilgi mesajı.
     /// Null ise mesaj gösterilmez.

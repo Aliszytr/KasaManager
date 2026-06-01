@@ -256,6 +256,9 @@ namespace KasaManager.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ImportBatchId")
+                        .HasDatabaseName("IX_DailyFacts_ImportBatchId");
+
                     b.HasIndex("ForDate", "CanonicalKey")
                         .HasDatabaseName("IX_DailyFacts_Date_Key");
 
@@ -384,6 +387,10 @@ namespace KasaManager.Infrastructure.Migrations
 
                     b.HasIndex("TargetDate")
                         .HasDatabaseName("IX_ImportBatches_TargetDate");
+
+                    b.HasIndex("TargetDate", "FileHash")
+                        .IsUnique()
+                        .HasDatabaseName("IX_ImportBatches_TargetDate_FileHash");
 
                     b.ToTable("ImportBatches", (string)null);
                 });

@@ -5,6 +5,8 @@ using KasaManager.Domain.FormulaEngine;
 using KasaManager.Domain.Guards;
 using KasaManager.Domain.Reports;
 using KasaManager.Domain.Constants;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Globalization;
 using NCalc;
 
@@ -30,6 +32,13 @@ public sealed class FormulaEngineService : IFormulaEngineService
     {
         ["b_cekilen"] = KasaCanonicalKeys.BankadanCekilen,
     };
+
+    private readonly ILogger<FormulaEngineService> _log;
+
+    public FormulaEngineService(ILogger<FormulaEngineService>? log = null)
+    {
+        _log = log ?? NullLogger<FormulaEngineService>.Instance;
+    }
 
     private static string NormalizeIdentifier(string id)
         => _formulaAliases.TryGetValue(id, out var canonical) ? canonical : id;
@@ -201,6 +210,11 @@ public sealed class FormulaEngineService : IFormulaEngineService
 
         // 1. Context Hazırlığı (Inputs + Overrides)
         var inputMap = BuildDecimalMap(poolEntries);
+        var takipKasaEtkisiNetAdded = inputMap.TryGetValue("takip_kasa_etkisi_net", out var takipKasaEtkisiNetValue);
+        _log.LogInformation(
+            "[RECON-GATEWAY-INPUT] takip_kasa_etkisi_net={TakipNet} AddedToFormulaInputs={AddedToFormulaInputs}",
+            takipKasaEtkisiNetValue,
+            takipKasaEtkisiNetAdded);
         var overrideMap = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
 
         // UnifiedPool içindeki override'lar

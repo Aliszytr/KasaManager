@@ -151,12 +151,29 @@ public interface IBankaHesapKontrolService
     Task<EksikFazlaAutoFill> GetAutoFillDataAsync(
         DateOnly analizTarihi,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Aktif HesapKontrol SSOT toplamlarini dondurur.
+    /// Acik/Takipte kayitlar dahil; Iptal/Cozuldu/Onaylandi haric tutulur.
+    /// </summary>
+    Task<ActiveFollowTotals> GetActiveFollowTotalsAsync(
+        DateOnly analizTarihi,
+        CancellationToken ct = default);
 }
 
 // ─────────────────────────────────────────────────────────────
 // DTO'lar
 // ─────────────────────────────────────────────────────────────
 
+public sealed record ActiveFollowTotals(
+    DateOnly AnalizTarihi,
+    decimal TahsilatNet,
+    decimal HarcNet,
+    decimal TahsilatEksik,
+    decimal HarcEksik,
+    decimal TahsilatFazla,
+    decimal HarcFazla,
+    int KayitSayisi);
 /// <summary>
 /// Analiz sonucu özeti.
 /// </summary>
@@ -278,6 +295,12 @@ public sealed record EksikFazlaAutoFill(
     decimal ToplamFarkTahsilat = 0,
     /// <summary>Tüm Açık+Onaylanmış kayıtların net toplamı — Harç (karar beklenmeden)</summary>
     decimal ToplamFarkHarc = 0,
+    /// <summary>Sabah Kasa genel_kasa için HK reconciliation gateway tahsilat etkisi.</summary>
+    decimal TakipKasaEtkisiTahsilat = 0,
+    /// <summary>Sabah Kasa genel_kasa için HK reconciliation gateway harç etkisi.</summary>
+    decimal TakipKasaEtkisiHarc = 0,
+    /// <summary>Sabah Kasa genel_kasa için HK reconciliation gateway net etkisi.</summary>
+    decimal TakipKasaEtkisiNet = 0,
     /// <summary>Kırılım açıklaması — Tahsilat. Ör: "EFT iade 1.317,50 ₺, Olağan dışı 300 ₺"</summary>
     string? BreakdownMesajTahsilat = null,
     /// <summary>Kırılım açıklaması — Harç</summary>

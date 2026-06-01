@@ -1,4 +1,5 @@
 #nullable enable
+using System.Collections.Concurrent;
 using KasaManager.Application.Abstractions;
 using KasaManager.Domain.Abstractions;
 using KasaManager.Domain.Reports;
@@ -20,6 +21,7 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
     private readonly IComparisonService _comparison;
     private readonly IImportOrchestrator _import;
     private readonly ILogger<BankaHesapKontrolService> _logger;
+    private static readonly ConcurrentDictionary<DateOnly, SemaphoreSlim> _crossDayLocks = new();
 
     public BankaHesapKontrolService(
         KasaManagerDbContext db,
@@ -168,14 +170,80 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
                       && x.HesapTuru != BankaHesapTuru.Stopaj)
             .ToListAsync(ct);
 
+        var takipteAyniGercekKayitlar = await _db.HesapKontrolKayitlari
+            .Where(x => x.Durum == KayitDurumu.Takipte
+                     && x.HesapTuru != BankaHesapTuru.Stopaj)
+            .ToListAsync(ct);
+
         // Fingerprint bazlı eşleştirme (bire-bir, multiplicity korunur)
         var mevcutAcikPool = new List<HesapKontrolKaydi>(mevcutAcik);
         var islemliPool = new List<HesapKontrolKaydi>(kullaniciIslemliKayitlar);
+        var takiptePool = new List<HesapKontrolKaydi>(takipteAyniGercekKayitlar);
         var eklenecek = new List<HesapKontrolKaydi>();
+        var pasiflestirilecek = new List<HesapKontrolKaydi>();
+        var takipteMergeDegisti = false;
 
         foreach (var aday in adayNonStopaj)
         {
             var fp = GetRecordFingerprint(aday);
+            var followFp = GetFollowIdentityFingerprint(aday);
+            _logger.LogInformation(
+                "[HK-FOLLOW-FINGERPRINT] Date={Date} Fingerprint={Fingerprint} FollowIdentity={FollowIdentity} HesapTuru={HesapTuru} Yon={Yon} DosyaNo={DosyaNo} Birim={Birim} Tutar={Tutar}",
+                aday.AnalizTarihi,
+                fp,
+                followFp,
+                aday.HesapTuru,
+                aday.Yon,
+                aday.DosyaNo,
+                aday.BirimAdi,
+                aday.Tutar);
+
+            var takipteMatch = takiptePool.FirstOrDefault(m => GetFollowIdentityFingerprint(m) == followFp);
+            if (takipteMatch != null)
+            {
+                takiptePool.Remove(takipteMatch);
+                var eskiTarih = takipteMatch.AnalizTarihi;
+                var orijinalTarih = takipteMatch.AnalizTarihi <= aday.AnalizTarihi
+                    ? takipteMatch.AnalizTarihi
+                    : aday.AnalizTarihi;
+                var mergeChanged = false;
+
+                if (takipteMatch.AnalizTarihi != orijinalTarih)
+                {
+                    takipteMatch.AnalizTarihi = orijinalTarih;
+                    mergeChanged = true;
+                }
+
+                var acikDuplicate = mevcutAcikPool.FirstOrDefault(m => GetFollowIdentityFingerprint(m) == followFp);
+                if (acikDuplicate != null)
+                {
+                    mevcutAcikPool.Remove(acikDuplicate);
+                    acikDuplicate.Durum = KayitDurumu.Iptal;
+                    acikDuplicate.CozulmeTarihi = analizTarihi;
+                    acikDuplicate.Notlar = (acikDuplicate.Notlar ?? "") +
+                        $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] Duplicate takip kaydi ile birlestirildi. Aktif takip: {takipteMatch.Id:N}";
+                    pasiflestirilecek.Add(acikDuplicate);
+                    mergeChanged = true;
+                }
+
+                if (mergeChanged)
+                {
+                    takipteMatch.Notlar = (takipteMatch.Notlar ?? "") +
+                        $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] Orijinal eksik tarihi {orijinalTarih:dd.MM.yyyy} olarak hizalandi. Fingerprint: {followFp}";
+                    takipteMergeDegisti = true;
+
+                    _logger.LogInformation(
+                        "[HK-DUPLICATE-FOLLOW-MERGED] FollowIdentity={FollowIdentity} TrackedId={TrackedId} OldTrackedDate={OldTrackedDate} NewTrackedDate={NewTrackedDate} OpenDuplicateId={OpenDuplicateId} OpenDuplicateStatus={OpenDuplicateStatus}",
+                        followFp,
+                        takipteMatch.Id,
+                        eskiTarih,
+                        takipteMatch.AnalizTarihi,
+                        acikDuplicate?.Id,
+                        acikDuplicate?.Durum);
+                }
+
+                continue;
+            }
 
             // Önce kullanıcı etkileşimli kayıtlarda eşleşme ara
             // (Takipte/Onaylandi/Cozuldu — bu kayıt zaten işlenmiş, tekrar ekleme)
@@ -225,7 +293,7 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
         // ADIM 3: DB Güncelleme (Transaction ile atomik)
         // ═══════════════════════════════════════════════════════════
 
-        if (silinecek.Count > 0 || eklenecek.Count > 0)
+        if (silinecek.Count > 0 || eklenecek.Count > 0 || pasiflestirilecek.Count > 0 || takipteMergeDegisti)
         {
             var strategy = _db.Database.CreateExecutionStrategy();
             await strategy.ExecuteAsync(async () =>
@@ -244,6 +312,15 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
                     _db.HesapKontrolKayitlari.AddRange(eklenecek);
                 }
 
+                if (pasiflestirilecek.Count > 0)
+                {
+                    _logger.LogInformation("[HK-DUPLICATE-FOLLOW-MERGED] PassiveDuplicates={Count}", pasiflestirilecek.Count);
+                }
+
+                if (takipteMergeDegisti)
+                {
+                    _logger.LogInformation("[HK-DUPLICATE-FOLLOW-MERGED] TrackingDateRealigned=true");
+                }
                 await _db.SaveChangesAsync(ct);
                 await tx.CommitAsync(ct);
             });
@@ -328,7 +405,11 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
         DateOnly bugunTarihi,
         CancellationToken ct = default)
     {
-        var eslesmeler = new List<CrossDayMatch>();
+        var semaphore = _crossDayLocks.GetOrAdd(bugunTarihi, _ => new SemaphoreSlim(1, 1));
+        await semaphore.WaitAsync(ct);
+        try
+        {
+            var eslesmeler = new List<CrossDayMatch>();
 
         // ─── Adım 0: Yetim (Orphan) kayıtları tespit et ve yeniden aç ───
         // Cozuldu durumundaki kayıtların CozulmeKaynakId'si hâlâ geçerli mi kontrol et.
@@ -533,7 +614,12 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
                 kesinEslesmeler.Count, potansiyelEslesmeler.Count);
         }
 
-        return new CrossDayResult(kesinEslesmeler, potansiyelEslesmeler);
+            return new CrossDayResult(kesinEslesmeler, potansiyelEslesmeler);
+        }
+        finally
+        {
+            semaphore.Release();
+        }
     }
 
     // ═════════════════════════════════════════════════════════════

@@ -164,10 +164,28 @@ public sealed class BackupController : Controller
             var fileSize = new FileInfo(backupPath).Length;
             _logger.LogInformation("SQL Server yedekleme tamamlandı: {Path} ({Size:N0} bytes)", backupPath, fileSize);
 
-            // Dosyayı oku ve indir
-            var bytes = await System.IO.File.ReadAllBytesAsync(backupPath, ct);
-            try { System.IO.File.Delete(backupPath); }
-            catch (IOException ex) { _logger.LogDebug(ex, "Geçici backup dosyası silinemedi: {Path}", backupPath); }
+            // ── R2: Streaming indirme — dosya RAM'e yüklenmez ──
+            _logger.LogInformation("[BACKUP-STREAM-START] Path={Path}, Size={Size:N0} bytes", backupPath, fileSize);
+
+            // İndirme tamamlandıktan sonra geçici .bak dosyasını sil
+            var capturedPath = backupPath; // closure güvenliği
+            var capturedLogger = _logger;
+            Response.OnCompleted(() =>
+            {
+                try
+                {
+                    if (System.IO.File.Exists(capturedPath))
+                    {
+                        System.IO.File.Delete(capturedPath);
+                        capturedLogger.LogInformation("[BACKUP-TEMP-CLEANUP] Path={Path}", capturedPath);
+                    }
+                }
+                catch (Exception cleanupEx)
+                {
+                    capturedLogger.LogWarning(cleanupEx, "[BACKUP-TEMP-CLEANUP-FAILED] Path={Path}", capturedPath);
+                }
+                return Task.CompletedTask;
+            });
 
             // İndirme tamamlandı — JS tarafında butonu sıfırlamak için cookie set et
             Response.Cookies.Append("KasaBackupComplete", "1", new CookieOptions
@@ -177,7 +195,8 @@ public sealed class BackupController : Controller
                 HttpOnly = false  // JS okuması gerekli
             });
 
-            return File(bytes, "application/octet-stream", backupFileName);
+            _logger.LogInformation("[BACKUP-STREAM-COMPLETE] Streaming başlatıldı: {FileName}", backupFileName);
+            return PhysicalFile(backupPath, "application/octet-stream", backupFileName);
         }
         catch (Exception ex)
         {
@@ -189,20 +208,33 @@ public sealed class BackupController : Controller
 
     /// <summary>
     /// SQL Server servisi ve web uygulamasının ikisinin de erişebildiği
-    /// ortak bir dizin döndürür. C:\Users\Public tüm kullanıcılar ve
-    /// servis hesapları tarafından okunabilir/yazılabilir.
+    /// yedekleme dizinini döndürür.
+    /// Öncelik: appsettings → BackupSettings:Folder
+    /// Fallback: C:\KasaManagerBackups
     /// </summary>
     private Task<string> GetSqlServerDirectoryAsync(SqlConnection conn, CancellationToken ct)
     {
-        // C:\Users\Public\KasaBackups — hem SQL Server hem web app erişebilir
-        var publicDir = Environment.GetFolderPath(Environment.SpecialFolder.CommonDocuments);
-        if (string.IsNullOrWhiteSpace(publicDir))
-            publicDir = @"C:\Users\Public\Documents";
+        const string FallbackDir = @"C:\KasaManagerBackups";
 
-        var backupDir = Path.Combine(publicDir, "KasaBackups");
-        Directory.CreateDirectory(backupDir);
+        var configuredDir = _cfg["BackupSettings:Folder"];
+        var backupDir = string.IsNullOrWhiteSpace(configuredDir) ? FallbackDir : configuredDir.Trim();
 
-        _logger.LogInformation("Backup dizini: {Dir}", backupDir);
+        _logger.LogInformation("[BACKUP-PATH] Folder={Dir}, Source={Source}",
+            backupDir,
+            string.IsNullOrWhiteSpace(configuredDir) ? "Fallback" : "Config");
+
+        try
+        {
+            Directory.CreateDirectory(backupDir);
+            _logger.LogInformation("[BACKUP-CREATE] Success — Folder={Dir}", backupDir);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogError(ex, "[BACKUP-PERMISSION] Folder={Dir}, Exception={Message}", backupDir, ex.Message);
+            throw new InvalidOperationException(
+                $"Yedek klasörüne erişilemiyor: '{backupDir}'. Lütfen klasör izinlerini kontrol edin.", ex);
+        }
+
         return Task.FromResult(backupDir);
     }
 
