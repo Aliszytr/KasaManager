@@ -413,7 +413,18 @@ public sealed partial class KasaPreviewController : Controller
         await _orchestrator.HydrateDbFormulaSetsAsync(dto, ct);
         model.UpdateFromDto(dto);
 
-        // Panel persistence & Common Hydration
+        // ─── R2B-FIX: LoadData ASLA HasResults=true üretmez ───
+        // LoadPreviewAsync sadece PoolEntries/Drafts/IsDataLoaded doldurur.
+        // HasResults yalnızca Calculate/RunFormulaEngine tarafından set edilir.
+        // Bu yüzden LoadData'dan View'e dönmeden önce HasResults kesin false olmalı
+        // ve result-render state (PoolEntries, FormulaRun, Drafts) temizlenmelidir.
+        // Aksi halde PoolEntries>0 view'de sonuç bloklarını açtırır → NRE → siyah ekran.
+        //
+        // NOT: Bu temizlik yalnızca render ViewModel'ini etkiler.
+        // Fiziksel cache/draft/snapshot silinmez. Hesaplama mantığı değişmez.
+        model.HasResults = false; // defensive — LoadData formunda hidden input yok ama garanti
+
+        // Panel persistence & Common Hydration (PoolEntries temizlenmeden ÖNCE çalışmalı)
         await HydrateCommonAsync(model, ct);
 
         // ─── B6: HesapKontrol Auto-Fill (Sabah + Akşam Kasa) ───
@@ -422,6 +433,50 @@ public sealed partial class KasaPreviewController : Controller
         {
             await TryAutoFillEksikFazlaAsync(model, ct);
         }
+
+        // ─── R2B: Render-safe ViewModel cleanup ───
+        // PoolEntries ham veri olarak pool debug panelinde görünür kalabilir ama
+        // sonuç hesaplama kartları (resultFields, stopaj, formül) bundan beslenemez.
+        // Güvenli çözüm: PoolEntries'i boş liste yap, FormulaRun/Drafts null yap.
+        var poolCountBeforeCleanup = model.PoolEntries?.Count ?? 0;
+        model.PoolEntries = new List<Application.Abstractions.UnifiedPoolEntry>();
+        model.FormulaRun = null;
+        model.Drafts = null;
+
+        // Kullanıcı uyarısı: HasData=true ama sonuç üretilemedi
+        if (model.IsDataLoaded && poolCountBeforeCleanup > 0)
+        {
+            TempData["ErrorMessage"] =
+                "Veriler yüklendi ancak bu mod için hesaplama sonucu üretilemedi. " +
+                "Lütfen Akşam Kasa Modu (Mesai Sonu / Tam Gün) seçimini ve yüklenen dosya setini kontrol edin. " +
+                "Eski sonuçlar güvenlik nedeniyle gösterilmedi.";
+        }
+        else if (!model.IsDataLoaded)
+        {
+            var errorSummary = string.Join(" | ", (model.Errors ?? new List<string>()).Take(3));
+            if (!string.IsNullOrEmpty(errorSummary))
+            {
+                TempData["ErrorMessage"] = $"⚠️ Veri yükleme başarısız: {errorSummary}";
+            }
+        }
+
+        _log.LogInformation(
+            "[LOADDATA-RENDER-GUARD] State temizlendi. PoolBeforeCleanup={PoolBefore} " +
+            "KasaType={KasaType} ReportDate={ReportDate} AksamMesaiSonuModu={AksamMesaiSonuModu} " +
+            "HasData={HasData} HasResults={HasResults} PoolEntries={PoolEntriesCount} " +
+            "UstRaporPanelNull={UstRaporPanelNull} ValidationCount={ValidationCount} " +
+            "DismissedCodesNull={DismissedCodesNull} ModelStateValid={ModelStateValid}",
+            poolCountBeforeCleanup,
+            model.KasaType,
+            model.SelectedDate,
+            model.AksamMesaiSonuModu,
+            model.IsDataLoaded,
+            model.HasResults,
+            model.PoolEntries?.Count ?? 0,
+            model.UstRaporPanel == null,
+            model.ValidationResults?.Count ?? 0,
+            model.DismissedRuleCodes == null,
+            ModelState.IsValid);
 
         return View("Index", model);
     }
@@ -516,6 +571,18 @@ public sealed partial class KasaPreviewController : Controller
         }
         catch (Exception ex) { _log.LogError(ex, "KasaDraft SAVE (LoadAndCalc) HATA"); }
 
+        // ─── Render Guard: Razor patlama noktalarını teşhis ───
+        _log.LogInformation(
+            "[CALCULATE-RENDER-GUARD] KasaType={KasaType} HasResults={HasResults} UstRaporPanelNull={UstRaporPanelNull} " +
+            "ValidationCount={ValidationCount} DismissedCodesNull={DismissedCodesNull} DismissedCodesCount={DismissedCodesCount} " +
+            "PoolEntries={PoolEntries} SelectedFormulaSet={SelectedFormulaSet}",
+            model.KasaType, model.HasResults,
+            model.UstRaporPanel == null,
+            model.ValidationResults?.Count ?? 0,
+            model.DismissedRuleCodes == null, model.DismissedRuleCodes?.Count ?? -1,
+            model.PoolEntries?.Count ?? 0,
+            model.SelectedFormulaSetId ?? "(yok)");
+
         return View("Index", model);
     }
 
@@ -602,6 +669,18 @@ public sealed partial class KasaPreviewController : Controller
         {
             _log.LogError(ex, "KasaDraft SAVE HATA: {KasaType}", effectiveKasaType);
         }
+
+        // ─── Render Guard: Razor patlama noktalarını teşhis ───
+        _log.LogInformation(
+            "[CALCULATE-RENDER-GUARD] KasaType={KasaType} HasResults={HasResults} UstRaporPanelNull={UstRaporPanelNull} " +
+            "ValidationCount={ValidationCount} DismissedCodesNull={DismissedCodesNull} DismissedCodesCount={DismissedCodesCount} " +
+            "PoolEntries={PoolEntries} SelectedFormulaSet={SelectedFormulaSet}",
+            model.KasaType, model.HasResults,
+            model.UstRaporPanel == null,
+            model.ValidationResults?.Count ?? 0,
+            model.DismissedRuleCodes == null, model.DismissedRuleCodes?.Count ?? -1,
+            model.PoolEntries?.Count ?? 0,
+            model.SelectedFormulaSetId ?? "(yok)");
 
         return View("Index", model);
     }
@@ -1250,7 +1329,7 @@ public sealed partial class KasaPreviewController : Controller
     {
         value = 0m;
         var item = model.PoolEntries?.FirstOrDefault(x =>
-            x.CanonicalKey.Equals(key, StringComparison.OrdinalIgnoreCase));
+            string.Equals(x.CanonicalKey, key, StringComparison.OrdinalIgnoreCase));
         if (item == null) return false;
         return decimal.TryParse(item.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out value);
     }

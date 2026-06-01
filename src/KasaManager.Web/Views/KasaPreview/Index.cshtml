@@ -499,6 +499,18 @@
     </div>
 </div>
 
+@* R2-FIX: LoadData hata/uyarı mesajı — HasResults=false iken de görünür olmalı *@
+@if (TempData["ErrorMessage"] is string loadErrMsg)
+{
+    <div class="kasa-alert mb-3" style="border-left: 4px solid #ef4444; background: rgba(239,68,68,0.08); padding: 14px 18px; border-radius: 8px; display: flex; align-items: flex-start; gap: 12px;">
+        <i class="fas fa-exclamation-triangle" style="color: #ef4444; font-size: 18px; margin-top: 2px; flex-shrink: 0;"></i>
+        <div>
+            <div style="font-size: 13px; font-weight: 700; color: #991b1b; margin-bottom: 4px;">Veri Yükleme Uyarısı</div>
+            <div style="font-size: 12px; color: #7f1d1d;">@loadErrMsg</div>
+        </div>
+    </div>
+}
+
 <!-- ═══════════════════════════════════════════════════════════════════ -->
 <!-- ADIM 2: Manuel Girdiler ve Hesaplama                               -->
 <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -986,7 +998,7 @@
         // Pool'dan ham değerleri oku (FormulaRun çıktısında olmayanlar için)
         string PoolVal(string key) {
             var p = Model.PoolEntries?.FirstOrDefault(x =>
-                x.CanonicalKey.Equals(key, StringComparison.OrdinalIgnoreCase));
+                string.Equals(x.CanonicalKey, key, StringComparison.OrdinalIgnoreCase));
             if (p != null) return p.Value; // Value zaten string formatlı
             // FormulaRun çıktısından bak
             if (resultFields.TryGetValue(key, out var v)) return v;
@@ -996,7 +1008,7 @@
                 foreach (var alt in aliases)
                 {
                     var ap = Model.PoolEntries?.FirstOrDefault(x =>
-                        x.CanonicalKey.Equals(alt, StringComparison.OrdinalIgnoreCase));
+                        string.Equals(x.CanonicalKey, alt, StringComparison.OrdinalIgnoreCase));
                     if (ap != null) return ap.Value;
                     if (resultFields.TryGetValue(alt, out var av)) return av;
                 }
@@ -1019,7 +1031,7 @@
             }
             // 3. Direkt pool araması
             var p = Model.PoolEntries?.FirstOrDefault(x =>
-                x.CanonicalKey.Equals(key, StringComparison.OrdinalIgnoreCase));
+                string.Equals(x.CanonicalKey, key, StringComparison.OrdinalIgnoreCase));
             if (p != null) return p.Value;
             // 4. Alias üzerinden pool araması
             if (keyAliases.TryGetValue(key, out var aliases2))
@@ -1027,7 +1039,7 @@
                 foreach (var alt in aliases2)
                 {
                     var ap = Model.PoolEntries?.FirstOrDefault(x =>
-                        x.CanonicalKey.Equals(alt, StringComparison.OrdinalIgnoreCase));
+                        string.Equals(x.CanonicalKey, alt, StringComparison.OrdinalIgnoreCase));
                     if (ap != null) return ap.Value;
                 }
             }
@@ -1055,7 +1067,7 @@
                     if (Model.FormulaRun?.Outputs != null && Model.FormulaRun.Outputs.TryGetValue(alt, out var av)) return av;
                 }
             }
-            var p = Model.PoolEntries?.FirstOrDefault(x => x.CanonicalKey.Equals(key, StringComparison.OrdinalIgnoreCase));
+            var p = Model.PoolEntries?.FirstOrDefault(x => string.Equals(x.CanonicalKey, key, StringComparison.OrdinalIgnoreCase));
             if (p != null && decimal.TryParse(p.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var pv)) return pv;
             // EF model-property fallback: LoadSnapshot akışında PoolEntries null,
             // model property KasaPreviewController.cs:1089 satırında restore edilmiş olabilir.
@@ -1129,7 +1141,10 @@
         string MuhFarkIcon(decimal v) => Math.Abs(v) < 0.01m ? "fas fa-check-circle" : "fas fa-exclamation-triangle";
     }
 
-    @if (resultFields.Count > 0 || Model.PoolEntries?.Count > 0)
+    @* R2-FIX: PoolEntries tek başına sonuç bloğunu açtırmasın.
+       HasResults=true iken bile, resultFields boşsa eski PoolEntries kalıntısı
+       sonuç kartlarında NRE veya yanlış değer gösterebilir. *@
+    @if (resultFields.Count > 0)
     {
         @if (kasaTypeClass == "genel")
         {
@@ -4326,7 +4341,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var p in Model.PoolEntries.OrderBy(x => x.CanonicalKey))
+                    @foreach (var p in Model.PoolEntries.OrderBy(x => x.CanonicalKey ?? ""))
                     {
                         <tr>
                             <td class="font-mono" style="font-size: 12.5px;">@p.CanonicalKey</td>

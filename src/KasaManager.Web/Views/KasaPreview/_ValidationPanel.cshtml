@@ -9,13 +9,16 @@
 
 @if (Model.ValidationResults?.Count > 0)
 {
+    var dismissedCodes = Model.DismissedRuleCodes
+        ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
     var activeResults = Model.ValidationResults
-        .Where(r => !Model.DismissedRuleCodes.Contains(r.Code))
+        .Where(r => !dismissedCodes.Contains(r.Code))
         .OrderByDescending(r => r.Severity)
         .ToList();
 
     var dismissedResults = Model.ValidationResults
-        .Where(r => Model.DismissedRuleCodes.Contains(r.Code))
+        .Where(r => dismissedCodes.Contains(r.Code))
         .ToList();
 
     <!-- Aktif Uyarılar -->
