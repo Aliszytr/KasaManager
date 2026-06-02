@@ -68,8 +68,6 @@ public sealed partial class BankaHesapKontrolService
             query = query.Where(x => x.HesapTuru == hesapTuru.Value);
         if (durum.HasValue)
             query = query.Where(x => x.Durum == durum.Value);
-        else
-            query = query.Where(x => x.Durum != KayitDurumu.Iptal);
 
         return await query
             .OrderByDescending(x => x.AnalizTarihi)
@@ -154,8 +152,11 @@ public sealed partial class BankaHesapKontrolService
     {
         var acikQuery = _db.HesapKontrolKayitlari
             .Where(x => x.Durum == KayitDurumu.Acik);
+        // FIX: Açık kayıtlar aktif iş yüküdür — geçmiş günlerin çözülmemiş kayıtları da dahil.
+        // Eski: x.AnalizTarihi == analizTarihi (sadece o günü gösteriyordu, geçmiş açıklar kayboluyordu)
+        // Yeni: x.AnalizTarihi <= analizTarihi (kümülatif aktif iş yükü)
         if (analizTarihi.HasValue)
-            acikQuery = acikQuery.Where(x => x.AnalizTarihi == analizTarihi.Value);
+            acikQuery = acikQuery.Where(x => x.AnalizTarihi <= analizTarihi.Value);
         if (hesapTuru.HasValue)
             acikQuery = acikQuery.Where(x => x.HesapTuru == hesapTuru.Value);
         var acikKayitlar = await acikQuery.ToListAsync(ct);
@@ -220,6 +221,16 @@ public sealed partial class BankaHesapKontrolService
         var onaylanan = tumKayitlar.Where(x => x.Durum == KayitDurumu.Onaylandi).ToList();
         var cozulen = tumKayitlar.Where(x => x.Durum == KayitDurumu.Cozuldu).ToList();
         var iptal = tumKayitlar.Where(x => x.Durum == KayitDurumu.Iptal).ToList();
+        var summary = new HesapKontrolSnapshotSummary(
+            TotalCount: tumKayitlar.Count,
+            AcikCount: acik.Count,
+            TakipteCount: takipte.Count,
+            IptalCount: iptal.Count,
+            CozulduCount: cozulen.Count,
+            OnaylandiCount: onaylanan.Count,
+            ProcessedCount: iptal.Count + cozulen.Count + onaylanan.Count,
+            BeklenenCount: tumKayitlar.Count(x => x.Sinif == FarkSinifi.Beklenen),
+            BilinmeyenCount: tumKayitlar.Count(x => x.Sinif == FarkSinifi.Bilinmeyen));
 
         var oGunCozulen = await _db.HesapKontrolKayitlari
             .CountAsync(x => x.CozulmeTarihi == tarih
@@ -267,8 +278,73 @@ public sealed partial class BankaHesapKontrolService
             onaylanan,
             cozulen,
             iptal,
+            summary,
             autoFill,
             mesaj);
+    }
+
+    public async Task EnrichComparisonDecisionMemoryAsync(
+        ComparisonReport report,
+        BankaHesapTuru hesapTuru,
+        DateOnly asOfDate,
+        CancellationToken ct = default)
+    {
+        var windowStart = asOfDate.AddDays(-90);
+        var memory = await _db.HesapKontrolKayitlari
+            .AsNoTracking()
+            .Where(x => x.HesapTuru == hesapTuru
+                     && x.AnalizTarihi >= windowStart
+                     && x.AnalizTarihi <= asOfDate)
+            .OrderByDescending(x => x.AnalizTarihi)
+            .ThenByDescending(x => x.OlusturmaTarihi)
+            .ToListAsync(ct);
+
+        HesapKontrolKaydi? FindLatest(HesapKontrolKaydi probe)
+        {
+            var fingerprint = GetFollowIdentityFingerprint(probe);
+            return memory.FirstOrDefault(x => GetFollowIdentityFingerprint(x) == fingerprint);
+        }
+
+        foreach (var surplus in report.SurplusBankaRecords)
+        {
+            var match = FindLatest(new HesapKontrolKaydi
+            {
+                HesapTuru = hesapTuru,
+                Yon = KayitYonu.Fazla,
+                Tutar = Math.Abs(surplus.Tutar),
+                Aciklama = surplus.Aciklama
+            });
+
+            ApplyDecisionMemory(surplus, match);
+        }
+
+        foreach (var missing in report.MissingBankaRecords)
+        {
+            var match = FindLatest(new HesapKontrolKaydi
+            {
+                HesapTuru = hesapTuru,
+                Yon = KayitYonu.Eksik,
+                Tutar = Math.Abs(missing.Miktar),
+                DosyaNo = missing.DosyaNo,
+                BirimAdi = missing.BirimAdi
+            });
+
+            ApplyDecisionMemory(missing, match);
+        }
+    }
+
+    private static void ApplyDecisionMemory(UnmatchedBankaRecord record, HesapKontrolKaydi? match)
+    {
+        record.HesapKontrolDurumu = match?.Durum;
+        record.HesapKontrolAnalizTarihi = match?.AnalizTarihi;
+        record.HesapKontrolNotu = match?.Notlar;
+    }
+
+    private static void ApplyDecisionMemory(MissingBankaRecord record, HesapKontrolKaydi? match)
+    {
+        record.HesapKontrolDurumu = match?.Durum;
+        record.HesapKontrolAnalizTarihi = match?.AnalizTarihi;
+        record.HesapKontrolNotu = match?.Notlar;
     }
 
     // ═════════════════════════════════════════════════════════════
@@ -387,17 +463,35 @@ public sealed partial class BankaHesapKontrolService
             return parts.Count > 0 ? string.Join(", ", parts) : null;
         }
 
+        // FIX: Geçmiş günlerden kalan aktif kayıtlar — HEM Eksik HEM Fazla dahil.
+        // Eski: x.Yon == KayitYonu.Eksik filtresi Fazla kayıtları (örn. 2.250 TL BİLİNMEYEN) dışarıda bırakıyordu.
+        // Yeni: Yon filtresi kaldırıldı. Acik + Takipte durumlar dahil.
+        // FarkSinifi.Beklenen (MASRAF, EFT İade vb.) hariç tutulmaya devam ediyor.
         var oncekiAciklar = await _db.HesapKontrolKayitlari
             .Where(x => x.AnalizTarihi < analizTarihi
-                     && x.Durum == KayitDurumu.Acik
-                     && x.Yon == KayitYonu.Eksik
+                     && (x.Durum == KayitDurumu.Acik || x.Durum == KayitDurumu.Takipte)
+                     && x.HesapTuru != BankaHesapTuru.Stopaj
                      && x.Sinif != FarkSinifi.Beklenen)
             .ToListAsync(ct);
 
+        // Net fark hesabı: Fazla = +Tutar, Eksik = -Tutar
         var oncekiAcikTahsilat = oncekiAciklar
-            .Where(x => x.HesapTuru == BankaHesapTuru.Tahsilat).Sum(x => x.Tutar);
+            .Where(x => x.HesapTuru == BankaHesapTuru.Tahsilat)
+            .Sum(x => x.Yon == KayitYonu.Fazla ? x.Tutar : -x.Tutar);
         var oncekiAcikHarc = oncekiAciklar
-            .Where(x => x.HesapTuru == BankaHesapTuru.Harc).Sum(x => x.Tutar);
+            .Where(x => x.HesapTuru == BankaHesapTuru.Harc)
+            .Sum(x => x.Yon == KayitYonu.Fazla ? x.Tutar : -x.Tutar);
+
+        _logger.LogInformation(
+            "[HK-AUTOFILL-ACTIVE-CARRYOVER] Date={Date} PreviousActiveCount={PrevCount} "
+            + "PreviousFazlaCount={PrevFazla} PreviousEksikCount={PrevEksik} "
+            + "ExcludedBeklenenFilter=true TahsilatNet={TahsilatNet} HarcNet={HarcNet}",
+            analizTarihi,
+            oncekiAciklar.Count,
+            oncekiAciklar.Count(x => x.Yon == KayitYonu.Fazla),
+            oncekiAciklar.Count(x => x.Yon == KayitYonu.Eksik),
+            oncekiAcikTahsilat,
+            oncekiAcikHarc);
 
         var bugunCozulenler = await _db.HesapKontrolKayitlari
             .Where(x => x.CozulmeTarihi == analizTarihi

@@ -1,0 +1,12 @@
+-- Sabah Kasa genel_kasa formül yedeği ve rollback scripti
+-- Tarih: 2026-06-02
+-- Sorun: gune_ait_eksik_fazla_tahsilat ve takip_kasa_etkisi_tahsilat aynı anda kullanılarak double-count (mükerrer sayım) oluşturuyordu.
+-- Çözüm: gune_ait_eksik_fazla_tahsilat terimi aktif veritabanındaki formülden çıkartıldı.
+
+-- ROLLBACK SCRIPT (Eski hatalı duruma geri dönmek için):
+/*
+UPDATE FormulaLines
+SET FormulaExpression = FormulaExpression + ' + (gune_ait_eksik_fazla_tahsilat)'
+WHERE FormulaLineId = '234139d6-b3fd-42f3-a1f2-df5ad675031b'
+  AND TargetKey = 'genel_kasa';
+*/

@@ -2,6 +2,7 @@
 using System.Text.Json;
 using KasaManager.Application.Abstractions;
 using KasaManager.Domain.Reports;
+using KasaManager.Domain.Reports.HesapKontrol;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -17,6 +18,7 @@ public class ComparisonController : Controller
     private readonly IComparisonExportService _exportService;
     private readonly IComparisonDecisionService _decisionService;
     private readonly IComparisonArchiveService _archiveService;
+    private readonly IBankaHesapKontrolService _hesapKontrolService;
     private readonly IWebHostEnvironment _env;
 
     public ComparisonController(
@@ -24,12 +26,14 @@ public class ComparisonController : Controller
         IComparisonExportService exportService,
         IComparisonDecisionService decisionService,
         IComparisonArchiveService archiveService,
+        IBankaHesapKontrolService hesapKontrolService,
         IWebHostEnvironment env)
     {
         _comparisonService = comparisonService;
         _exportService = exportService;
         _decisionService = decisionService;
         _archiveService = archiveService;
+        _hesapKontrolService = hesapKontrolService;
         _env = env;
     }
 
@@ -61,7 +65,7 @@ public class ComparisonController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> CompareTahsilatMasraf(string? archiveDate, CancellationToken ct)
     {
-        var folder = ResolveComparisonFolder(archiveDate, out var filterDate);
+        var folder = ResolveComparisonFolder(archiveDate, out var filterDate, out var memoryDate);
         var result = await _comparisonService.CompareTahsilatMasrafAsync(folder, filterDate, ct);
 
         if (!result.Ok)
@@ -72,6 +76,8 @@ public class ComparisonController : Controller
 
         // Kalıcı kararları uygula
         await ApplyStoredDecisions(result.Value!, ComparisonType.TahsilatMasraf, ct);
+        await _hesapKontrolService.EnrichComparisonDecisionMemoryAsync(
+            result.Value!, BankaHesapTuru.Tahsilat, memoryDate, ct);
         return View("Results", result.Value);
     }
 
@@ -82,7 +88,7 @@ public class ComparisonController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> CompareHarcamaHarc(string? archiveDate, CancellationToken ct)
     {
-        var folder = ResolveComparisonFolder(archiveDate, out var filterDate);
+        var folder = ResolveComparisonFolder(archiveDate, out var filterDate, out var memoryDate);
         var result = await _comparisonService.CompareHarcamaHarcAsync(folder, filterDate, ct);
 
         if (!result.Ok)
@@ -92,6 +98,8 @@ public class ComparisonController : Controller
         }
 
         await ApplyStoredDecisions(result.Value!, ComparisonType.HarcamaHarc, ct);
+        await _hesapKontrolService.EnrichComparisonDecisionMemoryAsync(
+            result.Value!, BankaHesapTuru.Harc, memoryDate, ct);
         return View("Results", result.Value);
     }
 
@@ -102,7 +110,7 @@ public class ComparisonController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> CompareReddiyatCikis(string? archiveDate, CancellationToken ct)
     {
-        var folder = ResolveComparisonFolder(archiveDate, out var filterDate);
+        var folder = ResolveComparisonFolder(archiveDate, out var filterDate, out var memoryDate);
         var result = await _comparisonService.CompareReddiyatCikisAsync(folder, filterDate, ct);
 
         if (!result.Ok)
@@ -112,6 +120,8 @@ public class ComparisonController : Controller
         }
 
         await ApplyStoredDecisions(result.Value!, ComparisonType.ReddiyatCikis, ct);
+        await _hesapKontrolService.EnrichComparisonDecisionMemoryAsync(
+            result.Value!, BankaHesapTuru.Tahsilat, memoryDate, ct);
         return View("Results", result.Value);
     }
 
@@ -296,10 +306,14 @@ public class ComparisonController : Controller
     /// archiveDate boş ise mevcut dosyalar kullanılır.
     /// Arşiv seçilmişse ilgili arşiv klasörü ve null filterDate döner (çünkü dosyalar zaten o tarihe ait).
     /// </summary>
-    private string ResolveComparisonFolder(string? archiveDate, out DateOnly? filterDate)
+    private string ResolveComparisonFolder(
+        string? archiveDate,
+        out DateOnly? filterDate,
+        out DateOnly memoryDate)
     {
         var baseFolder = GetUploadFolder();
         filterDate = null;
+        memoryDate = DateOnly.FromDateTime(DateTime.Now);
 
         if (string.IsNullOrWhiteSpace(archiveDate) || archiveDate == "current")
             return baseFolder;
@@ -307,6 +321,7 @@ public class ComparisonController : Controller
         if (!DateOnly.TryParseExact(archiveDate, "yyyy-MM-dd", out var date))
             return baseFolder;
 
+        memoryDate = date;
         var archiveFolder = _archiveService.GetArchiveFolder(baseFolder, date);
         if (archiveFolder != null)
             return archiveFolder;

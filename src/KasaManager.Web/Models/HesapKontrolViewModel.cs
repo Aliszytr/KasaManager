@@ -15,6 +15,7 @@ public sealed class HesapKontrolViewModel
     public List<HesapKontrolKaydi> GecmisKayitlar { get; set; } = new();
     public List<HesapKontrolKaydi> TakipGecmisi { get; set; } = new();
     public TakipOzeti? TakipOzeti { get; set; }
+    public HesapKontrolSnapshotSummary? SnapshotSummary { get; set; }
 
     // ── UI State ──
     public string ActiveTab { get; set; } = "ozet";

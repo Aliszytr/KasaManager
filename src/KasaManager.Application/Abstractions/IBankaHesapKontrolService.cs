@@ -1,4 +1,5 @@
 #nullable enable
+using KasaManager.Domain.Reports;
 using KasaManager.Domain.Reports.HesapKontrol;
 
 namespace KasaManager.Application.Abstractions;
@@ -145,6 +146,16 @@ public interface IBankaHesapKontrolService
         CancellationToken ct = default);
 
     /// <summary>
+    /// Karşılaştırma satırlarını son 90 günlük Hesap Kontrol karar hafızası ile
+    /// salt okunur biçimde zenginleştirir.
+    /// </summary>
+    Task EnrichComparisonDecisionMemoryAsync(
+        ComparisonReport report,
+        BankaHesapTuru hesapTuru,
+        DateOnly asOfDate,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Sabah Kasa textbox'ları için otomatik doldurma verilerini döndürür.
     /// HesapKontrol çalıştırılmamışsa HasData=false döner.
     /// </summary>
@@ -259,8 +270,21 @@ public sealed record HesapKontrolDateSnapshot(
     List<HesapKontrolKaydi> OnaylananKayitlar,
     List<HesapKontrolKaydi> CozulenKayitlar,
     List<HesapKontrolKaydi> IptalKayitlar,
+    HesapKontrolSnapshotSummary Summary,
     EksikFazlaAutoFill AutoFill,
     string? OzetMesaj);
+
+/// <summary>Belirli bir güne ait salt okunur Hesap Kontrol kayıt özeti.</summary>
+public sealed record HesapKontrolSnapshotSummary(
+    int TotalCount,
+    int AcikCount,
+    int TakipteCount,
+    int IptalCount,
+    int CozulduCount,
+    int OnaylandiCount,
+    int ProcessedCount,
+    int BeklenenCount,
+    int BilinmeyenCount);
 
 /// <summary>
 /// Sabah Kasa textbox otomatik doldurma verisi.

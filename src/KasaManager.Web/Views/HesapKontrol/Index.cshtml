@@ -16,6 +16,12 @@
     var filterBitis = Model.FilterBitis;
     var arama = Model.Arama;
     var takipOzeti = Model.TakipOzeti;
+    var processedCountForSelectedDate = Model.SnapshotSummary?.ProcessedCount
+        ?? gecmisKayitlar.Count(k =>
+            k.AnalizTarihi == Model.AnalizTarihi &&
+            (k.Durum == KayitDurumu.Iptal ||
+             k.Durum == KayitDurumu.Cozuldu ||
+             k.Durum == KayitDurumu.Onaylandi));
 
     // P4.3: Snapshot UI baglantisi ve LastSnapshotDate sokuldu.
     // Tarihsel inceleme (Bugünden farklı bir gün ise) kontrolü eklendi.
@@ -407,9 +413,22 @@
                         @if (acikKayitlar.Count == 0)
                         {
                             <div class="text-center py-4 text-muted">
-                                <i class="fas fa-check-circle fa-3x mb-3" style="color: #2ecc71;"></i>
-                                <h5>Tüm kayıtlar temiz!</h5>
-                                <p>Açık eksik/fazla kaydı bulunmamaktadır.</p>
+                                @if (processedCountForSelectedDate > 0)
+                                {
+                                    <i class="fas fa-history fa-3x mb-3" style="color: #3498db;"></i>
+                                    <h5>Açık kayıt yok.</h5>
+                                    <p>Bu tarihte daha önce işlem görmüş / yoksayılmış kayıtlar var.</p>
+                                    <a href="@Url.Action("QueryDate", "HesapKontrol", new { tarih = tarihStrTabs, tab = "gecmis" })"
+                                       class="btn btn-outline-primary btn-sm">
+                                        <i class="fas fa-history me-1"></i>Geçmiş / Yoksayılmış Kayıtları Gör
+                                    </a>
+                                }
+                                else
+                                {
+                                    <i class="fas fa-check-circle fa-3x mb-3" style="color: #2ecc71;"></i>
+                                    <h5>Tüm kayıtlar temiz.</h5>
+                                    <p>Açık veya daha önce işlem görmüş eksik/fazla kaydı bulunmamaktadır.</p>
+                                }
                             </div>
                         }
                         else
@@ -577,9 +596,22 @@
         @if (acikKayitlar.Count == 0)
         {
             <div class="text-center py-5 text-muted">
-                <i class="fas fa-check-circle fa-4x mb-3" style="color: #2ecc71;"></i>
-                <h4>Açık kayıt yok!</h4>
-                <p>Tüm eksik/fazla kayıtları çözülmüş durumda.</p>
+                @if (processedCountForSelectedDate > 0)
+                {
+                    <i class="fas fa-history fa-4x mb-3" style="color: #3498db;"></i>
+                    <h4>Açık kayıt yok.</h4>
+                    <p>Bu tarihte daha önce işlem görmüş / yoksayılmış kayıtlar var.</p>
+                    <a href="@Url.Action("QueryDate", "HesapKontrol", new { tarih = tarihStrTabs, tab = "gecmis" })"
+                       class="btn btn-outline-primary btn-sm">
+                        <i class="fas fa-history me-1"></i>Geçmiş / Yoksayılmış Kayıtları Gör
+                    </a>
+                }
+                else
+                {
+                    <i class="fas fa-check-circle fa-4x mb-3" style="color: #2ecc71;"></i>
+                    <h4>Tüm kayıtlar temiz.</h4>
+                    <p>Açık veya daha önce işlem görmüş eksik/fazla kaydı bulunmamaktadır.</p>
+                }
             </div>
         }
         else

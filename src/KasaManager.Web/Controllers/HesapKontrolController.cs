@@ -21,6 +21,7 @@ public sealed class HesapKontrolController : Controller
 
     private readonly IHesapKontrolExportService _export;
     private readonly IFinansalIstisnaService _finansalIstisna;
+    private readonly IComparisonArchiveService _archive;
     private readonly ILogger<HesapKontrolController> _log;
     private readonly IWebHostEnvironment _env;
 
@@ -28,12 +29,14 @@ public sealed class HesapKontrolController : Controller
         IBankaHesapKontrolService service,
         IHesapKontrolExportService export,
         IFinansalIstisnaService finansalIstisna,
+        IComparisonArchiveService archive,
         ILogger<HesapKontrolController> log,
         IWebHostEnvironment env)
     {
         _service = service;
         _export = export;
         _finansalIstisna = finansalIstisna;
+        _archive = archive;
         _log = log;
         _env = env;
     }
@@ -64,7 +67,7 @@ public sealed class HesapKontrolController : Controller
         // Dosyalar değişmediyse aynı tarih için analiz tekrar çalışmaz.
         try
         {
-            var uploadFolder = Path.Combine(_env.WebRootPath, "Data", "Raporlar");
+            var uploadFolder = ResolveUploadFolder(analizTarihi);
             var currentHash = ComputeUploadFolderHash(uploadFolder);
             bool shouldAnalyze;
 
@@ -128,8 +131,11 @@ public sealed class HesapKontrolController : Controller
         var acikKayitlar = new List<HesapKontrolKaydi>();
         try
         {
+            // FIX: Geçmiş günlerin açık kayıtları da gösterilmeli.
+            // Eski: baslangic: analizTarihi → sadece o günün kayıtlarını getiriyordu.
+            // Yeni: baslangic kaldırıldı → tüm geçmiş açık kayıtlar dahil (bitis ile üst sınır korunur).
             acikKayitlar = await _service.GetOpenItemsAsync(
-                hesapTuru: hesapTuru, baslangic: analizTarihi, bitis: analizTarihi, ct: ct);
+                hesapTuru: hesapTuru, bitis: analizTarihi, ct: ct);
         }
         catch (OperationCanceledException) { _log.LogInformation("HesapKontrol açık kayıtlar: istek iptal edildi"); }
         catch (Exception ex) { _log.LogError(ex, "HesapKontrol açık kayıtlar alınamadı"); }
@@ -470,7 +476,7 @@ public sealed class HesapKontrolController : Controller
         {
             analizTarihi = DateOnly.FromDateTime(DateTime.Now);
         }
-        var uploadFolder = Path.Combine(_env.WebRootPath, "Data", "Raporlar");
+        var uploadFolder = ResolveUploadFolder(analizTarihi);
 
         try
         {
@@ -500,6 +506,15 @@ public sealed class HesapKontrolController : Controller
         try
         {
             var snapshot = await _service.GetDashboardForDateAsync(queryDate, ct);
+            _log.LogInformation(
+                "[HK-QUERYDATE-SNAPSHOT] Date={Date} Total={Total} Open={Open} Tracking={Tracking} Cancelled={Cancelled} Resolved={Resolved} Processed={Processed}",
+                queryDate,
+                snapshot.Summary.TotalCount,
+                snapshot.Summary.AcikCount,
+                snapshot.Summary.TakipteCount,
+                snapshot.Summary.IptalCount,
+                snapshot.Summary.CozulduCount,
+                snapshot.Summary.ProcessedCount);
 
             // P4.3 Snapshot query kaldırıldı
             DateOnly? realLastSnapshot = DateOnly.FromDateTime(DateTime.Now);
@@ -511,8 +526,10 @@ public sealed class HesapKontrolController : Controller
                 TakipteKayitlar = snapshot.TakipteKayitlar,
                 GecmisKayitlar = snapshot.OnaylananKayitlar
                     .Concat(snapshot.CozulenKayitlar)
+                    .Concat(snapshot.IptalKayitlar)
                     .OrderByDescending(x => x.OlusturmaTarihi)
                     .ToList(),
+                SnapshotSummary = snapshot.Summary,
                 ActiveTab = tab ?? "ozet",
                 FilterBaslangic = queryDate,
                 FilterBitis = queryDate,
@@ -645,5 +662,25 @@ public sealed class HesapKontrolController : Controller
             _lastAnalysisFileHash = null;
             _lastAnalysisTarih = null;
         }
+    }
+
+    /// <summary>
+    /// Analiz tarihi için doğru upload klasörünü çözümler.
+    /// Arşiv klasörü mevcutsa onu kullanır, yoksa kök klasöre fallback yapar.
+    /// ComparisonController ile aynı IComparisonArchiveService mantığını kullanır.
+    /// </summary>
+    private string ResolveUploadFolder(DateOnly analizTarihi)
+    {
+        var baseFolder = Path.Combine(_env.WebRootPath, "Data", "Raporlar");
+        var archiveFolder = _archive.GetArchiveFolder(baseFolder, analizTarihi);
+        var resolved = archiveFolder ?? baseFolder;
+        var source = archiveFolder != null ? "Archive" : "BaseFallback";
+
+        _log.LogInformation(
+            "[HK-ARCHIVE-RESOLVE] Date={Date} BaseFolder={BaseFolder} ResolvedFolder={ResolvedFolder} Exists={Exists} Source={Source}",
+            analizTarihi, baseFolder, resolved,
+            System.IO.Directory.Exists(resolved), source);
+
+        return resolved;
     }
 }

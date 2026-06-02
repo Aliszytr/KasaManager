@@ -1,0 +1,19 @@
+# PROJECT RULES — SiteProfesyonelManager
+
+## HARD RULES
+- Refactor proposals require explicit user approval.
+- No changes to OcrFieldExtractor, OcrService, FactNormalizationService 
+  without explicit instruction.
+- Multi-file edits >2 files: STOP and ask first.
+- Zero warnings policy: never introduce new warnings.
+- SSOT: form binding (view+controller+JS) must come from single source.
+
+## CONTEXT
+- .NET 8, EF Core, SQL Server. Production system.
+- Hot-tables: DailyFacts (6M+ rows), ImportBatches.
+- Recent surgical fixes: OCR pipeline (Nisan 2026, see FIX 1-4 history).
+
+## BEHAVIOR
+- State uncertainty explicitly. No guessing.
+- Root cause analysis before fix. No trial-and-error.
+- Short, actionable answers. No over-explanation.

@@ -159,16 +159,28 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
                      && x.HesapTuru != BankaHesapTuru.Stopaj)
             .ToListAsync(ct);
 
-        // ─ Aynı gün kullanıcı etkileşimli kayıtlar ─
-        // DÜZELTME: Eski kod TÜM tarihlerdeki işlenmiş kayıtları çekiyordu.
-        // Bu, önceki günlerde Yok Say/Çözüldü yapılan kayıtların yeni günde
-        // oluşturulmasını engelliyordu → karşılaştırma ekranında 6, HesapKontrol'de 4 kayıt.
-        // Aynı gün içinde: analiz tekrar çalıştığında, o gün işlenmiş kayıtlar korunur.
+        // ─ Kullanıcı etkileşimli kayıtlar — 90 günlük sliding window ─
+        // PATCH 2: Eski kod sadece AnalizTarihi == analizTarihi ile aynı günün
+        // işlenmiş kayıtlarını çekiyordu. Kümülatif banka dosyasında dün Yoksay
+        // (İptal) edilen kayıt bugün tekrar gelince yeni Açık kayıt olarak
+        // üretiliyordu. Şimdi 90 günlük sliding window ile geçmiş kararlar
+        // hatırlanır. Eşleştirme GetFollowIdentityFingerprint (tarih bağımsız)
+        // ile yapılır — farklı günlerdeki aynı banka hareketi doğru eşleşir.
+        var dedupWindowStart = analizTarihi.AddDays(-90);
         var kullaniciIslemliKayitlar = await _db.HesapKontrolKayitlari
-            .Where(x => x.AnalizTarihi == analizTarihi
+            .Where(x => x.AnalizTarihi >= dedupWindowStart
+                      && x.AnalizTarihi <= analizTarihi
                       && x.Durum != KayitDurumu.Acik
+                      && x.Durum != KayitDurumu.Takipte // Takipte ayrı pool'da yönetilir
                       && x.HesapTuru != BankaHesapTuru.Stopaj)
             .ToListAsync(ct);
+
+        _logger.LogInformation(
+            "[HK-DEDUP-MEMORY] Date={Date} WindowStart={WindowStart} ProcessedCount={ProcessedCount} " +
+            "IgnoredCount={IgnoredCount} ResolvedCount={ResolvedCount}",
+            analizTarihi, dedupWindowStart, kullaniciIslemliKayitlar.Count,
+            kullaniciIslemliKayitlar.Count(x => x.Durum == KayitDurumu.Iptal),
+            kullaniciIslemliKayitlar.Count(x => x.Durum == KayitDurumu.Cozuldu));
 
         var takipteAyniGercekKayitlar = await _db.HesapKontrolKayitlari
             .Where(x => x.Durum == KayitDurumu.Takipte
@@ -182,6 +194,7 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
         var eklenecek = new List<HesapKontrolKaydi>();
         var pasiflestirilecek = new List<HesapKontrolKaydi>();
         var takipteMergeDegisti = false;
+        var skippedByMemory = 0;
 
         foreach (var aday in adayNonStopaj)
         {
@@ -245,13 +258,16 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
                 continue;
             }
 
-            // Önce kullanıcı etkileşimli kayıtlarda eşleşme ara
-            // (Takipte/Onaylandi/Cozuldu — bu kayıt zaten işlenmiş, tekrar ekleme)
-            var islemliMatch = islemliPool.FirstOrDefault(m => GetRecordFingerprint(m) == fp);
+            // Önce kullanıcı etkileşimli kayıtlarda eşleşme ara (90 gün hafıza)
+            // PATCH 2 FIX: GetFollowIdentityFingerprint (tarih bağımsız) kullan.
+            // Eski: GetRecordFingerprint → tarih dahildi → farklı günün yoksayılmış
+            // kaydı eşleşmiyordu. Yeni: followFp ile tarih bağımsız eşleştirme.
+            var islemliMatch = islemliPool.FirstOrDefault(m => GetFollowIdentityFingerprint(m) == followFp);
             if (islemliMatch != null)
             {
                 islemliPool.Remove(islemliMatch); // 1:1 eşleşme — bir sonraki aynı fp başka kayıtla eşleşir
-                continue; // Bu aday zaten işlenmiş, ekleme
+                skippedByMemory++;
+                continue; // Bu aday zaten işlenmiş (Yoksay/Çözüldü/İptal), tekrar ekleme
             }
 
             // Sonra mevcut Acik kayıtlarda eşleşme ara
@@ -266,6 +282,10 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
             // Hiçbir eşleşme yok → gerçekten yeni kayıt
             eklenecek.Add(aday);
         }
+
+        _logger.LogInformation(
+            "[HK-DEDUP-MEMORY] Date={Date} SkippedByMemory={SkippedByMemory} NewRecords={NewRecords}",
+            analizTarihi, skippedByMemory, eklenecek.Count);
 
         // mevcutAcikPool'da kalan kayıtlar: sadece AYNI güne ait stale kayıtları sil
         // Farklı günlere ait Acik kayıtlara dokunma (onlar kendi günlerinde yönetilir)

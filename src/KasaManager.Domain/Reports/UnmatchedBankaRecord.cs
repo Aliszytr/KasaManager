@@ -1,4 +1,6 @@
 #nullable enable
+using KasaManager.Domain.Reports.HesapKontrol;
+
 namespace KasaManager.Domain.Reports;
 
 /// <summary>
@@ -31,4 +33,13 @@ public sealed class UnmatchedBankaRecord
     
     /// <summary>Parse edilmiş mahkeme (varsa)</summary>
     public string? ParsedMahkeme { get; init; }
+
+    /// <summary>Hesap Kontrol karar hafızasında bulunan son durum.</summary>
+    public KayitDurumu? HesapKontrolDurumu { get; set; }
+
+    /// <summary>Hesap Kontrol kararının ait olduğu analiz tarihi.</summary>
+    public DateOnly? HesapKontrolAnalizTarihi { get; set; }
+
+    /// <summary>Hesap Kontrol kararına ait kullanıcı veya sistem notu.</summary>
+    public string? HesapKontrolNotu { get; set; }
 }

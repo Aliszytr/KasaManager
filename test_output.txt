@@ -1,0 +1,416 @@
+Oluşturma başlatıldı: 7.05.2026 16:05:23.
+     1>1 düğümünde "F:\KasaYonetim_New_07.05.2026\KasaManager.sln" projesi (VSTest hedef).
+     1>ValidateSolutionConfiguration:
+         "Debug|Any CPU" çözüm yapılandırması oluşturuluyor.
+     1>"F:\KasaYonetim_New_07.05.2026\KasaManager.sln" projesi (1) 3 düğümünde "F:\KasaYonetim_New_07.05.2026\tests\KasaManager.Tests\KasaManager.Tests.csproj" (3) oluşturuyor (VSTest hedef).
+     3>BuildProject:
+         Derleme başlatıldı. Lütfen bekleyin...
+     3>"F:\KasaYonetim_New_07.05.2026\tests\KasaManager.Tests\KasaManager.Tests.csproj" projesi (3) 3 düğümünde "F:\KasaYonetim_New_07.05.2026\tests\KasaManager.Tests\KasaManager.Tests.csproj" (3:2) oluşturuyor (varsayılan hedefler).
+   3:2>"F:\KasaYonetim_New_07.05.2026\tests\KasaManager.Tests\KasaManager.Tests.csproj" projesi (3:2) 2 düğümünde "F:\KasaYonetim_New_07.05.2026\src\KasaManager.Domain\KasaManager.Domain.csproj" (5:3) oluşturuyor (varsayılan hedefler).
+     5>GenerateTargetFrameworkMonikerAttribute:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "GenerateTargetFrameworkMonikerAttribute" hedefi atlanıyor.
+       CoreGenerateAssemblyInfo:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "CoreGenerateAssemblyInfo" hedefi atlanıyor.
+       _GenerateSourceLinkFile:
+         'obj\Debug\net8.0\KasaManager.Domain.sourcelink.json' Source Link dosyası güncel.
+       CoreCompile:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "CoreCompile" hedefi atlanıyor.
+       GenerateBuildDependencyFile:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "GenerateBuildDependencyFile" hedefi atlanıyor.
+       CopyFilesToOutputDirectory:
+         KasaManager.Domain -> F:\KasaYonetim_New_07.05.2026\src\KasaManager.Domain\bin\Debug\net8.0\KasaManager.Domain.dll
+     5>"F:\KasaYonetim_New_07.05.2026\src\KasaManager.Domain\KasaManager.Domain.csproj" Projesini Oluşturma İşlemi Tamamlandı (varsayılan hedefler).
+   3:2>"F:\KasaYonetim_New_07.05.2026\tests\KasaManager.Tests\KasaManager.Tests.csproj" projesi (3:2) 6 düğümünde "F:\KasaYonetim_New_07.05.2026\src\KasaManager.Application\KasaManager.Application.csproj" (6:3) oluşturuyor (varsayılan hedefler).
+     6>GenerateTargetFrameworkMonikerAttribute:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "GenerateTargetFrameworkMonikerAttribute" hedefi atlanıyor.
+       CoreGenerateAssemblyInfo:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "CoreGenerateAssemblyInfo" hedefi atlanıyor.
+       _GenerateSourceLinkFile:
+         'obj\Debug\net8.0\KasaManager.Application.sourcelink.json' Source Link dosyası güncel.
+       CoreCompile:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "CoreCompile" hedefi atlanıyor.
+       GenerateBuildDependencyFile:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "GenerateBuildDependencyFile" hedefi atlanıyor.
+       CopyFilesToOutputDirectory:
+         KasaManager.Application -> F:\KasaYonetim_New_07.05.2026\src\KasaManager.Application\bin\Debug\net8.0\KasaManager.Application.dll
+     6>"F:\KasaYonetim_New_07.05.2026\src\KasaManager.Application\KasaManager.Application.csproj" Projesini Oluşturma İşlemi Tamamlandı (varsayılan hedefler).
+   3:2>"F:\KasaYonetim_New_07.05.2026\tests\KasaManager.Tests\KasaManager.Tests.csproj" projesi (3:2) 5 düğümünde "F:\KasaYonetim_New_07.05.2026\src\KasaManager.Infrastructure\KasaManager.Infrastructure.csproj" (7:3) oluşturuyor (varsayılan hedefler).
+     7>GenerateTargetFrameworkMonikerAttribute:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "GenerateTargetFrameworkMonikerAttribute" hedefi atlanıyor.
+       CoreGenerateAssemblyInfo:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "CoreGenerateAssemblyInfo" hedefi atlanıyor.
+       _GenerateSourceLinkFile:
+         'obj\Debug\net8.0\KasaManager.Infrastructure.sourcelink.json' Source Link dosyası güncel.
+       CoreCompile:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "CoreCompile" hedefi atlanıyor.
+       _CopyOutOfDateSourceItemsToOutputDirectory:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "_CopyOutOfDateSourceItemsToOutputDirectory" hedefi atlanıyor.
+       GenerateBuildDependencyFile:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "GenerateBuildDependencyFile" hedefi atlanıyor.
+       GenerateBuildRuntimeConfigurationFiles:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "GenerateBuildRuntimeConfigurationFiles" hedefi atlanıyor.
+       CopyFilesToOutputDirectory:
+         KasaManager.Infrastructure -> F:\KasaYonetim_New_07.05.2026\src\KasaManager.Infrastructure\bin\Debug\net8.0\KasaManager.Infrastructure.dll
+     7>"F:\KasaYonetim_New_07.05.2026\src\KasaManager.Infrastructure\KasaManager.Infrastructure.csproj" Projesini Oluşturma İşlemi Tamamlandı (varsayılan hedefler).
+   3:2>"F:\KasaYonetim_New_07.05.2026\tests\KasaManager.Tests\KasaManager.Tests.csproj" projesi (3:2) 1 düğümünde "F:\KasaYonetim_New_07.05.2026\src\KasaManager.Web\KasaManager.Web.csproj" (2:3) oluşturuyor (varsayılan hedefler).
+     2>GenerateTargetFrameworkMonikerAttribute:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "GenerateTargetFrameworkMonikerAttribute" hedefi atlanıyor.
+       CoreGenerateAssemblyInfo:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "CoreGenerateAssemblyInfo" hedefi atlanıyor.
+       _DiscoverMvcApplicationParts:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "_DiscoverMvcApplicationParts" hedefi atlanıyor.
+       _CoreGenerateRazorAssemblyInfo:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "_CoreGenerateRazorAssemblyInfo" hedefi atlanıyor.
+       _GenerateSourceLinkFile:
+         'obj\Debug\net8.0\win-x64\KasaManager.Web.sourcelink.json' Source Link dosyası güncel.
+       CoreCompile:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "CoreCompile" hedefi atlanıyor.
+       _CreateAppHost:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "_CreateAppHost" hedefi atlanıyor.
+       _GenerateScopedCssFiles:
+       Çıkış içermediğinden "_GenerateScopedCssFiles" hedefi atlanıyor.
+       _GenerateScopedCssFiles:
+       Çıkış içermediğinden "_GenerateScopedCssFiles" hedefi atlanıyor.
+       _BuildCopyStaticWebAssetsPreserveNewest:
+       Çıkış içermediğinden "_BuildCopyStaticWebAssetsPreserveNewest" hedefi atlanıyor.
+       _CopyOutOfDateSourceItemsToOutputDirectory:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "_CopyOutOfDateSourceItemsToOutputDirectory" hedefi atlanıyor.
+       GenerateBuildDependencyFile:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "GenerateBuildDependencyFile" hedefi atlanıyor.
+       GenerateBuildRuntimeConfigurationFiles:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "GenerateBuildRuntimeConfigurationFiles" hedefi atlanıyor.
+       CopyFilesToOutputDirectory:
+         KasaManager.Web -> F:\KasaYonetim_New_07.05.2026\src\KasaManager.Web\bin\Debug\net8.0\win-x64\KasaManager.Web.dll
+     2>"F:\KasaYonetim_New_07.05.2026\src\KasaManager.Web\KasaManager.Web.csproj" Projesini Oluşturma İşlemi Tamamlandı (varsayılan hedefler).
+     3>GenerateTargetFrameworkMonikerAttribute:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "GenerateTargetFrameworkMonikerAttribute" hedefi atlanıyor.
+       CoreGenerateAssemblyInfo:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "CoreGenerateAssemblyInfo" hedefi atlanıyor.
+       _GenerateSourceLinkFile:
+         'obj\Debug\net8.0\KasaManager.Tests.sourcelink.json' Source Link dosyası güncel.
+       CoreCompile:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "CoreCompile" hedefi atlanıyor.
+       _CopyOutOfDateSourceItemsToOutputDirectory:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "_CopyOutOfDateSourceItemsToOutputDirectory" hedefi atlanıyor.
+       GenerateBuildDependencyFile:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "GenerateBuildDependencyFile" hedefi atlanıyor.
+       GenerateBuildRuntimeConfigurationFiles:
+       Tüm çıkış dosyaları, giriş dosyalarına göre güncel durumda olduğundan "GenerateBuildRuntimeConfigurationFiles" hedefi atlanıyor.
+       CopyFilesToOutputDirectory:
+         KasaManager.Tests -> F:\KasaYonetim_New_07.05.2026\tests\KasaManager.Tests\bin\Debug\net8.0\KasaManager.Tests.dll
+     3>"F:\KasaYonetim_New_07.05.2026\tests\KasaManager.Tests\KasaManager.Tests.csproj" Projesini Oluşturma İşlemi Tamamlandı (varsayılan hedefler).
+     3>BuildProject:
+         Derleme tamamlandı.
+         
+F:\KasaYonetim_New_07.05.2026\tests\KasaManager.Tests\bin\Debug\net8.0\KasaManager.Tests.dll (.NETCoreApp,Version=v8.0) için test çalıştırması
+VSTest sürümü 17.11.1 (x64)
+
+Test yürütmesi başlatılıyor, lütfen bekleyin...
+Toplam 1 test dosyası belirtilen desenle eşleşti.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.26)
+[xUnit.net 00:00:00.11]   Discovering: KasaManager.Tests
+[xUnit.net 00:00:00.19]   Discovered:  KasaManager.Tests
+[xUnit.net 00:00:00.26]   Starting:    KasaManager.Tests
+  Başarılı KasaManager.Tests.Application.ParityEvidenceHarness.StructuralAnalysis_FormulaMapping_DocumentDifferences [8 ms]
+  Başarılı KasaManager.Tests.Application.MarkCancelledRecordsTests.MarkCancelledRecords_ShouldHandleTurkishCaseVariations(iptalAciklama: "Virman IPTAL STOPAJ HESABINA") [23 ms]
+  Başarılı KasaManager.Tests.Application.MarkCancelledRecordsTests.MarkCancelledRecords_ShouldHandleTurkishCaseVariations(iptalAciklama: "Virman İptal STOPAJ HESABINA") [< 1 ms]
+  Başarılı KasaManager.Tests.Application.MarkCancelledRecordsTests.MarkCancelledRecords_ShouldHandleTurkishCaseVariations(iptalAciklama: "Virman iptal STOPAJ HESABINA") [< 1 ms]
+  Başarılı KasaManager.Tests.Application.MarkCancelledRecordsTests.MarkCancelledRecords_ShouldHandleTurkishCaseVariations(iptalAciklama: "Virman İPTAL STOPAJ HESABINA") [< 1 ms]
+  Başarılı KasaManager.Tests.Application.MarkCancelledRecordsTests.MarkCancelledRecords_ShouldDetectVirmanIptalPair [3 ms]
+  Başarılı KasaManager.Tests.Application.MarkCancelledRecordsTests.MarkCancelledRecords_ShouldNotMatchOnlyIadeKeyword [1 ms]
+  Başarılı KasaManager.Tests.Application.BankaAciklamaParserTests.IsAnkaraRelated_ReturnsExpected(aciklama: "Portal Tahsilatıdır. Ankara 5. Vergi Mahkemesi-202"···, expected: True) [28 ms]
+  Başarılı KasaManager.Tests.Application.BankaAciklamaParserTests.IsAnkaraRelated_ReturnsExpected(aciklama: "-Ankara 12. Vergi Mahkemesi", expected: True) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.MarkCancelledRecordsTests.MarkCancelledRecords_ShouldIgnoreEftOtomatikIade [< 1 ms]
+  Başarılı KasaManager.Tests.Application.BankaAciklamaParserTests.IsAnkaraRelated_ReturnsExpected(aciklama: "İstanbul 5. Vergi Mahkemesi-2024/100", expected: False) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.BankaAciklamaParserTests.IsAnkaraRelated_ReturnsExpected(aciklama: "", expected: False) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.BankaAciklamaParserTests.IsAnkaraRelated_ReturnsExpected(aciklama: "Bölge-Ankara 3. İdare Mahkemesi", expected: True) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.BankaAciklamaParserTests.IsAnkaraRelated_ReturnsExpected(aciklama: null, expected: False) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.MarkCancelledRecordsTests.MarkCancelledRecords_ShouldSelectClosestCandidateInTime [< 1 ms]
+  Başarılı KasaManager.Tests.Application.MarkCancelledRecordsTests.MarkCancelledRecords_ShouldNotMatchWhenTimestampsEqual [< 1 ms]
+  Başarılı KasaManager.Tests.Infrastructure.CheckStopajFromAllVirmansTests.CheckStopajFromAllVirmans_ShouldSupportPartialVirman [33 ms]
+  Başarılı KasaManager.Tests.Infrastructure.CheckStopajFromAllVirmansTests.CheckStopajFromAllVirmans_ShouldReturnError_WhenNoVirmanAndNoCancellation [< 1 ms]
+  Başarılı KasaManager.Tests.Infrastructure.CheckStopajFromAllVirmansTests.CheckStopajFromAllVirmans_ShouldIgnoreNonVirmanCancellations [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.CalculatedKasaSnapshotTests.KasaRaporTuru_Ortak_Has_Value_4 [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.CalculatedKasaSnapshotTests.Snapshot_With_Notes_Persists [1 ms]
+  Başarılı KasaManager.Tests.Infrastructure.CheckStopajFromAllVirmansTests.CheckStopajFromAllVirmans_ShouldReturnOkWithNote_WhenVirmanCancelledAndRedone [5 ms]
+  Başarılı KasaManager.Tests.Infrastructure.CheckStopajFromAllVirmansTests.CheckStopajFromAllVirmans_ShouldReturnWarningPending_WhenVirmanCancelledButNotRedone [< 1 ms]
+  Başarılı KasaManager.Tests.Application.BankaAciklamaParserTests.Parse_WithMahkeme_ExtractsMahkeme [29 ms]
+  Başarılı KasaManager.Tests.Application.BankaAciklamaParserTests.Parse_WithAnkaraKeyword_ReturnsAnkara [< 1 ms]
+  Başarılı KasaManager.Tests.Application.BankaAciklamaParserTests.Parse_WithEsasNo_ExtractsCorrectly [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.CalculatedKasaSnapshotTests.GetInputs_With_Null_Json_Returns_All_Defaults [29 ms]
+  Başarılı KasaManager.Tests.Domain.CalculatedKasaSnapshotTests.Snapshot_Supports_FormulaSet_Info [3 ms]
+  Başarılı KasaManager.Tests.Application.BankaAciklamaParserTests.ParseReddiyatGonderici_ValidFormat_ExtractsGonderenBilgileri [34 ms]
+  Başarılı KasaManager.Tests.Application.BankaAciklamaParserTests.ParseReddiyatGonderici_NullInput_ReturnsEmpty [2 ms]
+  Başarılı KasaManager.Tests.Application.ImportOrchestratorTests.GuessKindFromFileName_ReturnsExpected(fileName: "OnlineMasraf_Ocak.xlsx", expected: MasrafVeReddiyat) [102 ms]
+  Başarılı KasaManager.Tests.Application.ImportOrchestratorTests.GuessKindFromFileName_ReturnsExpected(fileName: "rapor_bilinmeyen.xlsx", expected: Unknown) [1 ms]
+  Başarılı KasaManager.Tests.Application.ImportOrchestratorTests.GuessKindFromFileName_ReturnsExpected(fileName: "OnlineHarc.xlsx", expected: OnlineHarcama) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.ImportOrchestratorTests.GuessKindFromFileName_ReturnsExpected(fileName: "OnlineReddiyat.xlsx", expected: MasrafVeReddiyat) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.ImportOrchestratorTests.GuessKindFromFileName_ReturnsExpected(fileName: "BankaTahsilat.xlsx", expected: BankaTahsilat) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.ImportOrchestratorTests.GuessKindFromFileName_ReturnsExpected(fileName: "KasaUstRapor.xlsx", expected: KasaUstRapor) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.ImportOrchestratorTests.GuessKindFromFileName_ReturnsExpected(fileName: "MasrafveReddiyat.xlsx", expected: MasrafVeReddiyat) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.ImportOrchestratorTests.GuessKindFromFileName_ReturnsExpected(fileName: "BankaHarcama_2026.xlsx", expected: BankaHarcama) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.BankaAciklamaParserTests.Parse_NoAnkaraKeyword_LowConfidence [4 ms]
+  Başarılı KasaManager.Tests.Application.BankaAciklamaParserTests.Parse_NullOrEmpty_ReturnsZeroConfidence [< 1 ms]
+  Başarılı KasaManager.Tests.Application.ImportOrchestratorTests.Import_NonExistentFile_ReturnsFail [1 ms]
+  Başarılı KasaManager.Tests.Application.ImportOrchestratorTests.Import_EmptyPath_ReturnsFail [< 1 ms]
+  Başarılı KasaManager.Tests.Application.ImportOrchestratorTests.ImportTrueSource_EmptyPath_ReturnsFail [1 ms]
+  Başarılı KasaManager.Tests.Application.ImportOrchestratorTests.ImportTrueSource_NonExistentFile_ReturnsFail [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.CalculatedKasaSnapshotTests.SetOutputs_And_GetOutputs_Works [41 ms]
+  Başarılı KasaManager.Tests.Domain.CalculatedKasaSnapshotTests.GetDisplaySummary_Returns_NonEmpty_String [3 ms]
+  Başarılı KasaManager.Tests.Domain.CalculatedKasaSnapshotTests.KasaRaporTuru_Has_Expected_Values(turu: Genel, expected: 3) [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.CalculatedKasaSnapshotTests.KasaRaporTuru_Has_Expected_Values(turu: Sabah, expected: 1) [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.CalculatedKasaSnapshotTests.KasaRaporTuru_Has_Expected_Values(turu: Ortak, expected: 4) [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.CalculatedKasaSnapshotTests.KasaRaporTuru_Has_Expected_Values(turu: Aksam, expected: 2) [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.CalculatedKasaSnapshotTests.New_Snapshot_Has_Default_Values [3 ms]
+  Başarılı KasaManager.Tests.Domain.CalculatedKasaSnapshotTests.GetOutputs_With_Invalid_Json_Returns_All_Defaults [4 ms]
+  Başarılı KasaManager.Tests.Domain.CalculatedKasaSnapshotTests.SetInputs_And_GetInputs_Works [< 1 ms]
+  Başarılı KasaManager.Tests.Application.FormulaEngineServiceTests.Run_SimpleAddition_ReturnsCorrectOutput [30 ms]
+  Başarılı KasaManager.Tests.Application.FormulaEngineServiceTests.Run_SabahEksikFazlaFormula_DoesNotDoubleCountCarryover [2 ms]
+  Başarılı KasaManager.Tests.Application.FormulaEngineServiceTests.Run_EmptyTemplates_ReturnsEmptyOutputs [3 ms]
+  Başarılı KasaManager.Tests.Application.FormulaEngineServiceTests.GetBuiltInFormulaSets_AllHaveTemplates [9 ms]
+  Başarılı KasaManager.Tests.Application.FormulaEngineServiceTests.Run_NullPool_ReturnsFail [< 1 ms]
+  Başarılı KasaManager.Tests.Application.FormulaEngineServiceTests.Run_SabahGenelKasaFormula_AddsGatewayNetOnly [< 1 ms]
+  Başarılı KasaManager.Tests.Application.FormulaEngineServiceTests.Run_NullFormulaSet_ReturnsFail [< 1 ms]
+  Başarılı KasaManager.Tests.Application.ParityEvidenceHarness.FiveDayParity_LegacyVsEngine_MeasureAndReport [139 ms]
+  Başarılı KasaManager.Tests.Application.FormulaEngineServiceTests.Run_OverrideSkipsFormula_UsesOverrideValue [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.ApplyDebitCreditSign_SpecificRequirements_CorrectlyAppliesSign(amount: -1000, direction: "A", expected: 1000) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.FormulaEngineServiceTests.Run_SabahTakipKasaEtkisiNet_SubtractsHarc [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.ApplyDebitCreditSign_SpecificRequirements_CorrectlyAppliesSign(amount: 1000, direction: "B", expected: -1000) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.ApplyDebitCreditSign_SpecificRequirements_CorrectlyAppliesSign(amount: 1000, direction: null, expected: 1000) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.ApplyDebitCreditSign_SpecificRequirements_CorrectlyAppliesSign(amount: -1000, direction: null, expected: -1000) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.TryParseFromTurkish_Invalid_ReturnsFalse(input: "   ") [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.TryParseFromTurkish_Invalid_ReturnsFalse(input: "abc") [1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.TryParseFromTurkish_Invalid_ReturnsFalse(input: null) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.TryParseFromTurkish_Invalid_ReturnsFalse(input: "") [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.ApplyDebitCreditSign_NullOrEmpty_ReturnsOriginal(amount: 100, direction: null, expected: 100) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.ApplyDebitCreditSign_NullOrEmpty_ReturnsOriginal(amount: 100, direction: "", expected: 100) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.ApplyDebitCreditSign_NullOrEmpty_ReturnsOriginal(amount: 100, direction: "  ", expected: 100) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.ApplyDebitCreditSign_Alacak_ReturnsPositive(amount: 100, direction: "Alacak", expected: 100) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.FormulaEngineServiceTests.GetBuiltInFormulaSets_ContainsV1AndGenelKasa [3 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.ApplyDebitCreditSign_Alacak_ReturnsPositive(amount: 100, direction: "ALACAK", expected: 100) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.ApplyDebitCreditSign_Borc_ReturnsNegative(amount: 100, direction: "Borç", expected: -100) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.ApplyDebitCreditSign_Borc_ReturnsNegative(amount: 100, direction: "BORÇ", expected: -100) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.ApplyDebitCreditSign_Borc_ReturnsNegative(amount: 200, direction: "borc", expected: -200) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.ApplyDebitCreditSign_Borc_ReturnsNegative(amount: 100, direction: "BORC", expected: -100) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.TryParseFromTurkish_ValidTR_ReturnsTrue(input: "1234,56", expected: 1234,56) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.FormulaEngineServiceTests.Run_MissingVariable_DefaultsToZero [1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.TryParseFromTurkish_ValidTR_ReturnsTrue(input: "100", expected: 100) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.TryParseFromTurkish_ValidTR_ReturnsTrue(input: "  50,00  ", expected: 50) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.TryParseFromTurkish_ValidTR_ReturnsTrue(input: "1.234,56", expected: 1234,56) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.FormulaEngineServiceTests.GetBuiltInFormulaSets_Returns_TwoSets [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.FormatDecimal_CustomFormat_Works [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.FormatDecimal_Default_ReturnsN2 [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DecimalParsingHelperTests.TryParseFromTurkish_ValidEN_WithThousands_ReturnsTrue [1 ms]
+  Başarılı KasaManager.Tests.Application.DetermineStopajDurumTests.IptalVar_YenisiYapilmamis_ReturnsWarningPending [1 ms]
+  Başarılı KasaManager.Tests.Application.DetermineStopajDurumTests.VirmanYeterli_IptalYok_ReturnsOk [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DetermineStopajDurumTests.IptalVar_YenisiYapilmis_ReturnsOkWithNote [< 1 ms]
+  Başarılı KasaManager.Tests.Application.FormulaEngineServiceTests.Run_DependencyChain_ResolvesCorrectly [5 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.RowMatchesDateRange_EdgeEnd_ReturnsTrue [4 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.TryParseDateOnly_ValidFormats_ReturnsTrue(input: "19.02.2026", year: 2026, month: 2, day: 19) [3 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.TryParseDateOnly_ValidFormats_ReturnsTrue(input: "01.01.2025", year: 2025, month: 1, day: 1) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.TryParseDateOnly_ValidFormats_ReturnsTrue(input: "1.01.2025", year: 2025, month: 1, day: 1) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.TryParseDateOnly_ValidFormats_ReturnsTrue(input: "2025-01-15", year: 2025, month: 1, day: 15) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.RowMatchesDate_MatchingDate_ReturnsTrue [1 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.RowMatchesDateRange_EdgeStart_ReturnsTrue [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.TryParseDateTime_NullOrEmpty_ReturnsFalse(input: "") [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.TryParseDateTime_NullOrEmpty_ReturnsFalse(input: "  ") [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.TryParseDateTime_NullOrEmpty_ReturnsFalse(input: null) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.RowMatchesDate_DifferentDate_ReturnsFalse [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.TryParseDateOnly_Invalid_ReturnsFalse(input: null) [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.TryParseDateOnly_Invalid_ReturnsFalse(input: "   ") [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.TryParseDateOnly_Invalid_ReturnsFalse(input: "not-a-date") [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.TryParseDateOnly_Invalid_ReturnsFalse(input: "") [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.TryParseDateTime_ValidTR_ReturnsTrue [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.TryParseDateOnly_ExcelSerial_ReturnsTrue [2 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.RowMatchesDateRange_OutOfRange_ReturnsFalse [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.RowMatchesDate_MissingColumn_ReturnsFalse [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.RowMatchesDate_NullDateCol_ReturnsTrue [< 1 ms]
+  Başarılı KasaManager.Tests.Application.DateParsingHelperTests.RowMatchesDateRange_InRange_ReturnsTrue [< 1 ms]
+  Başarılı KasaManager.Tests.Application.CanonicalKeyHelperTests.FindDateCanonical_ExactTarih_ReturnsKey [3 ms]
+  Başarılı KasaManager.Tests.Application.CanonicalKeyHelperTests.FindDateCanonical_NullMetas_ReturnsNull [< 1 ms]
+  Başarılı KasaManager.Tests.Application.CanonicalKeyHelperTests.FindCanonicalByHeaderContains_Match_ReturnsKey [< 1 ms]
+  Başarılı KasaManager.Tests.Application.CanonicalKeyHelperTests.FindCanonical_ExactMatch_ReturnsKey [< 1 ms]
+  Başarılı KasaManager.Tests.Application.CanonicalKeyHelperTests.FindDateCanonical_ContainsTarih_ReturnsKey [< 1 ms]
+  Başarılı KasaManager.Tests.Application.CanonicalKeyHelperTests.FindDateCanonical_IslemTarihi_ReturnsKey [< 1 ms]
+  Başarılı KasaManager.Tests.Application.CanonicalKeyHelperTests.FindCanonical_TokenFallback_ReturnsKey [< 1 ms]
+  Başarılı KasaManager.Tests.Application.CanonicalKeyHelperTests.FindCanonical_NullMetas_ReturnsNull [< 1 ms]
+  Başarılı KasaManager.Tests.Application.CanonicalKeyHelperTests.FindCanonical_NotFound_ReturnsNull [< 1 ms]
+  Başarılı KasaManager.Tests.Application.CanonicalKeyHelperTests.FindCanonicalByHeaderContains_NoMatch_ReturnsNull [< 1 ms]
+dbug: KasaManager.Infrastructure.Services.CarryoverResolver[0]
+      [CarryoverDebug] ResolveGenelKasaAsync. SeedStart: 05/20/2026. Gelen DefaultGenelKasaDevredenSeed (Override): 50000
+dbug: KasaManager.Infrastructure.Services.CarryoverResolver[0]
+      [CarryoverDebug] Override ayarlari gecerli oldugu icin SeedOverride branchine girildi.
+info: KasaManager.Infrastructure.Services.CarryoverResolver[0]
+      [CarryoverResolver] Scope: GenelKasa, Source: SeedOverride, Value: 50000, SourceDate: 05/19/2026
+dbug: KasaManager.Infrastructure.Services.CarryoverResolver[0]
+      [CarryoverDebug] ResolveGenelKasaAsync. SeedStart: 05/20/2026. Gelen DefaultGenelKasaDevredenSeed (Override): 0
+dbug: KasaManager.Infrastructure.Services.CarryoverResolver[0]
+      [CarryoverDebug] DB DailyCalculationResults genel kasa geriye donuk arama basladi (Tarih oncesi: 05/20/2026).
+  Başarılı KasaManager.Tests.Application.GenelKasaRaporServiceTests.BuildCalculationRunAsync_InputsFail_ReturnsError [10 ms]
+  Başarılı KasaManager.Tests.Application.GenelKasaRaporServiceTests.BuildReportDataAsync_Failure_ReturnsIssues [3 ms]
+  Başarılı KasaManager.Tests.Application.GenelKasaRaporServiceTests.BuildCalculationRunAsync_NoFormulaSet_ReturnsError [2 ms]
+  Başarılı KasaManager.Tests.Application.GenelKasaRaporServiceTests.BuildCalculationRunAsync_Success_ReturnsRun [4 ms]
+  Başarılı KasaManager.Tests.Application.GenelKasaRaporServiceTests.GetDecimal_OutputsFirst_ThenOverrides_ThenInputs [5 ms]
+  Başarılı KasaManager.Tests.Application.GenelKasaRaporServiceTests.GetDecimal_MissingKey_ReturnsNullAndAddsIssue [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.UserFieldPreferenceTests.SetSelectedFields_Updates_Timestamps [14 ms]
+  Başarılı KasaManager.Tests.Domain.UserFieldPreferenceTests.GetSelectedFields_With_Null_Json_Returns_Empty [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.UserFieldPreferenceTests.SetSelectedFields_With_Empty_List_Works [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.UserFieldPreferenceTests.SetSelectedFields_And_GetSelectedFields_Works [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.UserFieldPreferenceTests.GetSelectedFields_With_Invalid_Json_Returns_Empty [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.UserFieldPreferenceTests.Global_Preference_Has_Null_UserName [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.UserFieldPreferenceTests.KasaType_Can_Be_Set [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.UserFieldPreferenceTests.New_Preference_Has_Default_Values [3 ms]
+  Başarılı KasaManager.Tests.Application.KasaOrchestratorTests.LoadPreviewAsync_ComparisonServiceFails_IptalEdilenCikisTutarRemainsZero [19 ms]
+  Başarılı KasaManager.Tests.Application.KasaOrchestratorTests.LoadActiveFormulaSetByScopeAsync_NoDbTemplate_UsesFallback [8 ms]
+  Başarılı KasaManager.Tests.Application.KasaOrchestratorTests.HydrateFromSnapshotAndDefaultsAsync_WithDefaults_SetsValues [1 ms]
+  Başarılı KasaManager.Tests.Application.KasaOrchestratorTests.FormulaEngineService_Run_EmptyPool_ReturnsSuccess [< 1 ms]
+  Başarılı KasaManager.Tests.Application.KasaOrchestratorTests.LoadPreviewAsync_NoSnapshot_SetsIsDataLoadedFalse [2 ms]
+  Başarılı KasaManager.Tests.Application.KasaOrchestratorTests.FormulaEngineService_GetBuiltInFormulaSets_ReturnsAtLeastTwo [< 1 ms]
+  Başarılı KasaManager.Tests.Application.KasaOrchestratorTests.LoadActiveFormulaSetByScopeAsync_GenelScope_InjectsEssentialFormulas [1 ms]
+  Başarılı KasaManager.Tests.Application.ComparisonServiceTests.CompareHarcamaHarcAsync_NoFiles_ReturnsFail [8 ms]
+  Başarılı KasaManager.Tests.Application.ComparisonServiceTests.CompareReddiyatCikisAsync_NoFiles_ReturnsFail [4 ms]
+  Başarılı KasaManager.Tests.Application.ComparisonServiceTests.CompareTahsilatMasrafAsync_NoFiles_ReturnsFail [1 ms]
+  Başarılı KasaManager.Tests.Application.P6FinalVerificationTests.T4_Repeated_Invocations_Are_Consistent [169 ms]
+  Başarılı KasaManager.Tests.AdHoc.ExcelInspectorTests.Inspect_MasrafVeReddiyat [8 ms]
+  Başarılı KasaManager.Tests.AdHoc.ExcelInspectorTests.Inspect_BankaTahsilat [1 ms]
+  Başarılı KasaManager.Tests.Application.EksikFazlaProjectionEngineTests.T2_NoPreviousDaySnapshot_ReturnsZeros [6 ms]
+  Başarılı KasaManager.Tests.Application.EksikFazlaProjectionEngineTests.T9_AllZeros_ReturnsAllZeros [9 ms]
+  Başarılı KasaManager.Tests.Application.EksikFazlaProjectionEngineTests.T4_MidChainBreak_StopsAtGap [2 ms]
+  Başarılı KasaManager.Tests.Application.EksikFazlaProjectionEngineTests.ResultContainsAuditTrail [3 ms]
+  Başarılı KasaManager.Tests.Application.EksikFazlaProjectionEngineTests.T3_MaxDepth_DoesNotExceed14Plus1 [1 ms]
+  Başarılı KasaManager.Tests.Application.EksikFazlaProjectionEngineTests.P21_InputProvider_SourceIsExcelAndSnapshot [1 ms]
+  Başarılı KasaManager.Tests.Application.EksikFazlaProjectionEngineTests.NoSnapshotAtAll_ReturnsOkWithZeros [1 ms]
+  Başarılı KasaManager.Tests.Application.EksikFazlaProjectionEngineTests.P21_InputProvider_ThreeDay_CarryForward [3 ms]
+  Başarılı KasaManager.Tests.Application.EksikFazlaProjectionEngineTests.P21_InputProvider_FullData_ParityFormula [2 ms]
+  Başarılı KasaManager.Tests.Application.EksikFazlaProjectionEngineTests.T7_HesapKontrolFails_ReturnsRawChain [2 ms]
+  Başarılı KasaManager.Tests.Application.EksikFazlaProjectionEngineTests.T1_ThreeDayChain_CarryForwardCorrect [1 ms]
+  Başarılı KasaManager.Tests.Application.EksikFazlaProjectionEngineTests.T10_SingleDay_GuneCalculated_DundenZero [1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.ValidateCreate_UndefinedEnumTur_ReturnsError [2 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.ValidateCreate_InvalidTurKategori_ReturnsError [7 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.GetInputs_InvalidJson_StillReturnsDefaults [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.ValidateCreate_SistemeGirilmeyenEft_ZeroGerceklesen_ReturnsError [4 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.ValidateCreate_BankadanCikamayanTutar_ValidMultiCategory [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.ValidateUpdate_NegativeTutar_ReturnsError [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.IsRuntimeEffective_GuardMatrix(karar: Reddedildi, durum: Acik, expected: False) [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.IsRuntimeEffective_GuardMatrix(karar: Onaylandi, durum: KismiCozuldu, expected: True) [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.IsRuntimeEffective_GuardMatrix(karar: Onaylandi, durum: ErtesiGuneDevredildi, expected: False) [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.IsRuntimeEffective_GuardMatrix(karar: IncelemeBekliyor, durum: Acik, expected: False) [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.IsRuntimeEffective_GuardMatrix(karar: Onaylandi, durum: Acik, expected: True) [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.IsRuntimeEffective_GuardMatrix(karar: Onaylandi, durum: Iptal, expected: False) [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.IsRuntimeEffective_GuardMatrix(karar: Onaylandi, durum: Cozuldu, expected: False) [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.Hesapla_NegativeResult_ClampedToZero(tur: BasarisizVirman) [< 1 ms]
+[xUnit.net 00:00:00.71]     KasaManager.Tests.Application.P6FinalVerificationTests.T3_Concurrent_Load_Test_Scales_Thread_Safe [FAIL]
+[xUnit.net 00:00:00.71]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:00.71]       Expected: 80
+[xUnit.net 00:00:00.71]       Actual:   110
+[xUnit.net 00:00:00.71]       Stack Trace:
+[xUnit.net 00:00:00.71]         F:\KasaYonetim_New_07.05.2026\tests\KasaManager.Tests\Application\P6FinalVerificationTests.cs(137,0): at KasaManager.Tests.Application.P6FinalVerificationTests.T3_Concurrent_Load_Test_Scales_Thread_Safe()
+[xUnit.net 00:00:00.71]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:00.72]       Output:
+[xUnit.net 00:00:00.72]         Success Metric Start: 8, End: 118
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.Hesapla_NegativeResult_ClampedToZero(tur: SistemeGirilmeyenEft) [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.Hesapla_NegativeResult_ClampedToZero(tur: BankadanCikamayanTutar) [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.Hesapla_NegativeResult_ClampedToZero(tur: KismiIslem) [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.Hesapla_NegativeResult_ClampedToZero(tur: GecikmeliBankaHareketi) [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.GetOutputs_InvalidJson_StillReturnsDefaults [1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.HistoricalState_EffectiveBekleyenTutar_Uses_TypeSpecificFormula [< 1 ms]
+  Başarısız KasaManager.Tests.Application.P6FinalVerificationTests.T3_Concurrent_Load_Test_Scales_Thread_Safe [50 ms]
+  Hata İletisi:
+   Assert.Equal() Failure: Values differ
+Expected: 80
+Actual:   110
+  Yığın İzleme:
+     at KasaManager.Tests.Application.P6FinalVerificationTests.T3_Concurrent_Load_Test_Scales_Thread_Safe() in F:\KasaYonetim_New_07.05.2026\tests\KasaManager.Tests\Application\P6FinalVerificationTests.cs:line 137
+--- End of stack trace from previous location ---
+  Standart Çıkış İletileri:
+ Success Metric Start: 8, End: 118
+
+
+  Başarılı KasaManager.Tests.Application.P6FinalVerificationTests.T5_Parity_5_Days_Verification [3 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.FromJson_ValidJson_ReturnsObject [21 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.ValidateUpdate_ValidAmounts_NoErrors [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.Hesapla_EntityOverload_And_RawOverload_ProduceSameResult_KismiIslem [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.ValidateCreate_NegativeBeklenenTutar_ReturnsError [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.ResolveStateAt_PropagatesTur [4 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.FromJson_InvalidJson_ReturnsNull [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.ValidateCreate_NotrEtkiYonu_ReturnsError [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.Hesapla_EntityOverload_And_RawOverload_ProduceSameResult_BasarisizVirman [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.ValidateCreate_BasarisizVirman_ZeroBeklenen_ReturnsError [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.HistoricalState_EffectiveBekleyenTutar_ParityWith_RuntimeCalculation [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.Hesapla_EntityOverload_And_RawOverload_ProduceSameResult_SistemeGirilmeyenEft [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FinancialExceptionsTests.ValidateCreate_ValidCombination_NoErrors [< 1 ms]
+  Başarılı KasaManager.Tests.ParityProof.RoundingParityProofTest.Proof_RoundingChangesOutput_And_MatchesFormulaEngine [1 ms]
+  Başarılı KasaManager.Tests.ParityProof.RoundingParityProofTest.Print_BeforeAfter_Table [< 1 ms]
+  Başarılı KasaManager.Tests.Application.P6FinalVerificationTests.T1_Deterministic_Replay_Produces_Exact_Same_Results [31 ms]
+  Başarılı KasaManager.Tests.Application.KasaDraftServiceTests.BuildAsync_NullFolder_ReturnsFail [18 ms]
+--- YEN� HAL� (D�zeltmeden Sonra) ---
+Kullan�c�ya G�sterilen Hata Say�s�: 1
+Ekranda G�sterilecek Mesaj: Ayarlar veritaban�ndan okunamad�: An error occurred while accessing the database. Connection timeout.
+  Başarılı KasaManager.Tests.Application.P6FinalVerificationTests.T2_InputGap_Raises_Alert_And_Metrics [17 ms]
+  Başarılı KasaManager.Tests.Controllers.KasaSettingsControllerTests.Index_ThrowsException_IfTryCatchIsMissing_WaitNo_VerifyItCatches_AndPopulatesErrors [47 ms]
+  Başarılı KasaManager.Tests.Domain.FieldCatalogTests.Keys_Are_Unique [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FieldCatalogTests.AllEntries_Have_NonEmptyKey [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FieldCatalogTests.All_Returns_AllFields [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FieldCatalogTests.GetByCategory_Returns_CorrectItems [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FieldCatalogTests.GetDefaultsFor_Aksam_Returns_ExpectedFields [3 ms]
+  Başarılı KasaManager.Tests.Domain.FieldCatalogTests.Get_Returns_Null_ForInvalidKey [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FieldCatalogTests.GetDefaultsFor_Genel_Returns_ExpectedFields [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FieldCatalogTests.Get_Returns_CorrectEntry [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FieldCatalogTests.GetGroupedByCategory_Returns_NonEmptyCategories [1 ms]
+  Başarılı KasaManager.Tests.Domain.FieldCatalogTests.AllEntries_Have_NonEmptyDisplayName [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FieldCatalogTests.GetGroupedBySource_Returns_ThreeGroups [8 ms]
+  Başarılı KasaManager.Tests.Domain.FieldCatalogTests.GetGroupedByCategory_Contains_CoreCategories [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FieldCatalogTests.AllEntries_Have_Category [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FieldCatalogTests.GetCategories_Returns_ExpectedCategories [< 1 ms]
+  Başarılı KasaManager.Tests.Domain.FieldCatalogTests.GetGroupedBySource_CalculatedFields_HaveIsReadOnly [3 ms]
+  Başarılı KasaManager.Tests.Application.KasaDraftServiceTests.BuildAsync_WithSnapshot_NoFiles_ReturnsBundleWithIssues [90 ms]
+dbug: KasaManager.Infrastructure.Services.CarryoverResolver[0]
+      [CarryoverDebug] DB sorgu sonucu - Bulundu: False. Kay��t detayi (ilk 200 karakter): (null)
+dbug: KasaManager.Infrastructure.Services.CarryoverResolver[0]
+      [CarryoverDebug] Genel final donen devreden deger: 0
+info: KasaManager.Infrastructure.Services.CarryoverResolver[0]
+      [CarryoverResolver] Scope: GenelKasa, Source: DefaultZero, Value: 0, SourceDate: 05/19/2026
+  Başarılı KasaManager.Tests.Application.KasaDraftServiceTests.BuildAsync_NoSnapshot_ReturnsFail [2 ms]
+  Başarılı KasaManager.Tests.Application.KasaDraftServiceTests.BuildAsync_WhitespaceFolder_ReturnsFail [1 ms]
+  Başarılı KasaManager.Tests.Application.KasaDraftServiceTests.BuildUnifiedPoolAsync_EmptyFolder_ReturnsPool [21 ms]
+  Başarılı KasaManager.Tests.Application.KasaDraftServiceTests.BuildGenelKasaR10EngineInputsAsync_NoFiles_ReturnsResultWithIssues [28 ms]
+  Başarılı KasaManager.Tests.Application.CarryoverScenariosRunner.RunAllScenarios [816 ms]
+  Başarılı KasaManager.Tests.Application.CarryoverProofHarness.Run_Full_Pipeline_With_Resolver [941 ms]
+  Başarılı KasaManager.Tests.Application.FactNormalizationIntegrationTests.NormalizeAndSaveShadowFactsAsync_SameHash_ReturnsSkipped [806 ms]
+  Başarılı KasaManager.Tests.Application.FactNormalizationIntegrationTests.NormalizeAndSaveShadowFactsAsync_IdempotencyAndCanonicalCheck [28 ms]
+  Başarılı KasaManager.Tests.Application.FactNormalizationIntegrationTests.NormalizeAndSaveShadowFactsAsync_DisposedDbContext_ReturnsFail [3 ms]
+  Başarılı KasaManager.Tests.Infrastructure.FinansalIstisnaIdempotencyTests.CreateFromDevredilmis_DifferentParentSameDay_Succeeds [930 ms]
+  Başarılı KasaManager.Tests.Infrastructure.FinansalIstisnaIdempotencyTests.CreateFromDevredilmis_SameParentDifferentDay_Succeeds [4 ms]
+  Başarılı KasaManager.Tests.Infrastructure.FinansalIstisnaIdempotencyTests.CreateFromDevredilmis_SameParentSameDay_ThrowsOnSecondCall [3 ms]
+  Başarılı KasaManager.Tests.Infrastructure.FinansalIstisnaIdempotencyTests.CreateFromDevredilmis_CancelledChildAllowsNewCreate [13 ms]
+  Başarılı KasaManager.Tests.Web.AccountControllerTests.AccessDenied_ReturnsViewResult [1 s]
+  Başarılı KasaManager.Tests.Web.AccountControllerTests.Login_POST_EmptyUsername_ReturnsViewWithError(username: "", password: "somepass") [541 ms]
+  Başarılı KasaManager.Tests.Web.AccountControllerTests.Login_POST_EmptyUsername_ReturnsViewWithError(username: "   ", password: "somepass") [257 ms]
+  Başarılı KasaManager.Tests.Web.AccountControllerTests.Login_POST_EmptyUsername_ReturnsViewWithError(username: null, password: "somepass") [267 ms]
+  Başarılı KasaManager.Tests.Web.AccountControllerTests.Login_GET_ReturnsViewResult [258 ms]
+  Başarılı KasaManager.Tests.Application.FactNormalizationIntegrationTests.Parallel_SameFile_NoException_SqlServer [1 s]
+  Başarılı KasaManager.Tests.Application.FactNormalizationIntegrationTests.Parallel_SameFile_NoException_InMemory [15 ms]
+  Başarılı KasaManager.Tests.Web.AccountControllerTests.Login_POST_InactiveUser_ReturnsViewWithError [273 ms]
+  Başarılı KasaManager.Tests.Web.AccountControllerTests.Login_POST_NonexistentUser_ReturnsViewWithError [251 ms]
+  Başarılı KasaManager.Tests.Web.AccountControllerTests.Login_POST_EmptyPassword_ReturnsViewWithError(username: "admin", password: "") [249 ms]
+  Başarılı KasaManager.Tests.Web.AccountControllerTests.Login_POST_EmptyPassword_ReturnsViewWithError(username: "admin", password: "   ") [252 ms]
+  Başarılı KasaManager.Tests.Web.AccountControllerTests.Login_POST_EmptyPassword_ReturnsViewWithError(username: "admin", password: null) [249 ms]
+[xUnit.net 00:00:05.00]   Finished:    KasaManager.Tests
+  Başarılı KasaManager.Tests.Web.AccountControllerTests.Login_POST_WrongPassword_ReturnsViewWithError [383 ms]
+  Başarılı KasaManager.Tests.Web.AccountControllerTests.Login_GET_WithReturnUrl_SetsViewBag [281 ms]
+
+Test Çalıştırması Başarısız.
+Toplam test sayısı: 247
+     Geçti: 246
+     Başarısız: 1
+ Toplam süre: 5,6988 Saniye
+       _VSTestConsole:
+         MSB4181: "VSTestTask" görevi false değerini döndürdü ancak günlüğe hata kaydetmedi.
+     3>"F:\KasaYonetim_New_07.05.2026\tests\KasaManager.Tests\KasaManager.Tests.csproj" Projesini Oluşturma İşlemi Tamamlandı (VSTest hedef) -- BAŞARISIZ OLDU.
+     1>"F:\KasaYonetim_New_07.05.2026\KasaManager.sln" Projesini Oluşturma İşlemi Tamamlandı (VSTest hedef) -- BAŞARISIZ OLDU.
+
+Oluşturma BAŞARISIZ OLDU.
+    0 Uyarı
+    0 Hata
+
+Geçen Süre 00:00:09.88

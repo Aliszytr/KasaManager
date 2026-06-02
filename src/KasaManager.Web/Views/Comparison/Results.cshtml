@@ -1,4 +1,5 @@
 @model KasaManager.Domain.Reports.ComparisonReport
+@using KasaManager.Domain.Reports.HesapKontrol
 @{
     ViewData["Title"] = Model.Type switch
     {
@@ -37,6 +38,26 @@
         : 0;
     
     var isReddiyat = Model.Type == KasaManager.Domain.Reports.ComparisonType.ReddiyatCikis;
+
+    string DecisionLabel(KayitDurumu? durum) => durum switch
+    {
+        KayitDurumu.Iptal => "Daha önce yoksayıldı",
+        KayitDurumu.Cozuldu => "Çözüldü",
+        KayitDurumu.Onaylandi => "Onaylandı",
+        KayitDurumu.Takipte => "Takipte",
+        KayitDurumu.Acik => "Açık",
+        _ => "Yeni tespit"
+    };
+
+    string DecisionBadgeClass(KayitDurumu? durum) => durum switch
+    {
+        KayitDurumu.Iptal => "bg-secondary",
+        KayitDurumu.Cozuldu => "bg-success",
+        KayitDurumu.Onaylandi => "bg-info",
+        KayitDurumu.Takipte => "bg-primary",
+        KayitDurumu.Acik => "bg-danger",
+        _ => "bg-warning text-dark"
+    };
 }
 
 <style>
@@ -475,6 +496,7 @@
                                             <th>Tür</th>
                                             <th class="text-end">Tutar</th>
                                             <th>Tarih</th>
+                                            <th>Hesap Kontrol</th>
                                             <th>Esas No</th>
                                             <th>Mahkeme</th>
                                             <th style="width: 50px;"></th>
@@ -490,6 +512,16 @@
                                                 <td><span class="badge bg-warning text-dark">@(surplus.DetectedType ?? "-")</span></td>
                                                 <td class="text-end fw-bold text-warning">@surplus.Tutar.ToString("N2") ₺</td>
                                                 <td>@(surplus.Tarih?.ToString("dd.MM.yyyy") ?? "-")</td>
+                                                <td>
+                                                    <span class="badge @DecisionBadgeClass(surplus.HesapKontrolDurumu)"
+                                                          title="@(surplus.HesapKontrolNotu ?? "Hesap Kontrol kararı bulunamadı")">
+                                                        @DecisionLabel(surplus.HesapKontrolDurumu)
+                                                    </span>
+                                                    @if (surplus.HesapKontrolAnalizTarihi.HasValue)
+                                                    {
+                                                        <small class="d-block text-muted">@surplus.HesapKontrolAnalizTarihi.Value.ToString("dd.MM.yyyy")</small>
+                                                    }
+                                                </td>
                                                 <td><code>@(surplus.ParsedEsasNo ?? "-")</code></td>
                                                 <td class="text-truncate" style="max-width: 150px;" title="@surplus.ParsedMahkeme">
                                                     @(surplus.ParsedMahkeme ?? "-")
@@ -502,7 +534,7 @@
                                                 </td>
                                             </tr>
                                             <tr class="collapse" id="surplus-detail-@surplusIdx">
-                                                <td colspan="7" class="bg-light">
+                                                <td colspan="8" class="bg-light">
                                                     <div class="raw-data small">@(surplus.Aciklama ?? "Açıklama yok")</div>
                                                     <small class="text-muted">Excel Satırı: @(surplus.RowIndex + 2) | @(surplus.PossibleReason)</small>
                                                 </td>
@@ -536,6 +568,7 @@
                                             <th>Birim</th>
                                             <th class="text-end">Beklenen Tutar</th>
                                             <th>Tarih</th>
+                                            <th>Hesap Kontrol</th>
                                             <th>Durum</th>
                                         </tr>
                                     </thead>
@@ -552,6 +585,16 @@
                                                 </td>
                                                 <td class="text-end fw-bold text-danger">@missing.Miktar.ToString("N2") ₺</td>
                                                 <td>@(missing.Tarih?.ToString("dd.MM.yyyy") ?? "-")</td>
+                                                <td>
+                                                    <span class="badge @DecisionBadgeClass(missing.HesapKontrolDurumu)"
+                                                          title="@(missing.HesapKontrolNotu ?? "Hesap Kontrol kararı bulunamadı")">
+                                                        @DecisionLabel(missing.HesapKontrolDurumu)
+                                                    </span>
+                                                    @if (missing.HesapKontrolAnalizTarihi.HasValue)
+                                                    {
+                                                        <small class="d-block text-muted">@missing.HesapKontrolAnalizTarihi.Value.ToString("dd.MM.yyyy")</small>
+                                                    }
+                                                </td>
                                                 <td><small class="text-muted">@(missing.Reason ?? "-")</small></td>
                                             </tr>
                                         }
