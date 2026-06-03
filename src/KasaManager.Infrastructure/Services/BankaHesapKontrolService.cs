@@ -147,14 +147,19 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
         var adayNonStopaj = adayKayitlar.Where(k => k.HesapTuru != BankaHesapTuru.Stopaj).ToList();
         var adayStopaj = adayKayitlar.Where(k => k.HesapTuru == BankaHesapTuru.Stopaj).ToList();
 
-        // ─ Mevcut Acik kayıtlar (AYNI analiz tarihi — günlük bağımsızlık) ─
-        // DÜZELTME: Eski kod TÜM tarihlerden çekiyordu → farklı günlerdeki aynı
-        // fingerprint'li kayıtlar (örn. her gün gelen EFT iade) yeni günde baskılanıyordu.
-        // Her günün banka karşılaştırması bağımsız işlemler üretir:
-        // 26.03'teki 540₺ EFT ve 27.03'teki 540₺ EFT ayrı banka hareketidir.
-        // Aynı gün tekrar analiz çalıştırıldığında mevcutlar korunur (idempotent).
+        // 90 günlük dedup penceresi — hem Acik hem İşlenmiş kayıtlar için ortak
+        var dedupWindowStart = analizTarihi.AddDays(-90);
+
+        // ─ Mevcut Acik kayıtlar — 90 günlük sliding window ─
+        // PATCH 3 FIX: Kümülatif banka dosyalarında dünün açık kaydı bugünün
+        // dosyasında tekrar gelince, eski sadece-bugün sorgusu geçmiş açık kaydı
+        // göremiyordu → aynı işlem her gün yeni satır olarak insert ediliyordu.
+        // Artık kullaniciIslemliKayitlar ile aynı 90 günlük pencere kullanılır.
+        // Multiplicity: Pool Remove() ile 1:1 tüketim — gerçekten aynı gün gelen
+        // iki ayrı 470₺ EFT varsa ikincisi yeni kayıt olarak doğru şekilde eklenir.
         var mevcutAcik = await _db.HesapKontrolKayitlari
-            .Where(x => x.AnalizTarihi == analizTarihi
+            .Where(x => x.AnalizTarihi >= dedupWindowStart
+                     && x.AnalizTarihi <= analizTarihi
                      && x.Durum == KayitDurumu.Acik
                      && x.HesapTuru != BankaHesapTuru.Stopaj)
             .ToListAsync(ct);
@@ -166,7 +171,6 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
         // üretiliyordu. Şimdi 90 günlük sliding window ile geçmiş kararlar
         // hatırlanır. Eşleştirme GetFollowIdentityFingerprint (tarih bağımsız)
         // ile yapılır — farklı günlerdeki aynı banka hareketi doğru eşleşir.
-        var dedupWindowStart = analizTarihi.AddDays(-90);
         var kullaniciIslemliKayitlar = await _db.HesapKontrolKayitlari
             .Where(x => x.AnalizTarihi >= dedupWindowStart
                       && x.AnalizTarihi <= analizTarihi
@@ -270,9 +274,16 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
                 continue; // Bu aday zaten işlenmiş (Yoksay/Çözüldü/İptal), tekrar ekleme
             }
 
-            // Sonra mevcut Acik kayıtlarda eşleşme ara
-            // (Zaten Acik olarak var — tekrar silip eklemeye gerek yok)
-            var acikMatch = mevcutAcikPool.FirstOrDefault(m => GetRecordFingerprint(m) == fp);
+            // Sonra mevcut Acik kayıtlarda eşleşme ara (tarih bağımsız)
+            // PATCH 3 FIX: GetRecordFingerprint tarih içerdiği için geçmiş günün
+            // açık kaydı eşleşmiyordu → mükerrer insert. Artık followFp ile
+            // tarih bağımsız eşleştirme yapılır; eski kayıt orijinal tarihiyle korunur.
+            // OrderBy(AnalizTarihi): Aynı fingerprint'ten birden fazla açık kayıt
+            // varsa EN ESKİ'yi korur — bugüne ait stale duplicate pool'da kalır
+            // ve stale cleanup tarafından silinir.
+            var acikMatch = mevcutAcikPool
+                .OrderBy(m => m.AnalizTarihi)
+                .FirstOrDefault(m => GetFollowIdentityFingerprint(m) == followFp);
             if (acikMatch != null)
             {
                 mevcutAcikPool.Remove(acikMatch); // Bu Acik kayıt korunacak
