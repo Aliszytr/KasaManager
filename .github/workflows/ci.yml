@@ -27,5 +27,64 @@ jobs:
 
       - name: Test
         run: dotnet test tests/KasaManager.Tests/KasaManager.Tests.csproj --no-restore --verbosity normal
-        # NOT: DB-bağımlı testler varsa InMemory/SQLite provider gerekebilir.
-        # Şu anda 155 test DB bağlantısı gerektirmiyor.
+        # NOT: [SqlServerFact] testleri (54 adet) burada KASAMANAGER_C4_SQLSERVER
+        # set edilmediği için otomatik Skip edilir (bkz. SqlServerIntegrationCollection.cs).
+        # Bunlar ayrı "integration-sql" job'unda (Windows + LocalDB) çalışır.
+
+  integration-sql:
+    name: Integration Tests (SQL Server LocalDB)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore KasaManager.sln
+
+      - name: Build (Release)
+        run: dotnet build KasaManager.sln --no-restore --configuration Release
+        # HistoricalUpdateRealBrowserFlowTests, KasaManager.Web'i ayrı bir süreç
+        # olarak src/KasaManager.Web/bin/Release/net8.0/KasaManager.Web.dll
+        # üzerinden başlatıyor; bu yüzden Release konfigürasyonu şart.
+
+      - name: Install Playwright Chromium
+        shell: pwsh
+        run: pwsh tests/KasaManager.Tests/bin/Release/net8.0/playwright.ps1 install chromium
+        # Yalnızca HistoricalUpdateRealBrowserFlowTests gerçek bir Chromium
+        # örneği başlatıyor; playwright.ps1, Microsoft.Playwright NuGet paketinin
+        # build hedefleri tarafından test çıktı klasörüne üretilir.
+
+      - name: Start SQL Server LocalDB
+        shell: pwsh
+        run: |
+          sqllocaldb info
+          sqllocaldb start MSSQLLocalDB
+          if ($LASTEXITCODE -ne 0) {
+            sqllocaldb create MSSQLLocalDB
+            sqllocaldb start MSSQLLocalDB
+          }
+          sqllocaldb info MSSQLLocalDB
+        # windows-latest runner image'ında SQL Server Express LocalDB önceden
+        # kurulu gelir; bu adım instance'ın ayakta olduğunu garanti eder,
+        # değilse oluşturup başlatır.
+
+      - name: Run SQL Server integration tests
+        shell: pwsh
+        run: dotnet test tests/KasaManager.Tests/KasaManager.Tests.csproj --no-build --configuration Release --filter "FullyQualifiedName~KasaManager.Tests.Integration.SqlServer" --verbosity normal
+        env:
+          KASAMANAGER_C4_SQLSERVER: 'Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True;TrustServerCertificate=True'
+        # TestDatabaseGuard bu base connection'dan KasaManager_C4_Test_<guid>
+        # adında tek kullanımlık bir veritabanı oluşturur (CREATE DATABASE),
+        # EF Core migration'larını uygular, test sonunda veritabanını siler.
+        # "." / "localhost" / makine adı gibi genel hedefler
+        # TestDatabaseGuard.ValidateServer tarafından kasıtlı olarak
+        # reddedilir (production/default hedef güvenliği) — yalnızca
+        # (localdb)\MSSQLLocalDB veya adlandırılmış, yerel-olmayan bir SQL
+        # Server örneği kabul edilir. Bu yüzden Ubuntu + Docker service
+        # container yerine Windows + LocalDB seçildi (detay: PR açıklaması).
