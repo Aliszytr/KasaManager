@@ -822,7 +822,7 @@ public sealed partial class KasaPreviewController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SaveReport(KasaPreviewViewModel model, CancellationToken ct)
     {
-        _log.LogWarning(
+        _log.LogDebug(
             "SAVEREPORT-DIAG: Phase=ENTRY ModelLoadedSnapshotId={ModelLoadedSnapshotId} FormLoadedSnapshotId={FormLoadedSnapshotId} RptEfGuneT={RptEfGuneT} RptEfGuneH={RptEfGuneH} Path={Path}",
             model.LoadedSnapshotId,
             Request.Form["LoadedSnapshotId"].ToString(),
@@ -1052,7 +1052,7 @@ public sealed partial class KasaPreviewController : Controller
                 snapshot, actorUserId, actorUsername ?? "Sistem", ct);
             var createdNewVersion = persistedSnapshot.Id == transientCandidateId;
             var isNoOp = !createdNewVersion;
-            _log.LogWarning(
+            _log.LogDebug(
                 "SAVEREPORT-DIAG: Phase=SAVEASYNC ModelLoadedSnapshotId={ModelLoadedSnapshotId} CandidateId={CandidateId} PersistedId={PersistedId} PersistedVersion={PersistedVersion} Result={Result}",
                 model.LoadedSnapshotId,
                 transientCandidateId,
@@ -1221,7 +1221,6 @@ public sealed partial class KasaPreviewController : Controller
     [HttpGet]
     public async Task<IActionResult> LoadSnapshot(Guid id, CancellationToken ct)
     {
-        _log.LogInformation("[SNAPSHOT-RESTORE] Phase=ENTRY SnapshotId={SnapshotId}", id);
         var snapshot = await _calcSnapshots.GetByIdAsync(id, ct);
         if (snapshot is null)
         {
@@ -1229,13 +1228,9 @@ public sealed partial class KasaPreviewController : Controller
             TempData["ErrorMessage"] = "❌ Rapor bulunamadı.";
             return RedirectToAction("Index");
         }
-        _log.LogInformation(
-            "[SNAPSHOT-RESTORE] Phase=FOUND SnapshotId={SnapshotId} Version={Version} InputsLength={InputsLength} OutputsLength={OutputsLength} RaporDataLength={RaporDataLength}",
-            snapshot.Id,
-            snapshot.Version,
-            snapshot.InputsJson?.Length ?? 0,
-            snapshot.OutputsJson?.Length ?? 0,
-            snapshot.KasaRaporDataJson?.Length ?? 0);
+        var restoreParseErrors = 0;
+        var restoredRaporFields = 0;
+        var restoreMismatches = 0;
 
         // Snapshot → KasaPreviewViewModel mapping
         var model = BuildBaseModel();
@@ -1258,6 +1253,7 @@ public sealed partial class KasaPreviewController : Controller
             try { inputs = JsonSerializer.Deserialize<Dictionary<string, decimal>>(snapshot.InputsJson) ?? new(); }
             catch (Exception ex)
             {
+                restoreParseErrors++;
                 _log.LogWarning(
                     ex,
                     "[SNAPSHOT-RESTORE] Phase=INPUTS-PARSE-FAILED SnapshotId={SnapshotId} Length={Length}",
@@ -1290,6 +1286,7 @@ public sealed partial class KasaPreviewController : Controller
             }
             catch (Exception ex)
             {
+                restoreParseErrors++;
                 _log.LogWarning(
                     ex,
                     "[SNAPSHOT-RESTORE] Phase=OUTPUTS-PARSE-FAILED SnapshotId={SnapshotId} Length={Length}",
@@ -1297,12 +1294,6 @@ public sealed partial class KasaPreviewController : Controller
                     snapshot.OutputsJson.Length);
             }
         }
-        _log.LogInformation(
-            "[SNAPSHOT-RESTORE] Phase=OUTPUTS-PARSED SnapshotId={SnapshotId} Count={Count}",
-            snapshot.Id,
-            outputs.Count);
-        LogSnapshotRestoreOutputs(outputs);
-
         // CalculationRun oluştur (sonuçlar görünsün)
         model.FormulaRun = new Domain.Calculation.CalculationRun
         {
@@ -1339,7 +1330,8 @@ public sealed partial class KasaPreviewController : Controller
 
                 if (raporData != null)
                 {
-                    LogSnapshotRestoreRaporData(raporData, outputs);
+                    (restoredRaporFields, restoreMismatches) =
+                        GetSnapshotRestoreSummary(raporData, outputs);
                     // ── Vergi Bilgileri (Kritik: Bu alanlar daha önce restore edilmiyordu) ──
                     model.VergiKasaBakiyeToplam = raporData.VergiKasa;
                     model.VergideBirikenKasa = raporData.VergideBirikenKasa;
@@ -1427,16 +1419,11 @@ public sealed partial class KasaPreviewController : Controller
                     if (!string.IsNullOrEmpty(raporData.GunlukNot))
                         model.GunlukKasaNotu = raporData.GunlukNot;
 
-                    _log.LogInformation(
-                        "LoadSnapshot KasaRaporData restore: VergiKasa={VK:N2}, VergideBiriken={VB:N2}, " +
-                        "VergiCalisanlar={VC}, Tarih={T}",
-                        raporData.VergiKasa, raporData.VergideBirikenKasa,
-                        string.Join(",", raporData.VergiCalisanlari ?? new()),
-                        raporData.Tarih);
                 }
             }
             catch (Exception ex)
             {
+                restoreParseErrors++;
                 _log.LogWarning(ex, "LoadSnapshot: KasaRaporDataJson deserialize başarısız — vergi alanları boş kalacak");
                 model.HasImmutableAuditData = false;
                 model.LoadedAuditPayloadVersion = 0;
@@ -1462,6 +1449,16 @@ public sealed partial class KasaPreviewController : Controller
         // FinansalIstisnalar'ı yükler.
         try { await HydrateCommonAsync(model, ct); }
         catch (Exception ex) { _log.LogWarning(ex, "LoadSnapshot: HydrateCommon başarısız"); }
+
+        _log.LogDebug(
+            "[SNAPSHOT-RESTORE] SnapshotId={SnapshotId} Version={Version} Inputs={Inputs} Outputs={Outputs} RaporFields={RaporFields} Mismatches={Mismatches} ParseErrors={ParseErrors}",
+            snapshot.Id,
+            snapshot.Version,
+            inputs.Count,
+            outputs.Count,
+            restoredRaporFields,
+            restoreMismatches,
+            restoreParseErrors);
 
         TempData["SuccessMessage"] = $"✅ Rapor yüklendi: {snapshot.Name} (v{snapshot.Version})";
         return View("Index", model);
@@ -1507,12 +1504,23 @@ public sealed partial class KasaPreviewController : Controller
     private void LogValueSourceDiagnostics(KasaPreviewViewModel model, string actionName)
     {
         var snapshotSource = model.LoadedSnapshotId.HasValue;
+        var formulaCount = 0;
+        var poolCount = 0;
+        var modelCount = 0;
+        var draftCount = 0;
+        var autoFillDiffCount = 0;
+        var winnerCounts = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var key in DiagnosticTargetKeys)
         {
             var formulaExists = TryGetFormulaValue(model, key, out var formulaValue);
             var poolExists = TryGetPoolValue(model, key, out var poolValue);
             var modelExists = TryGetModelValue(model, key, out var modelValue);
             var draftExists = TryGetDraftValue(model, key, out var draftValue);
+
+            if (formulaExists) formulaCount++;
+            if (poolExists) poolCount++;
+            if (modelExists) modelCount++;
+            if (draftExists) draftCount++;
 
             var hasAutoFillSignal = key is "gune_ait_eksik_fazla_tahsilat"
                 or "gune_ait_eksik_fazla_harc"
@@ -1522,6 +1530,8 @@ public sealed partial class KasaPreviewController : Controller
             var autoFillLikelyChanged = hasAutoFillSignal && modelExists && poolExists && modelValue != poolValue;
             var finalDisplayed = ResolveFinalDisplayedCandidate(model, key, formulaExists, formulaValue, poolExists, poolValue, modelExists, modelValue, draftExists, draftValue);
             var winner = EstimateWinnerSource(model, key, formulaExists, poolExists, modelExists, draftExists);
+            if (autoFillLikelyChanged) autoFillDiffCount++;
+            winnerCounts[winner] = winnerCounts.GetValueOrDefault(winner) + 1;
 
             if (actionName == "Calculate")
             {
@@ -1547,23 +1557,19 @@ public sealed partial class KasaPreviewController : Controller
                 }
             }
 
-            _log.LogInformation(
-                "[VALUE-SOURCE] Action={Action} Field={Field} FormulaExists={FormulaExists} FormulaValue={FormulaValue} PoolExists={PoolExists} PoolValue={PoolValue} ModelExists={ModelExists} ModelValue={ModelValue} DraftExists={DraftExists} DraftValue={DraftValue} SnapshotSource={SnapshotSource} HKAutoFillChanged={HKAutoFillChanged} FinalDisplayedCandidate={FinalDisplayed} WinnerSource={Winner}",
-                actionName,
-                key,
-                formulaExists,
-                formulaExists ? formulaValue : (decimal?)null,
-                poolExists,
-                poolExists ? poolValue : (decimal?)null,
-                modelExists,
-                modelExists ? modelValue : (decimal?)null,
-                draftExists,
-                draftExists ? draftValue : (decimal?)null,
-                snapshotSource,
-                autoFillLikelyChanged,
-                finalDisplayed,
-                winner);
         }
+
+        _log.LogDebug(
+            "[VALUE-SOURCE] Action={Action} Fields={Fields} Formula={Formula} Pool={Pool} Model={Model} Draft={Draft} AutoFillDiffs={AutoFillDiffs} SnapshotSource={SnapshotSource} Winners={Winners}",
+            actionName,
+            DiagnosticTargetKeys.Length,
+            formulaCount,
+            poolCount,
+            modelCount,
+            draftCount,
+            autoFillDiffCount,
+            snapshotSource,
+            string.Join(",", winnerCounts.OrderBy(pair => pair.Key).Select(pair => $"{pair.Key}:{pair.Value}")));
     }
 
     private static decimal ResolveFinalDisplayedCandidate(
@@ -1650,18 +1656,9 @@ public sealed partial class KasaPreviewController : Controller
         return true;
     }
 
-    private void LogSnapshotRestoreOutputs(Dictionary<string, decimal> outputs)
-    {
-        foreach (var key in DiagnosticTargetKeys)
-        {
-            if (outputs.TryGetValue(key, out var value))
-            {
-                _log.LogInformation("[SNAPSHOT-RESTORE] Source=OutputsJson Field={Field} Value={Value}", key, value);
-            }
-        }
-    }
-
-    private void LogSnapshotRestoreRaporData(KasaRaporData raporData, Dictionary<string, decimal> outputs)
+    private static (int RestoredFields, int MismatchCount) GetSnapshotRestoreSummary(
+        KasaRaporData raporData,
+        Dictionary<string, decimal> outputs)
     {
         var raporValues = new Dictionary<string, decimal>
         {
@@ -1674,19 +1671,15 @@ public sealed partial class KasaPreviewController : Controller
             ["dunden_eksik_fazla_harc"] = raporData.DundenEksikFazlaHarc
         };
 
-        foreach (var kv in raporValues)
-        {
-            _log.LogInformation("[SNAPSHOT-RESTORE] Source=KasaRaporDataJson Field={Field} Value={Value}", kv.Key, kv.Value);
-            if (outputs.TryGetValue(kv.Key, out var outValue) && outValue != kv.Value)
-            {
-                _log.LogWarning("[SNAPSHOT-RESTORE] OutputsJson/KasaRaporDataJson mismatch Field={Field} OutputsValue={OutputsValue} RaporDataValue={RaporDataValue}", kv.Key, outValue, kv.Value);
-            }
-        }
+        var mismatchCount = raporValues.Count(pair =>
+            outputs.TryGetValue(pair.Key, out var outputValue) && outputValue != pair.Value);
+        return (raporValues.Count, mismatchCount);
     }
 
     private void LogHiddenConsistency(string outputsJson)
     {
         var outputMap = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        var parseErrors = 0;
         if (!string.IsNullOrWhiteSpace(outputsJson) && outputsJson != "{}")
         {
             try
@@ -1708,6 +1701,7 @@ public sealed partial class KasaPreviewController : Controller
             }
             catch (Exception ex)
             {
+                parseErrors++;
                 _log.LogWarning(ex, "[HIDDEN-CONSISTENCY] SaveOutputsJson parse başarısız");
             }
         }
@@ -1723,6 +1717,8 @@ public sealed partial class KasaPreviewController : Controller
             ["dunden_eksik_fazla_harc"] = "RptEfDundenH"
         };
 
+        var comparedCount = 0;
+        var mismatchCount = 0;
         foreach (var key in DiagnosticTargetKeys)
         {
             outputMap.TryGetValue(key, out var outputValue);
@@ -1730,19 +1726,17 @@ public sealed partial class KasaPreviewController : Controller
             var hasHidden = hiddenMap.TryGetValue(key, out var hiddenName)
                             && decimal.TryParse(Request.Form[hiddenName], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out hiddenValue);
 
-            _log.LogInformation(
-                "[HIDDEN-CONSISTENCY] Field={Field} SaveOutputsValue={SaveOutputsValue} HiddenField={HiddenField} HiddenValue={HiddenValue}",
-                key,
-                outputMap.ContainsKey(key) ? outputValue : (decimal?)null,
-                hasHidden ? hiddenName : "N/A",
-                hasHidden ? hiddenValue : (decimal?)null);
-
             if (outputMap.ContainsKey(key) && hasHidden && outputValue != hiddenValue)
-            {
-                _log.LogWarning(
-                    "[HIDDEN-CONSISTENCY] Mismatch Field={Field} SaveOutputsValue={SaveOutputsValue} HiddenValue={HiddenValue}",
-                    key, outputValue, hiddenValue);
-            }
+                mismatchCount++;
+            if (outputMap.ContainsKey(key) && hasHidden)
+                comparedCount++;
         }
+
+        _log.LogDebug(
+            "[HIDDEN-CONSISTENCY] Fields={Fields} Compared={Compared} Mismatches={Mismatches} ParseErrors={ParseErrors}",
+            DiagnosticTargetKeys.Length,
+            comparedCount,
+            mismatchCount,
+            parseErrors);
     }
 }

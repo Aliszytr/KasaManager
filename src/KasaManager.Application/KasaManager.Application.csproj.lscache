@@ -174,7 +174,6 @@ Services/
  Draft/Calculators/
   AksamKasaCalculator.cs
   BankaBalanceCalculator.cs
-  SabahKasaCalculator.cs
  Draft/ExcelDataReaders/
   BankaHarcReader.cs
   BankaTahsilatReader.cs

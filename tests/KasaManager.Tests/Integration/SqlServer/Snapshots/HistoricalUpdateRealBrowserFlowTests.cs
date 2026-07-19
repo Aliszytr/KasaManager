@@ -18,7 +18,8 @@ namespace KasaManager.Tests.Integration.SqlServer.Snapshots;
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed partial class HistoricalUpdateRealBrowserFlowTests
 {
-    private static readonly DateOnly BrowserDate = new(2070, 7, 14);
+    private static readonly DateOnly MorningBrowserDate = new(2070, 7, 14);
+    private static readonly DateOnly EveningBrowserDate = new(2070, 7, 15);
     private const string Username = "e2e-historical-user";
     private const string Password = "E2e-Historical-Only-42!";
     private readonly SqlServerIntegrationFixture _fixture;
@@ -33,12 +34,21 @@ public sealed partial class HistoricalUpdateRealBrowserFlowTests
     }
 
     [SqlServerFact]
-    public async Task HistoricalUpdate_RealBrowserFlow()
+    public Task HistoricalUpdate_RealBrowserFlow() =>
+        RunHistoricalUpdateRealBrowserFlowAsync(MorningBrowserDate, KasaRaporTuru.Sabah);
+
+    [SqlServerFact]
+    public Task HistoricalUpdate_RealBrowserFlow_Aksam() =>
+        RunHistoricalUpdateRealBrowserFlowAsync(EveningBrowserDate, KasaRaporTuru.Aksam);
+
+    private async Task RunHistoricalUpdateRealBrowserFlowAsync(
+        DateOnly browserDate,
+        KasaRaporTuru kasaTuru)
     {
         Guid v1Id;
         await using (var context = _fixture.CreateContext())
         {
-            await CleanupSeedAsync(context);
+            await CleanupSeedAsync(context, browserDate);
             var user = new KasaUser
             {
                 Username = Username,
@@ -53,6 +63,8 @@ public sealed partial class HistoricalUpdateRealBrowserFlowTests
                 version: 1,
                 isActive: false,
                 user.Id,
+                browserDate,
+                kasaTuru,
                 new KasaRaporData
                 {
                     PayloadVersion = 1,
@@ -64,6 +76,8 @@ public sealed partial class HistoricalUpdateRealBrowserFlowTests
                 version: 2,
                 isActive: true,
                 user.Id,
+                browserDate,
+                kasaTuru,
                 new KasaRaporData
                 {
                     PayloadVersion = 2,
@@ -128,8 +142,8 @@ public sealed partial class HistoricalUpdateRealBrowserFlowTests
                 await using var blockedContext = _fixture.CreateContext();
                 var blockedVersions = await blockedContext.CalculatedKasaSnapshots
                     .AsNoTracking()
-                    .Where(snapshot => snapshot.RaporTarihi == BrowserDate
-                        && snapshot.KasaTuru == KasaRaporTuru.Sabah)
+                    .Where(snapshot => snapshot.RaporTarihi == browserDate
+                        && snapshot.KasaTuru == kasaTuru)
                     .OrderBy(snapshot => snapshot.Version)
                     .ToArrayAsync();
                 foreach (var blockedVersion in blockedVersions)
@@ -212,8 +226,8 @@ public sealed partial class HistoricalUpdateRealBrowserFlowTests
             await using var inspectContext = _fixture.CreateContext();
             var versions = await inspectContext.CalculatedKasaSnapshots
                 .AsNoTracking()
-                .Where(snapshot => snapshot.RaporTarihi == BrowserDate
-                    && snapshot.KasaTuru == KasaRaporTuru.Sabah)
+                .Where(snapshot => snapshot.RaporTarihi == browserDate
+                    && snapshot.KasaTuru == kasaTuru)
                 .OrderBy(snapshot => snapshot.Version)
                 .ToArrayAsync();
             Assert.Equal(3, versions.Length);
@@ -233,7 +247,16 @@ public sealed partial class HistoricalUpdateRealBrowserFlowTests
             Assert.Equal(-3000m, v3Payload!.ImmutableAudit!.GuneAitEksikFazlaTahsilat);
             Assert.Equal(-29873.80m, v3Payload.ImmutableAudit.GuneAitEksikFazlaHarc);
 
-            foreach (var line in logs.Where(line => line.Contains("SAVEREPORT-DIAG:")))
+            var saveDiagnosticLines = logs
+                .Where(line => line.Contains("SAVEREPORT-DIAG:"))
+                .ToArray();
+            Assert.Contains(saveDiagnosticLines, line => line.Contains("Phase=ENTRY"));
+            Assert.Contains(saveDiagnosticLines, line => line.Contains("Phase=SAVEASYNC"));
+            Assert.Contains(logs, line =>
+                line.Contains("[SNAPSHOT-RESTORE]") && line.Contains("ParseErrors=0"));
+            Assert.Contains(logs, line =>
+                line.Contains("[HIDDEN-CONSISTENCY]") && line.Contains("ParseErrors=0"));
+            foreach (var line in saveDiagnosticLines)
                 _output.WriteLine(line);
         }
         finally
@@ -245,7 +268,7 @@ public sealed partial class HistoricalUpdateRealBrowserFlowTests
             }
 
             await using var cleanupContext = _fixture.CreateContext();
-            await CleanupSeedAsync(cleanupContext);
+            await CleanupSeedAsync(cleanupContext, browserDate);
         }
     }
 
@@ -271,7 +294,7 @@ public sealed partial class HistoricalUpdateRealBrowserFlowTests
         startInfo.Environment["ConnectionStrings__SqlConnection"] = connection;
         startInfo.Environment["LegacyDatabase__Enabled"] = "false";
         startInfo.Environment["Logging__LogLevel__Default"] = "Warning";
-        startInfo.Environment["Logging__LogLevel__KasaManager.Web.Controllers"] = "Warning";
+        startInfo.Environment["Logging__LogLevel__KasaManager.Web.Controllers"] = "Debug";
 
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
         process.OutputDataReceived += (_, e) => { if (e.Data is not null) logs.Enqueue(e.Data); };
@@ -318,11 +341,13 @@ public sealed partial class HistoricalUpdateRealBrowserFlowTests
         int version,
         bool isActive,
         int userId,
+        DateOnly browserDate,
+        KasaRaporTuru kasaTuru,
         KasaRaporData payload) => new()
     {
         Id = Guid.NewGuid(),
-        RaporTarihi = BrowserDate,
-        KasaTuru = KasaRaporTuru.Sabah,
+        RaporTarihi = browserDate,
+        KasaTuru = kasaTuru,
         FormulaSetName = "E2E",
         CalculatedAtUtc = DateTime.UtcNow.AddMinutes(-10 + version),
         CalculatedBy = Username,
@@ -365,10 +390,12 @@ public sealed partial class HistoricalUpdateRealBrowserFlowTests
         return port;
     }
 
-    private static async Task CleanupSeedAsync(KasaManager.Infrastructure.Persistence.KasaManagerDbContext context)
+    private static async Task CleanupSeedAsync(
+        KasaManager.Infrastructure.Persistence.KasaManagerDbContext context,
+        DateOnly browserDate)
     {
         context.CalculatedKasaSnapshots.RemoveRange(
-            context.CalculatedKasaSnapshots.Where(snapshot => snapshot.RaporTarihi == BrowserDate));
+            context.CalculatedKasaSnapshots.Where(snapshot => snapshot.RaporTarihi == browserDate));
         context.KasaUsers.RemoveRange(
             context.KasaUsers.Where(user => user.Username == Username));
         await context.SaveChangesAsync();

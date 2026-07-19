@@ -603,7 +603,7 @@ public sealed partial class KasaPreviewController
             // BUG-2 FIX: CrossDay burada tekrar çağrılmıyor.
             // AnalyzeFromComparisonAsync zaten CrossDayReconcileAsync'i çalıştırır.
             // Çift çalıştırma gereksiz DB yükü ve potansiyel orphan sorunu yaratıyordu.
-            _log.LogInformation(
+            _log.LogDebug(
                 "[HK-AUTOFILL-DIFF] HasData={HasData} GuneAitEksikFazlaTahsilat: {BeforeGuneT} -> {AfterGuneT} Changed={ChangedGuneT} GuneAitEksikFazlaHarc: {BeforeGuneH} -> {AfterGuneH} Changed={ChangedGuneH} DundenEksikFazlaTahsilat: {BeforeDundenT} -> {AfterDundenT} Changed={ChangedDundenT} DundenEksikFazlaHarc: {BeforeDundenH} -> {AfterDundenH} Changed={ChangedDundenH} TakipKasaEtkisiNet={TakipKasaEtkisiNet}",
                 fill.HasData,
                 beforeGuneT, model.GuneAitEksikFazlaTahsilat, beforeGuneT != model.GuneAitEksikFazlaTahsilat,
