@@ -15,7 +15,11 @@ public interface ICalculatedKasaSnapshotService
     /// Yeni hesaplanmış kasayı kaydet.
     /// Eğer aynı tarih+kasa için aktif kayıt varsa, onu pasif yapar ve yeni versiyon oluşturur.
     /// </summary>
-    Task<CalculatedKasaSnapshot> SaveAsync(CalculatedKasaSnapshot snapshot, CancellationToken ct = default);
+    Task<CalculatedKasaSnapshot> SaveAsync(
+        CalculatedKasaSnapshot snapshot,
+        int actorUserId,
+        string? actorUsername,
+        CancellationToken ct = default);
     
     /// <summary>Tarih + Kasa Tipi ile aktif kaydı getir</summary>
     Task<CalculatedKasaSnapshot?> GetActiveAsync(DateOnly raporTarihi, KasaRaporTuru kasaTuru, CancellationToken ct = default);
@@ -33,7 +37,12 @@ public interface ICalculatedKasaSnapshotService
     /// Soft delete.
     /// Kayıt silinmez, IsDeleted=true, DeletedAtUtc ve DeletedBy set edilir.
     /// </summary>
-    Task DeleteAsync(Guid id, string? deletedBy, CancellationToken ct = default);
+    Task<SnapshotMutationResult> DeleteAsync(
+        Guid id,
+        int actorUserId,
+        bool isAdmin,
+        string? deletedBy,
+        CancellationToken ct = default);
     
     /// <summary>
     /// Son N günün kasalarını listele.
@@ -55,7 +64,11 @@ public interface ICalculatedKasaSnapshotService
     /// Belirli bir kasayı aktif yap (diğer versiyonları pasif yapar).
     /// Yanlışlıkla kayıt yapıldığında eski versiyona dönmek için.
     /// </summary>
-    Task ActivateVersionAsync(Guid id, CancellationToken ct = default);
+    Task<SnapshotMutationResult> ActivateVersionAsync(
+        Guid id,
+        int actorUserId,
+        bool isAdmin,
+        CancellationToken ct = default);
     
     /// <summary>
     /// Gelişmiş arama: İsim, açıklama, notlarda full-text + tarih aralığı + kasa tipi filtresi.
@@ -66,15 +79,34 @@ public interface ICalculatedKasaSnapshotService
     /// <summary>
     /// Soft delete geri alma. IsDeleted=false yapılır, IsActive olarak ayarlanır.
     /// </summary>
-    Task RestoreAsync(Guid id, CancellationToken ct = default);
+    Task<SnapshotMutationResult> RestoreAsync(
+        Guid id,
+        int actorUserId,
+        bool isAdmin,
+        CancellationToken ct = default);
     
     /// <summary>
     /// Rapor adı, açıklama ve notlarını günceller.
     /// </summary>
-    Task UpdateAsync(Guid id, string? name, string? description, string? notes, CancellationToken ct = default);
+    Task<SnapshotMutationResult> UpdateAsync(
+        Guid id,
+        string? name,
+        string? description,
+        string? notes,
+        int actorUserId,
+        bool isAdmin,
+        CancellationToken ct = default);
     
     /// <summary>
     /// Aktif (silinmemiş) rapor sayısını döner.
     /// </summary>
     Task<int> CountAsync(KasaRaporTuru? kasaTuru = null, CancellationToken ct = default);
+}
+
+public enum SnapshotMutationResult
+{
+    Success = 0,
+    NotFound = 1,
+    Forbidden = 2,
+    NoChange = 3
 }

@@ -1,6 +1,7 @@
 using KasaManager.Application.Abstractions;
 using KasaManager.Domain.Calculation;
 using KasaManager.Domain.FormulaEngine;
+using KasaManager.Domain.Reports.HesapKontrol;
 using KasaManager.Domain.Validation;
 
 namespace KasaManager.Web.Models;
@@ -109,6 +110,22 @@ public sealed class KasaPreviewViewModel
     public decimal? KaydenTahsilat { get; set; }
     public decimal? KaydenHarc { get; set; }
     public decimal? BankadanCekilen { get; set; }
+
+    public NegativeTahsilatWithdrawalDecision GetNegativeTahsilatWithdrawalDecision(
+        decimal rawBankayaYatirilacakTahsilat)
+    {
+        var rawShortfall = Math.Max(0m, -rawBankayaYatirilacakTahsilat);
+        var existingWithdrawal = Math.Max(0m, BankadanCekilen ?? 0m);
+        var remainingWithdrawal = Math.Max(0m, rawShortfall - existingWithdrawal);
+        var requiredTotalWithdrawal = existingWithdrawal + remainingWithdrawal;
+
+        return new NegativeTahsilatWithdrawalDecision(
+            rawShortfall,
+            existingWithdrawal,
+            remainingWithdrawal,
+            requiredTotalWithdrawal);
+    }
+
     public decimal? CesitliNedenlerleBankadanCikamayanTahsilat { get; set; }
     public decimal? BankayaGonderilmisDeger { get; set; }
     public decimal? BankayaYatirilacakHarciDegistir { get; set; }
@@ -139,6 +156,49 @@ public sealed class KasaPreviewViewModel
     /// Null ise mesaj gösterilmez.
     /// </summary>
     public string? HesapKontrolAutoFillMessage { get; set; }
+
+    // ===== Immutable Audit Availability (Faz C2) =====
+    public bool HasImmutableAuditData { get; set; }
+    public string? ImmutableAuditNotice { get; set; }
+    public int LoadedAuditPayloadVersion { get; set; }
+
+    [Microsoft.AspNetCore.Mvc.ModelBinding.BindNever]
+    public bool HasImmutableAuditRecordDetails { get; set; }
+
+    [Microsoft.AspNetCore.Mvc.ModelBinding.BindNever]
+    public string? ImmutableAuditRecordDetailsNotice { get; set; }
+
+    [Microsoft.AspNetCore.Mvc.ModelBinding.BindNever]
+    public IReadOnlyList<ImmutableAuditRecordViewModel> ImmutableAuditRecords { get; set; }
+        = Array.Empty<ImmutableAuditRecordViewModel>();
+
+    [Microsoft.AspNetCore.Mvc.ModelBinding.BindNever]
+    public ImmutableAuditRecordGroupsViewModel ImmutableAuditRecordGroups { get; set; }
+        = ImmutableAuditRecordGroupsViewModel.Empty;
+
+    public bool HasOnlyZeroLoadedImmutableAuditData =>
+        HasImmutableAuditData
+        && LoadedAuditPayloadVersion is 1 or 2
+        && GuneAitEksikFazlaTahsilat.GetValueOrDefault() == 0m
+        && GuneAitEksikFazlaHarc.GetValueOrDefault() == 0m
+        && DundenEksikFazlaTahsilat.GetValueOrDefault() == 0m
+        && DundenEksikFazlaHarc.GetValueOrDefault() == 0m
+        && DundenEksikFazlaGelenTahsilat.GetValueOrDefault() == 0m
+        && DundenEksikFazlaGelenHarc.GetValueOrDefault() == 0m
+        && TakipKasaEtkisiTahsilat.GetValueOrDefault() == 0m
+        && TakipKasaEtkisiHarc.GetValueOrDefault() == 0m
+        && TakipKasaEtkisiNet.GetValueOrDefault() == 0m
+        && TakipteEksikTahsilat == 0m
+        && TakipteEksikHarc == 0m
+        && TakipteFazlaTahsilat == 0m
+        && TakipteFazlaHarc == 0m
+        && TakipteSayisi == 0
+        && ToplamFarkTahsilat == 0m
+        && ToplamFarkHarc == 0m
+        && BeklenenTahsilat == 0m
+        && BeklenenHarc == 0m
+        && OlaganDisiTahsilat == 0m
+        && OlaganDisiHarc == 0m;
 
     // ===== Takipte Kayıt Özeti (HesapKontrol) =====
     public decimal TakipteEksikTahsilat { get; set; }
@@ -189,6 +249,7 @@ public sealed class KasaPreviewViewModel
     // User inputs (Finalize fazında DB'ye yazılacak; burada sadece doğrulama için alınır)
     public string? KasayiYapan { get; set; }
     public string? Aciklama { get; set; }
+    public string? MuhabereNo { get; set; }
 
     /// <summary>
     /// Günlük Kasa Notu: Özel durumlar, uyarılar ve notlar.
@@ -291,4 +352,45 @@ public sealed class KasaPreviewViewModel
 
     /// <summary>Faz 3: Anomali önerileri.</summary>
     public List<Application.Abstractions.AnomaliOnerisi> AnomaliOnerileri { get; set; } = new();
+}
+
+public sealed record ImmutableAuditRecordViewModel(
+    Guid KayitId,
+    DateOnly AnalizTarihi,
+    BankaHesapTuru HesapTuru,
+    KayitYonu Yon,
+    decimal Tutar,
+    KayitDurumu KaydetmeAnindakiDurum,
+    FarkSinifi Sinif,
+    string? DosyaNo,
+    string? BirimAdi,
+    string? TespitEdilenTip,
+    DateOnly? TakipBaslangicTarihi,
+    DateOnly? CozulmeTarihi,
+    DateTime? OnayTarihi);
+
+public sealed record ImmutableAuditRecordGroupsViewModel(
+    IReadOnlyList<Guid> AktifKayitlar,
+    IReadOnlyList<Guid> OncekiAciklar,
+    IReadOnlyList<Guid> BugunCozulenler,
+    IReadOnlyList<Guid> ReconciliationKayitlar,
+    IReadOnlyList<Guid> TakipteKayitlar,
+    IReadOnlyList<Guid> BugunTakipCozulenler)
+{
+    public static ImmutableAuditRecordGroupsViewModel Empty { get; } = new(
+        Array.Empty<Guid>(),
+        Array.Empty<Guid>(),
+        Array.Empty<Guid>(),
+        Array.Empty<Guid>(),
+        Array.Empty<Guid>(),
+        Array.Empty<Guid>());
+}
+
+public readonly record struct NegativeTahsilatWithdrawalDecision(
+    decimal RawShortfall,
+    decimal ExistingWithdrawal,
+    decimal RemainingWithdrawal,
+    decimal RequiredTotalWithdrawal)
+{
+    public bool ShouldShowModal => RemainingWithdrawal > 0m;
 }

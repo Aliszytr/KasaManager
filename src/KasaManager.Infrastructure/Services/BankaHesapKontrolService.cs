@@ -20,6 +20,7 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
     private readonly KasaManagerDbContext _db;
     private readonly IComparisonService _comparison;
     private readonly IImportOrchestrator _import;
+    private readonly IHesapKontrolSourceResolver _sourceResolver;
     private readonly ILogger<BankaHesapKontrolService> _logger;
     private static readonly ConcurrentDictionary<DateOnly, SemaphoreSlim> _crossDayLocks = new();
 
@@ -27,11 +28,13 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
         KasaManagerDbContext db,
         IComparisonService comparison,
         IImportOrchestrator import,
+        IHesapKontrolSourceResolver sourceResolver,
         ILogger<BankaHesapKontrolService> logger)
     {
         _db = db;
         _comparison = comparison;
         _import = import;
+        _sourceResolver = sourceResolver;
         _logger = logger;
     }
 
@@ -42,43 +45,71 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
     public async Task<HesapKontrolRapor> AnalyzeFromComparisonAsync(
         DateOnly analizTarihi,
         string uploadFolder,
+        int actorUserId,
         CancellationToken ct = default)
     {
-        _logger.LogInformation("HesapKontrol analiz başlıyor: {Tarih}", analizTarihi);
+        ValidateActorUserId(actorUserId);
+
+        var validationError = _sourceResolver is IPartialHesapKontrolSourceValidator partialValidator
+            ? partialValidator.ValidateForAnalysis(uploadFolder, analizTarihi)
+            : _sourceResolver.Validate(uploadFolder, analizTarihi);
+        if (validationError is not null)
+        {
+            _logger.LogWarning(
+                "[HK-ANALYSIS-GATE] Doğrulanmamış analiz kaynağı reddedildi. Tarih={Date} Folder={Folder} Error={Error}",
+                analizTarihi, uploadFolder, validationError);
+            throw new InvalidOperationException(
+                "Seçilen tarih için gerekli Excel kaynakları doğrulanamadı.");
+        }
+
+        _logger.LogInformation("HesapKontrol analiz başlıyor: {Tarih}, Klasör: {Folder}", analizTarihi, uploadFolder);
 
         // ═══════════════════════════════════════════════════════════
         // ADIM 1: Karşılaştırmaları çalıştır, aday kayıtları oluştur
         // ═══════════════════════════════════════════════════════════
         var adayKayitlar = new List<HesapKontrolKaydi>();
         bool analizBasarili = false;
+        var analizUyarilari = new List<string>();
 
         // ─── Tahsilat-Masraf Karşılaştırma ───
         try
         {
-            var tahsilatResult = await _comparison.CompareTahsilatMasrafAsync(uploadFolder, ct: ct);
+            var tahsilatResult = await _comparison.CompareTahsilatMasrafAsync(
+                uploadFolder, filterDate: analizTarihi, ct: ct);
             if (tahsilatResult.Ok && tahsilatResult.Value != null)
             {
                 adayKayitlar.AddRange(ConvertToKayitlar(tahsilatResult.Value, BankaHesapTuru.Tahsilat, analizTarihi, "TahsilatMasraf"));
                 analizBasarili = true;
             }
+            else
+            {
+                analizUyarilari.Add($"Tahsilat-Masraf çalıştırılamadı: {tahsilatResult.Error}");
+            }
         }
         catch (Exception ex)
         {
+            analizUyarilari.Add("Tahsilat-Masraf çalıştırılamadı.");
             _logger.LogWarning(ex, "Tahsilat-Masraf karşılaştırma başarısız (dosyalar eksik olabilir)");
         }
 
         // ─── Harcama-Harç Karşılaştırma ───
         try
         {
-            var harcResult = await _comparison.CompareHarcamaHarcAsync(uploadFolder, ct: ct);
+            var harcResult = await _comparison.CompareHarcamaHarcAsync(
+                uploadFolder, filterDate: analizTarihi, ct: ct);
             if (harcResult.Ok && harcResult.Value != null)
             {
                 adayKayitlar.AddRange(ConvertToKayitlar(harcResult.Value, BankaHesapTuru.Harc, analizTarihi, "HarcamaHarc"));
                 analizBasarili = true;
             }
+            else
+            {
+                analizUyarilari.Add($"Harcama-Harç çalıştırılamadı: {harcResult.Error}");
+            }
         }
         catch (Exception ex)
         {
+            analizUyarilari.Add("Harcama-Harç çalıştırılamadı.");
             _logger.LogWarning(ex, "Harcama-Harç karşılaştırma başarısız (dosyalar eksik olabilir)");
         }
 
@@ -91,7 +122,8 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
         var stopajDurum = new StopajVirmanDurum(false, 0, null, "Reddiyat verisi yok", StopajStatus.Error);
         try
         {
-            var reddiyatResult = await _comparison.CompareReddiyatCikisAsync(uploadFolder, ct: ct);
+            var reddiyatResult = await _comparison.CompareReddiyatCikisAsync(
+                uploadFolder, filterDate: analizTarihi, ct: ct);
             if (reddiyatResult.Ok && reddiyatResult.Value != null)
             {
                 var toplamStopaj = reddiyatResult.Value.TotalStopaj;
@@ -122,9 +154,14 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
                 });
                 analizBasarili = true;
             }
+            else
+            {
+                analizUyarilari.Add($"Reddiyat çalıştırılamadı: {reddiyatResult.Error}");
+            }
         }
         catch (Exception ex)
         {
+            analizUyarilari.Add("Reddiyat çalıştırılamadı.");
             _logger.LogWarning(ex, "Reddiyat karşılaştırma başarısız (dosyalar eksik olabilir)");
         }
 
@@ -132,9 +169,8 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
         if (!analizBasarili)
         {
             _logger.LogInformation("HesapKontrol: Hiçbir karşılaştırma başarılı olmadı, mevcut kayıtlar korunuyor.");
-            var crossDayResult = await CrossDayReconcileAsync(analizTarihi, ct);
-            return new HesapKontrolRapor(analizTarihi, 0, 0, 0, 0, 0, stopajDurum, crossDayResult.KesirEslesmeler, crossDayResult.PotansiyelEslesmeler,
-                "Karşılaştırma dosyaları bulunamadı, mevcut kayıtlar korundu.");
+            throw new InvalidOperationException(
+                "Hiçbir karşılaştırma çalıştırılamadı; mevcut kayıtlar korundu.");
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -291,6 +327,7 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
             }
 
             // Hiçbir eşleşme yok → gerçekten yeni kayıt
+            aday.CreatedByUserId = actorUserId;
             eklenecek.Add(aday);
         }
 
@@ -318,7 +355,11 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
                      && string.IsNullOrEmpty(x.OnaylayanKullanici))
             .ToListAsync(ct);
         silinecek.AddRange(dupStopajKayitlar);
-        eklenecek.AddRange(adayStopaj);
+        foreach (var stopajKaydi in adayStopaj)
+        {
+            stopajKaydi.CreatedByUserId = actorUserId;
+            eklenecek.Add(stopajKaydi);
+        }
 
         // ═══════════════════════════════════════════════════════════
         // ADIM 3: DB Güncelleme (Transaction ile atomik)
@@ -411,7 +452,10 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
                         $"(+{eklenecek.Count} yeni, -{silinecek.Count} stale). " +
                         $"Fazla: {fazla}, Eksik: {eksik}. " +
                         (kesinEslesme.Count > 0 ? $"CrossDay: {kesinEslesme.Count} kesin eşleşme. " : "") +
-                        (potansiyelEslesme.Count > 0 ? $"\u26a0\ufe0f {potansiyelEslesme.Count} kısmi eşleşme (onay bekliyor)." : "");
+                        (potansiyelEslesme.Count > 0 ? $"\u26a0\ufe0f {potansiyelEslesme.Count} kısmi eşleşme (onay bekliyor). " : "") +
+                        (analizUyarilari.Count > 0
+                            ? $"Uyarı: {string.Join(" ", analizUyarilari)}"
+                            : "");
 
         _logger.LogInformation("HesapKontrol analiz tamamlandı: {Ozet}", ozetMesaj);
 

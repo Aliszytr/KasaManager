@@ -21,6 +21,7 @@ public interface IBankaHesapKontrolService
     Task<HesapKontrolRapor> AnalyzeFromComparisonAsync(
         DateOnly analizTarihi,
         string uploadFolder,
+        int actorUserId,
         CancellationToken ct = default);
 
     /// <summary>
@@ -47,41 +48,41 @@ public interface IBankaHesapKontrolService
     /// <summary>
     /// Kullanıcı onayı ile kaydı kapatır.
     /// </summary>
-    Task<bool> ConfirmMatchAsync(Guid kayitId, string kullanici, string? not, CancellationToken ct = default);
+    Task<bool> ConfirmMatchAsync(Guid kayitId, int actorUserId, string? actorUsername, string? not, CancellationToken ct = default);
 
     /// <summary>
     /// Kaydı iptal eder.
     /// </summary>
-    Task<bool> CancelAsync(Guid kayitId, string kullanici, string? sebep, CancellationToken ct = default);
+    Task<bool> CancelAsync(Guid kayitId, int actorUserId, string? actorUsername, string? sebep, CancellationToken ct = default);
 
     /// <summary>
     /// Kaydı takibe alır: Açık → Takipte.
     /// Kullanıcı kaydın gerçek eksik/fazla olduğunu onaylar, sistem izlemeye başlar.
     /// </summary>
-    Task<bool> StartTrackingAsync(Guid kayitId, string kullanici, string? not, CancellationToken ct = default);
+    Task<bool> StartTrackingAsync(Guid kayitId, int actorUserId, string? actorUsername, string? not, CancellationToken ct = default);
 
     /// <summary>
     /// Takipteki kaydı el ile çözüldü olarak işaretler: Takipte → Onaylandı.
     /// </summary>
-    Task<bool> ResolveTrackedAsync(Guid kayitId, string kullanici, string? not, CancellationToken ct = default);
+    Task<bool> ResolveTrackedAsync(Guid kayitId, int actorUserId, string? actorUsername, string? not, CancellationToken ct = default);
 
     /// <summary>
     /// Herhangi bir kapalı/takipte kaydı geri alır.
     /// Takipte/Onaylandı/Çözüldü → Açık, İptal → Açık.
     /// </summary>
-    Task<bool> RevertAsync(Guid kayitId, string kullanici, string? sebep, CancellationToken ct = default);
+    Task<bool> RevertAsync(Guid kayitId, int actorUserId, string? actorUsername, string? sebep, CancellationToken ct = default);
 
     /// <summary>
     /// Kısmi güvenli CrossDay potansiyel eşleşmeyi kullanıcı onaylar.
     /// İki kayıt da Çözüldü olarak işaretlenir.
     /// </summary>
-    Task<bool> ApprovePotentialMatchAsync(Guid eksikKayitId, Guid fazlaKayitId, string kullanici, CancellationToken ct = default);
+    Task<bool> ApprovePotentialMatchAsync(Guid eksikKayitId, Guid fazlaKayitId, int actorUserId, string? actorUsername, CancellationToken ct = default);
 
     /// <summary>
     /// Kısmi güvenli CrossDay potansiyel eşleşmeyi kullanıcı reddeder.
     /// Eksik kayıt Takipte kalır, potansiyel eşleşme notu eklenir.
     /// </summary>
-    Task<bool> RejectPotentialMatchAsync(Guid eksikKayitId, Guid fazlaKayitId, string kullanici, CancellationToken ct = default);
+    Task<bool> RejectPotentialMatchAsync(Guid eksikKayitId, Guid fazlaKayitId, int actorUserId, string? actorUsername, CancellationToken ct = default);
 
     // ─── Sorgulama ───
 
@@ -99,6 +100,15 @@ public interface IBankaHesapKontrolService
     /// </summary>
     Task<List<HesapKontrolKaydi>> GetTrackedItemsAsync(
         BankaHesapTuru? hesapTuru = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Takipteki kayitlari secili analiz tarihine kadar olan kayit evreninden getirir.
+    /// Entity'nin mevcut durumu kullanilir; tarihsel durum gecmisi uretilmez.
+    /// </summary>
+    Task<List<HesapKontrolKaydi>> GetTrackedItemsAsync(
+        BankaHesapTuru? hesapTuru,
+        DateOnly analizTarihi,
         CancellationToken ct = default);
 
     /// <summary>
@@ -132,6 +142,12 @@ public interface IBankaHesapKontrolService
     Task<TakipOzeti> GetTrackingSummaryAsync(CancellationToken ct = default);
 
     /// <summary>
+    /// Takip ozetini secili analiz tarihine kadar olan kayit evreniyle sinirlar.
+    /// Entity'nin mevcut durumu kullanilir; tarihsel durum gecmisi uretilmez.
+    /// </summary>
+    Task<TakipOzeti> GetTrackingSummaryAsync(DateOnly analizTarihi, CancellationToken ct = default);
+
+    /// <summary>
     /// Dashboard özet bilgileri.
     /// BUG-SYNC-1 FIX: hesapTuru parametresi eklendi — OpenItems ile aynı filtreleme semantiği.
     /// </summary>
@@ -160,6 +176,14 @@ public interface IBankaHesapKontrolService
     /// HesapKontrol çalıştırılmamışsa HasData=false döner.
     /// </summary>
     Task<EksikFazlaAutoFill> GetAutoFillDataAsync(
+        DateOnly analizTarihi,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Snapshot save icin scalar ozet ve bu ozeti ureten minimum kayit
+    /// ayrintilarini ayni materialize edilmis canonical kaynaklardan dondurur.
+    /// </summary>
+    Task<HesapKontrolImmutableAuditSnapshot> GetImmutableAuditSnapshotAsync(
         DateOnly analizTarihi,
         CancellationToken ct = default);
 
@@ -378,3 +402,164 @@ public sealed record GunBazliTakip(
     int KayitSayisi,
     decimal ToplamTutar,
     string Seviye);  // "normal", "uyari", "kritik"
+
+/// <summary>
+/// Immutable snapshot JSON'una alinabilecek minimum Hesap Kontrol kayit gorunumu.
+/// EF entity, actor, aciklama/not veya kaynak dosya metadata'si tasimaz.
+/// </summary>
+public sealed record HesapKontrolImmutableAuditRecord(
+    Guid KayitId,
+    DateOnly AnalizTarihi,
+    BankaHesapTuru HesapTuru,
+    KayitYonu Yon,
+    decimal Tutar,
+    KayitDurumu KaydetmeAnindakiDurum,
+    FarkSinifi Sinif,
+    string? DosyaNo,
+    string? BirimAdi,
+    string? TespitEdilenTip,
+    DateOnly? TakipBaslangicTarihi,
+    DateOnly? CozulmeTarihi,
+    DateTime? OnayTarihi);
+
+public sealed record HesapKontrolImmutableAuditDetails(
+    IReadOnlyList<HesapKontrolImmutableAuditRecord> Records,
+    HesapKontrolImmutableAuditGroups Groups);
+
+public sealed record HesapKontrolImmutableAuditGroups(
+    IReadOnlyList<Guid> AktifKayitlar,
+    IReadOnlyList<Guid> OncekiAciklar,
+    IReadOnlyList<Guid> BugunCozulenler,
+    IReadOnlyList<Guid> ReconciliationKayitlar,
+    IReadOnlyList<Guid> TakipteKayitlar,
+    IReadOnlyList<Guid> BugunTakipCozulenler);
+
+public sealed record HesapKontrolImmutableAuditSnapshot(
+    EksikFazlaAutoFill Summary,
+    HesapKontrolImmutableAuditDetails Details);
+
+/// <summary>
+/// Save ve LoadSnapshot tarafinin paylastigi version-2 structural validation.
+/// Validation exception firlatmaz; kullaniciya tasinmayacak kisa hata kodu verir.
+/// </summary>
+public static class HesapKontrolImmutableAuditDetailsValidator
+{
+    public static bool TryValidate(
+        HesapKontrolImmutableAuditDetails? details,
+        out string? error)
+    {
+        error = null;
+        if (details is null)
+            return Fail("details-null", out error);
+        if (details.Records is null)
+            return Fail("records-null", out error);
+        if (details.Groups is null)
+            return Fail("groups-null", out error);
+
+        var groups = EnumerateGroups(details.Groups).ToArray();
+        if (groups.Any(group => group.Ids is null))
+            return Fail("group-null", out error);
+
+        var recordsById = new Dictionary<Guid, HesapKontrolImmutableAuditRecord>();
+        foreach (var record in details.Records)
+        {
+            if (record is null)
+                return Fail("record-null", out error);
+            if (record.KayitId == Guid.Empty || record.AnalizTarihi == default || record.Tutar < 0m)
+                return Fail("record-required-field", out error);
+            if (!Enum.IsDefined(record.HesapTuru)
+                || !Enum.IsDefined(record.Yon)
+                || !Enum.IsDefined(record.KaydetmeAnindakiDurum)
+                || !Enum.IsDefined(record.Sinif))
+                return Fail("record-enum", out error);
+            if (record.KaydetmeAnindakiDurum == KayitDurumu.Onaylandi
+                && record.OnayTarihi is null)
+                return Fail("approved-date-null", out error);
+            if (!recordsById.TryAdd(record.KayitId, record))
+                return Fail("record-duplicate", out error);
+        }
+
+        if (!details.Records.SequenceEqual(OrderRecords(details.Records)))
+            return Fail("record-order", out error);
+
+        var referenced = new HashSet<Guid>();
+        foreach (var group in groups)
+        {
+            var ids = group.Ids!;
+            if (ids.Count != ids.Distinct().Count())
+                return Fail($"group-duplicate:{group.Name}", out error);
+            if (!ids.SequenceEqual(ids.OrderBy(id => id)))
+                return Fail($"group-order:{group.Name}", out error);
+
+            foreach (var id in ids)
+            {
+                if (!recordsById.TryGetValue(id, out var record))
+                    return Fail($"group-reference:{group.Name}", out error);
+                if (!IsValidGroupMember(group.Name, record))
+                    return Fail($"group-predicate:{group.Name}", out error);
+                referenced.Add(id);
+            }
+        }
+
+        if (recordsById.Keys.Any(id => !referenced.Contains(id)))
+            return Fail("record-unreferenced", out error);
+
+        return true;
+    }
+
+    public static IReadOnlyList<HesapKontrolImmutableAuditRecord> OrderRecords(
+        IEnumerable<HesapKontrolImmutableAuditRecord> records) => records
+        .OrderBy(record => record.AnalizTarihi)
+        .ThenBy(record => record.HesapTuru)
+        .ThenBy(record => record.Yon)
+        .ThenBy(record => record.Sinif)
+        .ThenBy(record => record.Tutar)
+        .ThenBy(record => record.KayitId)
+        .ToArray();
+
+    private static IEnumerable<(string Name, IReadOnlyList<Guid>? Ids)> EnumerateGroups(
+        HesapKontrolImmutableAuditGroups groups)
+    {
+        yield return (nameof(groups.AktifKayitlar), groups.AktifKayitlar);
+        yield return (nameof(groups.OncekiAciklar), groups.OncekiAciklar);
+        yield return (nameof(groups.BugunCozulenler), groups.BugunCozulenler);
+        yield return (nameof(groups.ReconciliationKayitlar), groups.ReconciliationKayitlar);
+        yield return (nameof(groups.TakipteKayitlar), groups.TakipteKayitlar);
+        yield return (nameof(groups.BugunTakipCozulenler), groups.BugunTakipCozulenler);
+    }
+
+    private static bool IsValidGroupMember(
+        string groupName,
+        HesapKontrolImmutableAuditRecord record) => groupName switch
+        {
+            nameof(HesapKontrolImmutableAuditGroups.AktifKayitlar) =>
+                record.HesapTuru != BankaHesapTuru.Stopaj
+                && record.KaydetmeAnindakiDurum is KayitDurumu.Acik or KayitDurumu.Takipte,
+            nameof(HesapKontrolImmutableAuditGroups.OncekiAciklar) =>
+                record.HesapTuru != BankaHesapTuru.Stopaj
+                && record.Sinif != FarkSinifi.Beklenen
+                && record.KaydetmeAnindakiDurum is KayitDurumu.Acik or KayitDurumu.Takipte,
+            nameof(HesapKontrolImmutableAuditGroups.BugunCozulenler) =>
+                record.CozulmeTarihi.HasValue
+                && record.Sinif != FarkSinifi.Beklenen
+                && record.KaydetmeAnindakiDurum == KayitDurumu.Cozuldu,
+            nameof(HesapKontrolImmutableAuditGroups.ReconciliationKayitlar) =>
+                record.Sinif == FarkSinifi.Askida
+                && record.KaydetmeAnindakiDurum is KayitDurumu.Cozuldu or KayitDurumu.Onaylandi,
+            nameof(HesapKontrolImmutableAuditGroups.TakipteKayitlar) =>
+                record.HesapTuru != BankaHesapTuru.Stopaj
+                && record.KaydetmeAnindakiDurum == KayitDurumu.Takipte,
+            nameof(HesapKontrolImmutableAuditGroups.BugunTakipCozulenler) =>
+                record.HesapTuru != BankaHesapTuru.Stopaj
+                && record.TakipBaslangicTarihi.HasValue
+                && record.CozulmeTarihi.HasValue
+                && record.KaydetmeAnindakiDurum is KayitDurumu.Cozuldu or KayitDurumu.Onaylandi,
+            _ => false
+        };
+
+    private static bool Fail(string value, out string? error)
+    {
+        error = value;
+        return false;
+    }
+}

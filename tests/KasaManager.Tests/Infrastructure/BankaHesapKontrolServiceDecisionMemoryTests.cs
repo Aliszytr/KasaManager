@@ -135,10 +135,16 @@ public sealed class BankaHesapKontrolServiceDecisionMemoryTests
 
     private static BankaHesapKontrolService CreateService(KasaManagerDbContext db)
     {
+        var sourceResolver = new Mock<IHesapKontrolSourceResolver>();
+        sourceResolver
+            .Setup(r => r.Validate(It.IsAny<string>(), It.IsAny<DateOnly>()))
+            .Returns((string?)null);
+
         return new BankaHesapKontrolService(
             db,
             Mock.Of<IComparisonService>(),
             Mock.Of<IImportOrchestrator>(),
+            sourceResolver.Object,
             NullLogger<BankaHesapKontrolService>.Instance);
     }
 

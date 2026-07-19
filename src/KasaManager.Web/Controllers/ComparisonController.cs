@@ -324,11 +324,17 @@ public class ComparisonController : Controller
         memoryDate = date;
         var archiveFolder = _archiveService.GetArchiveFolder(baseFolder, date);
         if (archiveFolder != null)
+        {
+            // Arşiv klasörü tek güne ait olsa da rapor tarih bağlamını koru.
+            // Böylece sonuç ekranındaki sonraki POST aynı tarihi güvenle taşır.
+            filterDate = date;
             return archiveFolder;
+        }
 
-        // Arşiv klasörü yoksa mevcut dosyalarda tarih filtresi uygula (geriye uyumluluk)
+        // Historical istek current klasöre sessizce düşmez. Beklenen canonical
+        // arşiv yolunu döndür; karşılaştırma servisi eksik kaynağı açıkça raporlar.
         filterDate = date;
-        return baseFolder;
+        return Path.Combine(baseFolder, "archive", date.ToString("yyyy-MM-dd"));
     }
 }
 

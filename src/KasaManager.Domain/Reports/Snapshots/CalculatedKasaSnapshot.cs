@@ -30,6 +30,9 @@ public sealed class CalculatedKasaSnapshot
     
     /// <summary>Hesaplamayı yapan kullanıcı</summary>
     public string? CalculatedBy { get; set; }
+
+    /// <summary>Snapshot'ı oluşturan interactive actor'ın stabil kullanıcı ID'si</summary>
+    public int? CalculatedByUserId { get; set; }
     
     /// <summary>Versiyon (aynı tarih+kasa için birden fazla kayıt olabilir)</summary>
     public int Version { get; set; } = 1;
@@ -45,6 +48,9 @@ public sealed class CalculatedKasaSnapshot
     
     /// <summary>Silen kullanıcı</summary>
     public string? DeletedBy { get; set; }
+
+    /// <summary>Soft delete işlemini yapan Admin actor'ın stabil kullanıcı ID'si</summary>
+    public int? DeletedByUserId { get; set; }
     
     /// <summary>Input değerleri JSON (ham veriler - formüle giren)</summary>
     public string InputsJson { get; set; } = "{}";

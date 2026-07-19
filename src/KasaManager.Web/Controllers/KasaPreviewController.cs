@@ -32,6 +32,8 @@ public sealed partial class KasaPreviewController : Controller
     private readonly IKasaReportDateRulesService _dateRules;
     private readonly IKasaGlobalDefaultsService _globalDefaults;
     private readonly IBankaHesapKontrolService _hesapKontrol;
+    private readonly ICurrentUser _currentUser;
+    private readonly IHesapKontrolSourceResolver _hesapKontrolSourceResolver;
     private readonly IReportDataBuilder _reportBuilder;
     private readonly IExportService _exportService;
     private readonly IKasaValidationService _validation;
@@ -67,6 +69,8 @@ public sealed partial class KasaPreviewController : Controller
 
         IKasaGlobalDefaultsService globalDefaults,
         IBankaHesapKontrolService hesapKontrol,
+        ICurrentUser currentUser,
+        IHesapKontrolSourceResolver hesapKontrolSourceResolver,
         IReportDataBuilder reportBuilder,
         IExportService exportService,
         IKasaValidationService validation,
@@ -89,6 +93,8 @@ public sealed partial class KasaPreviewController : Controller
 
         _globalDefaults = globalDefaults;
         _hesapKontrol = hesapKontrol;
+        _currentUser = currentUser;
+        _hesapKontrolSourceResolver = hesapKontrolSourceResolver;
         _reportBuilder = reportBuilder;
         _exportService = exportService;
         _validation = validation;
@@ -101,6 +107,27 @@ public sealed partial class KasaPreviewController : Controller
         _readModelService = readModelService;
         _calcSnapshots = calcSnapshots;
         _raporSnapshots = raporSnapshots;
+    }
+
+    private bool TryResolveSnapshotActor(
+        out int actorUserId,
+        out string? actorUsername,
+        out bool isAdmin)
+    {
+        try
+        {
+            actorUserId = _currentUser.RequireAuthenticatedUserId();
+            actorUsername = _currentUser.Username;
+            isAdmin = _currentUser.IsInRole("Admin");
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            actorUserId = default;
+            actorUsername = null;
+            isAdmin = false;
+            return false;
+        }
     }
 
 
@@ -446,10 +473,7 @@ public sealed partial class KasaPreviewController : Controller
         // Kullanıcı uyarısı: HasData=true ama sonuç üretilemedi
         if (model.IsDataLoaded && poolCountBeforeCleanup > 0)
         {
-            TempData["ErrorMessage"] =
-                "Veriler yüklendi ancak bu mod için hesaplama sonucu üretilemedi. " +
-                "Lütfen Akşam Kasa Modu (Mesai Sonu / Tam Gün) seçimini ve yüklenen dosya setini kontrol edin. " +
-                "Eski sonuçlar güvenlik nedeniyle gösterilmedi.";
+            TempData["ErrorMessage"] = BuildLoadDataResultWarning(model.KasaType);
         }
         else if (!model.IsDataLoaded)
         {
@@ -489,6 +513,9 @@ public sealed partial class KasaPreviewController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> LoadAndCalculate(KasaPreviewViewModel model, CancellationToken ct)
     {
+        if (!TryResolveHesapKontrolActor(out var actorUserId))
+            return Unauthorized();
+
         // ── 1. Genel Kasa tarihleri fallback ──
         if (!model.GenelKasaStartDate.HasValue)
         {
@@ -511,6 +538,8 @@ public sealed partial class KasaPreviewController : Controller
         await ApplyAutoVergiKasaFromDefaultsAsync(model, ct);
         var dto = model.ToDto();
         var uploadPath = ResolveUploadFolderAbsolute();
+        var sourceContextBefore = await CaptureKasaDraftSourceContextAsync(
+            uploadPath, model.SelectedDate, model.KasaType, ct);
 
         // ── 2. Veri Yükle (LoadData logic) ──
         var effectiveKasaType = !string.IsNullOrEmpty(model.KasaType) ? model.KasaType : "Aksam";
@@ -519,22 +548,13 @@ public sealed partial class KasaPreviewController : Controller
         await _orchestrator.HydrateDbFormulaSetsAsync(dto, ct);
         model.UpdateFromDto(dto);
 
-        var isSabahLC = model.KasaType?.Equals("Sabah", StringComparison.OrdinalIgnoreCase) == true;
         var isAksamTamGunLC = model.KasaType?.Equals("Aksam", StringComparison.OrdinalIgnoreCase) == true
                               && !model.AksamMesaiSonuModu;
-        if (isSabahLC || isAksamTamGunLC)
+        if (isAksamTamGunLC)
         {
-            try
-            {
-                var analizTarihi = model.SelectedDate ?? DateOnly.FromDateTime(DateTime.Now);
-                var rapor = await _hesapKontrol.AnalyzeFromComparisonAsync(analizTarihi, uploadPath, ct);
-                _log.LogInformation("HesapKontrol analiz tamamlandı: {Ozet}", rapor.OzetMesaj);
-                await TryAutoFillEksikFazlaAsync(model, ct);
-            }
-            catch (Exception ex)
-            {
-                _log.LogWarning(ex, "HesapKontrol otomatik analiz başarısız, sonuçlar etkilenmedi");
-            }
+            var analizTarihi = model.SelectedDate ?? DateOnly.FromDateTime(DateTime.Now);
+            await TryRunHesapKontrolAnalysisAsync(
+                model, analizTarihi, uploadPath, nameof(LoadAndCalculate), actorUserId, ct);
         }
 
         _log.LogDebug(
@@ -567,7 +587,12 @@ public sealed partial class KasaPreviewController : Controller
             var userNameLC = User.Identity?.Name ?? "anonymous";
             _log.LogInformation("KasaDraft SAVE (LoadAndCalc): User={User}, KasaType={KT}, HasResults={HR}",
                 userNameLC, effectiveKasaType, model.HasResults);
-            await KasaDraftCacheHelper.SaveDraftAsync(userNameLC, effectiveKasaType, model, _log);
+            var sourceContext = model.HasResults && model.Errors.Count == 0
+                ? await VerifyKasaDraftSourceContextAsync(
+                    sourceContextBefore, uploadPath, model.SelectedDate, effectiveKasaType, ct)
+                : null;
+            await KasaDraftCacheHelper.SaveDraftAsync(
+                userNameLC, effectiveKasaType, model, _log, sourceContext);
         }
         catch (Exception ex) { _log.LogError(ex, "KasaDraft SAVE (LoadAndCalc) HATA"); }
 
@@ -590,6 +615,9 @@ public sealed partial class KasaPreviewController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Calculate(KasaPreviewViewModel model, CancellationToken ct)
     {
+        if (!TryResolveHesapKontrolActor(out var actorUserId))
+            return Unauthorized();
+
         _log.LogDebug("Calculate entered: KasaType={KasaType}, HasResults={HasResults}", model.KasaType, model.HasResults);
         // Genel Kasa tarihleri: hidden field'dan model binding başarısız olabilir
         if (!model.GenelKasaStartDate.HasValue)
@@ -607,23 +635,16 @@ public sealed partial class KasaPreviewController : Controller
         await HydrateVergideBirikenSeedAsync(model, ct);
         await ApplyAutoVergiKasaFromDefaultsAsync(model, ct);
         var uploadPath = ResolveUploadFolderAbsolute();
+        var sourceContextBefore = await CaptureKasaDraftSourceContextAsync(
+            uploadPath, model.SelectedDate, model.KasaType, ct);
 
-        var isSabah = model.KasaType?.Equals("Sabah", StringComparison.OrdinalIgnoreCase) == true;
         var isAksamTamGun = model.KasaType?.Equals("Aksam", StringComparison.OrdinalIgnoreCase) == true
                             && !model.AksamMesaiSonuModu;
-        if (isSabah || isAksamTamGun)
+        if (isAksamTamGun)
         {
-            try
-            {
-                var analizTarihi = model.SelectedDate ?? DateOnly.FromDateTime(DateTime.Now);
-                var rapor = await _hesapKontrol.AnalyzeFromComparisonAsync(analizTarihi, uploadPath, ct);
-                _log.LogInformation("HesapKontrol analiz tamamlandı: {Ozet}", rapor.OzetMesaj);
-                await TryAutoFillEksikFazlaAsync(model, ct);
-            }
-            catch (Exception ex)
-            {
-                _log.LogWarning(ex, "HesapKontrol otomatik analiz başarısız, sonuçlar etkilenmedi");
-            }
+            var analizTarihi = model.SelectedDate ?? DateOnly.FromDateTime(DateTime.Now);
+            await TryRunHesapKontrolAnalysisAsync(
+                model, analizTarihi, uploadPath, nameof(Calculate), actorUserId, ct);
         }
 
         _log.LogDebug(
@@ -662,7 +683,12 @@ public sealed partial class KasaPreviewController : Controller
             _log.LogInformation("KasaDraft SAVE başlıyor: User={User}, KasaType={KT}, HasResults={HR}, Drafts={D}, FormulaRun={FR}",
                 userName, effectiveKasaType, model.HasResults,
                 model.Drafts != null, model.FormulaRun != null);
-            await KasaDraftCacheHelper.SaveDraftAsync(userName, effectiveKasaType, model, _log);
+            var sourceContext = model.HasResults && model.Errors.Count == 0
+                ? await VerifyKasaDraftSourceContextAsync(
+                    sourceContextBefore, uploadPath, model.SelectedDate, effectiveKasaType, ct)
+                : null;
+            await KasaDraftCacheHelper.SaveDraftAsync(
+                userName, effectiveKasaType, model, _log, sourceContext);
             _log.LogInformation("KasaDraft SAVE tamamlandı: {KasaType}", effectiveKasaType);
         }
         catch (Exception ex)
@@ -796,6 +822,17 @@ public sealed partial class KasaPreviewController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SaveReport(KasaPreviewViewModel model, CancellationToken ct)
     {
+        _log.LogWarning(
+            "SAVEREPORT-DIAG: Phase=ENTRY ModelLoadedSnapshotId={ModelLoadedSnapshotId} FormLoadedSnapshotId={FormLoadedSnapshotId} RptEfGuneT={RptEfGuneT} RptEfGuneH={RptEfGuneH} Path={Path}",
+            model.LoadedSnapshotId,
+            Request.Form["LoadedSnapshotId"].ToString(),
+            Request.Form["RptEfGuneT"].ToString(),
+            Request.Form["RptEfGuneH"].ToString(),
+            model.LoadedSnapshotId.HasValue ? "historical" : "live");
+
+        if (!TryResolveSnapshotActor(out var actorUserId, out var actorUsername, out _))
+            return Unauthorized();
+
         try
         {
             var raporAdi = Request.Form["SaveRaporAdi"].ToString().Trim();
@@ -861,7 +898,6 @@ public sealed partial class KasaPreviewController : Controller
 
             // KasaRaporData oluştur ve serialize et
             var kasaRaporData = await BuildKasaRaporDataAsync(model, includeUstRapor: true, ct);
-            var kasaRaporDataJson = JsonSerializer.Serialize(kasaRaporData, new JsonSerializerOptions { WriteIndented = false });
 
             // Auto-generate name if empty
             if (string.IsNullOrWhiteSpace(raporAdi))
@@ -890,11 +926,105 @@ public sealed partial class KasaPreviewController : Controller
                 });
             }
 
+            (KasaImmutableAuditData Summary, HesapKontrolImmutableAuditDetails Details)
+                immutableAudit;
+            var immutableAuditPayloadVersion = 2;
+            if (model.LoadedSnapshotId.HasValue)
+            {
+                var sourceSnapshot = await _calcSnapshots.GetByIdAsync(
+                    model.LoadedSnapshotId.Value, ct);
+                if (sourceSnapshot is null || sourceSnapshot.IsDeleted)
+                {
+                    return Json(new
+                    {
+                        ok = false,
+                        needsConfirmation = false,
+                        message = "Tarihsel kaynak snapshot bulunamadı veya silinmiş; kayıt güvenlik için yapılmadı."
+                    });
+                }
+
+                if (sourceSnapshot.RaporTarihi != tarih
+                    || sourceSnapshot.KasaTuru != kasaTuruEnum)
+                {
+                    return Json(new
+                    {
+                        ok = false,
+                        needsConfirmation = false,
+                        message = "Tarihsel kaynak snapshot tarih veya kasa zinciriyle eşleşmiyor; kayıt güvenlik için yapılmadı."
+                    });
+                }
+
+                if (!TryReadHistoricalImmutableAudit(
+                        sourceSnapshot.KasaRaporDataJson,
+                        out immutableAudit,
+                        out immutableAuditPayloadVersion,
+                        out var auditError))
+                {
+                    _log.LogWarning(
+                        "[KASA-SNAPSHOT-SAVE] Tarihsel kaynak audit doğrulanamadı. Snapshot={SnapshotId} Date={Date} KasaType={KasaType} Error={Error}",
+                        sourceSnapshot.Id, tarih, kasaTuruEnum, auditError);
+                    return Json(new
+                    {
+                        ok = false,
+                        needsConfirmation = false,
+                        message = "Tarihsel kaynak snapshot V2 audit verisi güvenle doğrulanamadı; kayıt yapılmadı."
+                    });
+                }
+            }
+            else
+            {
+                // Yeni/live save: scalar audit ve kayıt ayrıntıları aynı
+                // server-side canonical HK source setlerinden üretilir.
+                immutableAudit = await BuildImmutableAuditAsync(tarih, ct);
+            }
+
+            kasaRaporData.PayloadVersion = immutableAuditPayloadVersion;
+            kasaRaporData.ImmutableAudit = immutableAudit.Summary;
+            kasaRaporData.ImmutableAuditDetails = immutableAuditPayloadVersion == 2
+                ? JsonSerializer.SerializeToElement(immutableAudit.Details)
+                : null;
+            kasaRaporData.GuneAitEksikFazlaTahsilat = immutableAudit.Summary.GuneAitEksikFazlaTahsilat;
+            kasaRaporData.GuneAitEksikFazlaHarc = immutableAudit.Summary.GuneAitEksikFazlaHarc;
+            kasaRaporData.DundenEksikFazlaTahsilat = immutableAudit.Summary.OncekiGunAcikTahsilat;
+            kasaRaporData.DundenEksikFazlaHarc = immutableAudit.Summary.OncekiGunAcikHarc;
+            kasaRaporData.DundenEksikFazlaGelenTahsilat = immutableAudit.Summary.BugunCozulenTahsilat;
+            kasaRaporData.DundenEksikFazlaGelenHarc = immutableAudit.Summary.BugunCozulenHarc;
+
+            var consistentOutputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            using (var outputsDocument = JsonDocument.Parse(outputsJson))
+            {
+                foreach (var property in outputsDocument.RootElement.EnumerateObject())
+                {
+                    consistentOutputs[property.Name] = property.Value.ValueKind == JsonValueKind.String
+                        ? property.Value.GetString() ?? string.Empty
+                        : property.Value.GetRawText();
+                }
+            }
+            consistentOutputs["gune_ait_eksik_fazla_tahsilat"] = immutableAudit.Summary.GuneAitEksikFazlaTahsilat.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            consistentOutputs["gune_ait_eksik_fazla_harc"] = immutableAudit.Summary.GuneAitEksikFazlaHarc.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            consistentOutputs["dunden_eksik_fazla_tahsilat"] = immutableAudit.Summary.OncekiGunAcikTahsilat.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            consistentOutputs["dunden_eksik_fazla_harc"] = immutableAudit.Summary.OncekiGunAcikHarc.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            consistentOutputs["dunden_eksik_fazla_gelen_tahsilat"] = immutableAudit.Summary.BugunCozulenTahsilat.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            consistentOutputs["dunden_eksik_fazla_gelen_harc"] = immutableAudit.Summary.BugunCozulenHarc.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            outputsJson = JsonSerializer.Serialize(consistentOutputs);
+
+            var kasaRaporDataJson = JsonSerializer.Serialize(
+                kasaRaporData,
+                new JsonSerializerOptions { WriteIndented = false });
+            var persistencePayload = System.Text.Json.Nodes.JsonNode
+                .Parse(kasaRaporDataJson)?.AsObject()
+                ?? throw new InvalidOperationException("Snapshot persistence payload could not be created.");
+            persistencePayload.Remove(nameof(KasaRaporData.KasayiYapan));
+            persistencePayload.Remove(nameof(KasaRaporData.Aciklama));
+            persistencePayload.Remove(nameof(KasaRaporData.GunlukNot));
+            kasaRaporDataJson = persistencePayload.ToJsonString(
+                new JsonSerializerOptions { WriteIndented = false });
+
             var snapshot = new CalculatedKasaSnapshot
             {
                 RaporTarihi = tarih, KasaTuru = kasaTuruEnum,
                 Name = raporAdi, Notes = raporNot,
-                CalculatedBy = model.KasayiYapan ?? "Sistem",
+                CalculatedBy = actorUsername ?? "Sistem",
                 InputsJson = !string.IsNullOrWhiteSpace(inputsJson) ? inputsJson : "{}",
                 OutputsJson = !string.IsNullOrWhiteSpace(outputsJson) ? outputsJson : "{}",
                 KasaRaporDataJson = kasaRaporDataJson,
@@ -919,7 +1049,18 @@ public sealed partial class KasaPreviewController : Controller
                 _log.LogWarning(ex, "Snapshot'a Financial Exceptions summary eklenemedi");
             }
 
-            await _calcSnapshots.SaveAsync(snapshot, ct);
+            var transientCandidateId = snapshot.Id;
+            var persistedSnapshot = await _calcSnapshots.SaveAsync(
+                snapshot, actorUserId, actorUsername ?? "Sistem", ct);
+            var createdNewVersion = persistedSnapshot.Id == transientCandidateId;
+            var isNoOp = !createdNewVersion;
+            _log.LogWarning(
+                "SAVEREPORT-DIAG: Phase=SAVEASYNC ModelLoadedSnapshotId={ModelLoadedSnapshotId} CandidateId={CandidateId} PersistedId={PersistedId} PersistedVersion={PersistedVersion} Result={Result}",
+                model.LoadedSnapshotId,
+                transientCandidateId,
+                persistedSnapshot.Id,
+                persistedSnapshot.Version,
+                isNoOp ? "no-op" : "new-version");
 
             // Draft cache temizle — veriler artık DB'de
             try
@@ -929,20 +1070,29 @@ public sealed partial class KasaPreviewController : Controller
             }
             catch (Exception ex) { _log.LogDebug(ex, "Draft cache temizleme başarısız (rapor kaydı etkilenmedi)"); }
 
-            var isUpdate = existingActive != null;
-            var actionWord = isUpdate ? "güncellendi" : "kaydedildi";
+            var isUpdate = existingActive != null && createdNewVersion;
+            var saveOutcome = isNoOp
+                ? "mevcut sürüm yeniden kullanıldı"
+                : isUpdate ? "yeni sürüm oluşturuldu" : "ilk sürüm oluşturuldu";
 
-            _log.LogInformation("Rapor {Action}: {Name}, Tarih={Tarih}, Tip={Tip}, v{Version}, Id={Id}",
-                actionWord, snapshot.Name, snapshot.RaporTarihi, snapshot.KasaTuru, snapshot.Version, snapshot.Id);
+            _log.LogInformation(
+                "Rapor kaydetme sonucu: {Outcome}, {Name}, Tarih={Tarih}, Tip={Tip}, v{Version}, Id={Id}",
+                saveOutcome, persistedSnapshot.Name, persistedSnapshot.RaporTarihi,
+                persistedSnapshot.KasaTuru, persistedSnapshot.Version, persistedSnapshot.Id);
 
             return Json(new
             {
                 ok = true,
-                message = isUpdate
-                    ? $"✅ {tarih:dd.MM.yyyy} tarihli rapor güncellendi → v{snapshot.Version}"
-                    : $"✅ Rapor başarıyla kaydedildi: {snapshot.Name} (v{snapshot.Version})",
-                redirectUrl = Url.Action("LoadSnapshot", new { id = snapshot.Id }),
-                version = snapshot.Version, isUpdate
+                message = isNoOp
+                    ? $"✅ Finansal değişiklik yok; mevcut v{persistedSnapshot.Version} kullanıldı."
+                    : isUpdate
+                        ? $"✅ {persistedSnapshot.RaporTarihi:dd.MM.yyyy} tarihli rapor için v{persistedSnapshot.Version} oluşturuldu."
+                        : $"✅ Rapor başarıyla kaydedildi: {persistedSnapshot.Name} (v{persistedSnapshot.Version})",
+                redirectUrl = Url.Action("LoadSnapshot", new { id = persistedSnapshot.Id }),
+                version = persistedSnapshot.Version,
+                isUpdate,
+                isNoOp,
+                createdNewVersion
             });
         }
         catch (Exception ex)
@@ -1073,12 +1223,21 @@ public sealed partial class KasaPreviewController : Controller
     [HttpGet]
     public async Task<IActionResult> LoadSnapshot(Guid id, CancellationToken ct)
     {
+        _log.LogInformation("[SNAPSHOT-RESTORE] Phase=ENTRY SnapshotId={SnapshotId}", id);
         var snapshot = await _calcSnapshots.GetByIdAsync(id, ct);
         if (snapshot is null)
         {
+            _log.LogWarning("[SNAPSHOT-RESTORE] Phase=NOT-FOUND SnapshotId={SnapshotId}", id);
             TempData["ErrorMessage"] = "❌ Rapor bulunamadı.";
             return RedirectToAction("Index");
         }
+        _log.LogInformation(
+            "[SNAPSHOT-RESTORE] Phase=FOUND SnapshotId={SnapshotId} Version={Version} InputsLength={InputsLength} OutputsLength={OutputsLength} RaporDataLength={RaporDataLength}",
+            snapshot.Id,
+            snapshot.Version,
+            snapshot.InputsJson?.Length ?? 0,
+            snapshot.OutputsJson?.Length ?? 0,
+            snapshot.KasaRaporDataJson?.Length ?? 0);
 
         // Snapshot → KasaPreviewViewModel mapping
         var model = BuildBaseModel();
@@ -1099,33 +1258,51 @@ public sealed partial class KasaPreviewController : Controller
         if (!string.IsNullOrWhiteSpace(snapshot.InputsJson))
         {
             try { inputs = JsonSerializer.Deserialize<Dictionary<string, decimal>>(snapshot.InputsJson) ?? new(); }
-            catch { /* bad json — devam */ }
+            catch (Exception ex)
+            {
+                _log.LogWarning(
+                    ex,
+                    "[SNAPSHOT-RESTORE] Phase=INPUTS-PARSE-FAILED SnapshotId={SnapshotId} Length={Length}",
+                    snapshot.Id,
+                    snapshot.InputsJson.Length);
+            }
         }
         if (!string.IsNullOrWhiteSpace(snapshot.OutputsJson))
         {
-            // OutputsJson iki formatta olabilir:
-            // 1. Dictionary<string,decimal> → {"key":1234.56}
-            // 2. Dictionary<string,string>  → {"key":"1234.56"} (ExtractOutputsForSnapshot)
-            // Her ikisini de destekliyoruz:
-            try { outputs = JsonSerializer.Deserialize<Dictionary<string, decimal>>(snapshot.OutputsJson) ?? new(); }
-            catch
+            try
             {
-                try
+                using var outputsDocument = JsonDocument.Parse(snapshot.OutputsJson);
+                foreach (var property in outputsDocument.RootElement.EnumerateObject())
                 {
-                    var stringDict = JsonSerializer.Deserialize<Dictionary<string, string>>(snapshot.OutputsJson);
-                    if (stringDict != null)
+                    if (property.Value.ValueKind == JsonValueKind.Number
+                        && property.Value.TryGetDecimal(out var numericValue))
                     {
-                        foreach (var kv in stringDict)
-                        {
-                            if (decimal.TryParse(kv.Value, System.Globalization.NumberStyles.Any,
-                                System.Globalization.CultureInfo.InvariantCulture, out var d))
-                                outputs[kv.Key] = d;
-                        }
+                        outputs[property.Name] = numericValue;
+                    }
+                    else if (property.Value.ValueKind == JsonValueKind.String
+                             && decimal.TryParse(
+                                 property.Value.GetString(),
+                                 System.Globalization.NumberStyles.Any,
+                                 System.Globalization.CultureInfo.InvariantCulture,
+                                 out var stringValue))
+                    {
+                        outputs[property.Name] = stringValue;
                     }
                 }
-                catch { /* tamamen okunamayan json — boş outputs ile devam */ }
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(
+                    ex,
+                    "[SNAPSHOT-RESTORE] Phase=OUTPUTS-PARSE-FAILED SnapshotId={SnapshotId} Length={Length}",
+                    snapshot.Id,
+                    snapshot.OutputsJson.Length);
             }
         }
+        _log.LogInformation(
+            "[SNAPSHOT-RESTORE] Phase=OUTPUTS-PARSED SnapshotId={SnapshotId} Count={Count}",
+            snapshot.Id,
+            outputs.Count);
         LogSnapshotRestoreOutputs(outputs);
 
         // CalculationRun oluştur (sonuçlar görünsün)
@@ -1139,6 +1316,14 @@ public sealed partial class KasaPreviewController : Controller
 
         model.HasResults = true;
         model.IsDataLoaded = true;
+        model.HasImmutableAuditData = false;
+        model.LoadedAuditPayloadVersion = 0;
+        model.ImmutableAuditNotice =
+            "Bu eski raporda takip ve fark audit ayrıntıları saklanmamıştır.";
+        model.HasImmutableAuditRecordDetails = false;
+        model.ImmutableAuditRecordDetailsNotice = null;
+        model.ImmutableAuditRecords = Array.Empty<ImmutableAuditRecordViewModel>();
+        model.ImmutableAuditRecordGroups = ImmutableAuditRecordGroupsViewModel.Empty;
 
         // ══════════════════════════════════════════════════════════════
         // KasaRaporDataJson → ViewModel: Tüm UI alanlarını restore et.
@@ -1163,13 +1348,66 @@ public sealed partial class KasaPreviewController : Controller
                     model.VergidenGelen = raporData.VergidenGelen;
                     model.VergiKasaVeznedarlar = raporData.VergiCalisanlari ?? new();
 
-                    // ── Eksik/Fazla (Sabah Kasa) ──
+                    // ── Legacy top-level Eksik/Fazla alanları ──
+                    // C1 öncesi snapshot'larda bu değerler KasaRaporData'nın
+                    // doğrudan alanlarıydı. Version 1'de aşağıdaki immutable
+                    // audit mapping'i bunları kaydetme anındaki değerlerle ezer.
                     model.GuneAitEksikFazlaTahsilat = raporData.GuneAitEksikFazlaTahsilat;
                     model.GuneAitEksikFazlaHarc = raporData.GuneAitEksikFazlaHarc;
                     model.DundenEksikFazlaTahsilat = raporData.DundenEksikFazlaTahsilat;
                     model.DundenEksikFazlaHarc = raporData.DundenEksikFazlaHarc;
                     model.DundenEksikFazlaGelenTahsilat = raporData.DundenEksikFazlaGelenTahsilat;
                     model.DundenEksikFazlaGelenHarc = raporData.DundenEksikFazlaGelenHarc;
+
+                    model.LoadedAuditPayloadVersion = raporData.PayloadVersion;
+                    if (raporData.PayloadVersion == 1)
+                    {
+                        if (IsValidImmutableAuditSummary(raporData.ImmutableAudit))
+                        {
+                            ApplyImmutableAuditSummary(model, raporData.ImmutableAudit!);
+                            model.HasImmutableAuditData = true;
+                            model.ImmutableAuditNotice = null;
+                            model.ImmutableAuditRecordDetailsNotice =
+                                "Bu snapshot scalar audit içeriyor; kayıt ayrıntıları bu sürümde bulunmuyor.";
+                        }
+                        else
+                        {
+                            model.ImmutableAuditNotice =
+                                "Kaydedilmiş audit payload'ı eksik veya okunamadı.";
+                        }
+                    }
+                    else if (raporData.PayloadVersion == 2)
+                    {
+                        if (IsValidImmutableAuditSummary(raporData.ImmutableAudit))
+                        {
+                            ApplyImmutableAuditSummary(model, raporData.ImmutableAudit!);
+                            model.HasImmutableAuditData = true;
+                            model.ImmutableAuditNotice = null;
+
+                            if (!TryApplyImmutableAuditDetails(
+                                    model,
+                                    raporData.ImmutableAuditDetails,
+                                    raporData.ImmutableAudit!))
+                            {
+                                model.HasImmutableAuditRecordDetails = false;
+                                model.ImmutableAuditRecordDetailsNotice =
+                                    "Kayıt ayrıntıları bozuk veya doğrulanamadı.";
+                            }
+                        }
+                        else
+                        {
+                            model.HasImmutableAuditData = false;
+                            model.HasImmutableAuditRecordDetails = false;
+                            model.ImmutableAuditNotice =
+                                "Kaydedilmiş audit payload'ı eksik veya okunamadı.";
+                            model.ImmutableAuditRecordDetailsNotice = null;
+                        }
+                    }
+                    else if (raporData.PayloadVersion > 2)
+                    {
+                        model.ImmutableAuditNotice =
+                            "Bu rapor daha yeni bir audit payload sürümü kullanıyor.";
+                    }
 
                     // ── Kullanıcı Girişleri ──
                     model.BankadanCekilen = raporData.BankadanCekilen;
@@ -1183,6 +1421,8 @@ public sealed partial class KasaPreviewController : Controller
                     model.BozukPara = raporData.BozukPara;
                     model.NakitPara = raporData.NakitPara;
                     model.GelmeyenD = raporData.GelmeyenD;
+                    model.Aciklama = raporData.Aciklama;
+                    model.MuhabereNo = raporData.MuhabereNo;
 
                     // ── Günlük Not ──
                     if (!string.IsNullOrEmpty(raporData.GunlukNot))
@@ -1199,6 +1439,14 @@ public sealed partial class KasaPreviewController : Controller
             catch (Exception ex)
             {
                 _log.LogWarning(ex, "LoadSnapshot: KasaRaporDataJson deserialize başarısız — vergi alanları boş kalacak");
+                model.HasImmutableAuditData = false;
+                model.LoadedAuditPayloadVersion = 0;
+                model.ImmutableAuditNotice =
+                    "Kaydedilmiş audit payload'ı eksik veya okunamadı.";
+                model.HasImmutableAuditRecordDetails = false;
+                model.ImmutableAuditRecordDetailsNotice = null;
+                model.ImmutableAuditRecords = Array.Empty<ImmutableAuditRecordViewModel>();
+                model.ImmutableAuditRecordGroups = ImmutableAuditRecordGroupsViewModel.Empty;
             }
         }
 
@@ -1225,16 +1473,26 @@ public sealed partial class KasaPreviewController : Controller
     /// </summary>
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> DeleteSnapshot([FromForm] Guid snapshotId, CancellationToken ct)
     {
+        if (!TryResolveSnapshotActor(out var actorUserId, out var actorUsername, out var isAdmin))
+            return Unauthorized();
+        if (!isAdmin)
+            return Forbid();
+
         try
         {
             var snapshot = await _calcSnapshots.GetByIdAsync(snapshotId, ct);
             if (snapshot is null)
                 return Json(new { ok = false, message = "Rapor bulunamadı." });
 
-            var deletedBy = User.Identity?.Name ?? "Sistem";
-            await _calcSnapshots.DeleteAsync(snapshotId, deletedBy, ct);
+            var result = await _calcSnapshots.DeleteAsync(
+                snapshotId, actorUserId, isAdmin, actorUsername ?? "Sistem", ct);
+            if (result == SnapshotMutationResult.Forbidden)
+                return Forbid();
+            if (result == SnapshotMutationResult.NotFound)
+                return Json(new { ok = false, message = "Rapor bulunamadı." });
 
             _log.LogInformation("KasaPreview snapshot silindi: {Name}, ID={Id}", snapshot.Name, snapshotId);
             return Json(new { ok = true, message = $"🗑️ Rapor silindi: {snapshot.Name}" });
@@ -1264,6 +1522,30 @@ public sealed partial class KasaPreviewController : Controller
             var autoFillLikelyChanged = hasAutoFillSignal && modelExists && poolExists && modelValue != poolValue;
             var finalDisplayed = ResolveFinalDisplayedCandidate(model, key, formulaExists, formulaValue, poolExists, poolValue, modelExists, modelValue, draftExists, draftValue);
             var winner = EstimateWinnerSource(model, key, formulaExists, poolExists, modelExists, draftExists);
+
+            if (actionName == "Calculate")
+            {
+                if (key == "gune_ait_eksik_fazla_tahsilat")
+                {
+                    model.GuneAitEksikFazlaTahsilat = finalDisplayed;
+                    ModelState.Remove(nameof(KasaPreviewViewModel.GuneAitEksikFazlaTahsilat));
+                }
+                else if (key == "gune_ait_eksik_fazla_harc")
+                {
+                    model.GuneAitEksikFazlaHarc = finalDisplayed;
+                    ModelState.Remove(nameof(KasaPreviewViewModel.GuneAitEksikFazlaHarc));
+                }
+                else if (key == "dunden_eksik_fazla_tahsilat")
+                {
+                    model.DundenEksikFazlaTahsilat = finalDisplayed;
+                    ModelState.Remove(nameof(KasaPreviewViewModel.DundenEksikFazlaTahsilat));
+                }
+                else if (key == "dunden_eksik_fazla_harc")
+                {
+                    model.DundenEksikFazlaHarc = finalDisplayed;
+                    ModelState.Remove(nameof(KasaPreviewViewModel.DundenEksikFazlaHarc));
+                }
+            }
 
             _log.LogInformation(
                 "[VALUE-SOURCE] Action={Action} Field={Field} FormulaExists={FormulaExists} FormulaValue={FormulaValue} PoolExists={PoolExists} PoolValue={PoolValue} ModelExists={ModelExists} ModelValue={ModelValue} DraftExists={DraftExists} DraftValue={DraftValue} SnapshotSource={SnapshotSource} HKAutoFillChanged={HKAutoFillChanged} FinalDisplayedCandidate={FinalDisplayed} WinnerSource={Winner}",

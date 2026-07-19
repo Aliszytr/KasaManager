@@ -38,15 +38,30 @@ public sealed partial class BankaHesapKontrolService
             .ToListAsync(ct);
     }
 
-    public async Task<List<HesapKontrolKaydi>> GetTrackedItemsAsync(
+    public Task<List<HesapKontrolKaydi>> GetTrackedItemsAsync(
         BankaHesapTuru? hesapTuru = null,
         CancellationToken ct = default)
+        => GetTrackedItemsCoreAsync(hesapTuru, analizTarihi: null, ct);
+
+    public Task<List<HesapKontrolKaydi>> GetTrackedItemsAsync(
+        BankaHesapTuru? hesapTuru,
+        DateOnly analizTarihi,
+        CancellationToken ct = default)
+        => GetTrackedItemsCoreAsync(hesapTuru, analizTarihi, ct);
+
+    private async Task<List<HesapKontrolKaydi>> GetTrackedItemsCoreAsync(
+        BankaHesapTuru? hesapTuru,
+        DateOnly? analizTarihi,
+        CancellationToken ct)
     {
         var query = _db.HesapKontrolKayitlari
             .Where(x => x.Durum == KayitDurumu.Takipte);
 
         if (hesapTuru.HasValue)
             query = query.Where(x => x.HesapTuru == hesapTuru.Value);
+        // Tarihsel status-history yoktur: kayit evreni sinirlanir, mevcut entity durumu kullanilir.
+        if (analizTarihi.HasValue)
+            query = query.Where(x => x.AnalizTarihi <= analizTarihi.Value);
 
         return await query
             .OrderByDescending(x => x.AnalizTarihi)
@@ -101,31 +116,45 @@ public sealed partial class BankaHesapKontrolService
             .ToListAsync(ct);
     }
 
-    public async Task<TakipOzeti> GetTrackingSummaryAsync(CancellationToken ct = default)
+    public Task<TakipOzeti> GetTrackingSummaryAsync(CancellationToken ct = default)
+        => GetTrackingSummaryCoreAsync(DateOnly.FromDateTime(DateTime.Now), limitByAnalysisDate: false, ct);
+
+    public Task<TakipOzeti> GetTrackingSummaryAsync(DateOnly analizTarihi, CancellationToken ct = default)
+        => GetTrackingSummaryCoreAsync(analizTarihi, limitByAnalysisDate: true, ct);
+
+    private async Task<TakipOzeti> GetTrackingSummaryCoreAsync(
+        DateOnly contextDate,
+        bool limitByAnalysisDate,
+        CancellationToken ct)
     {
-        var bugun = DateOnly.FromDateTime(DateTime.Now);
-
-        var aktifTakip = await _db.HesapKontrolKayitlari
-            .Where(x => x.Durum == KayitDurumu.Takipte && x.TakipBaslangicTarihi.HasValue)
-            .ToListAsync(ct);
-
-        var bugunCozulenler = await _db.HesapKontrolKayitlari
-            .Where(x => x.CozulmeTarihi == bugun
+        var aktifTakipQuery = _db.HesapKontrolKayitlari
+            .Where(x => x.Durum == KayitDurumu.Takipte && x.TakipBaslangicTarihi.HasValue);
+        var cozulmeQuery = _db.HesapKontrolKayitlari
+            .Where(x => x.CozulmeTarihi == contextDate
                      && x.TakipBaslangicTarihi.HasValue
-                     && (x.Durum == KayitDurumu.Cozuldu || x.Durum == KayitDurumu.Onaylandi))
-            .ToListAsync(ct);
+                     && (x.Durum == KayitDurumu.Cozuldu || x.Durum == KayitDurumu.Onaylandi));
+
+        // Tarihsel status-history yoktur: kayit evreni sinirlanir, mevcut entity durumu kullanilir.
+        if (limitByAnalysisDate)
+        {
+            aktifTakipQuery = aktifTakipQuery.Where(x => x.AnalizTarihi <= contextDate);
+            cozulmeQuery = cozulmeQuery.Where(x => x.AnalizTarihi <= contextDate);
+        }
+
+        var aktifTakip = await aktifTakipQuery.ToListAsync(ct);
+        var bugunCozulenler = await cozulmeQuery.ToListAsync(ct);
 
         var toplamEksik = aktifTakip.Where(x => x.Yon == KayitYonu.Eksik).Sum(x => x.Tutar);
         var toplamFazla = aktifTakip.Where(x => x.Yon == KayitYonu.Fazla).Sum(x => x.Tutar);
 
         var gunler = aktifTakip
-            .Select(x => bugun.DayNumber - x.TakipBaslangicTarihi!.Value.DayNumber)
+            .Select(x => contextDate.DayNumber - x.TakipBaslangicTarihi!.Value.DayNumber)
             .ToList();
         var ortalamaGun = gunler.Count > 0 ? gunler.Average() : 0;
         var enEskiGun = gunler.Count > 0 ? gunler.Max() : 0;
 
         var gunBazli = aktifTakip
-            .GroupBy(x => bugun.DayNumber - x.TakipBaslangicTarihi!.Value.DayNumber)
+            .GroupBy(x => contextDate.DayNumber - x.TakipBaslangicTarihi!.Value.DayNumber)
             .Select(g => new GunBazliTakip(
                 g.Key,
                 g.Count(),
@@ -163,18 +192,28 @@ public sealed partial class BankaHesapKontrolService
 
         var takipteQuery = _db.HesapKontrolKayitlari
             .Where(x => x.Durum == KayitDurumu.Takipte);
+        // Tarihsel status-history yoktur: kayit evreni sinirlanir, mevcut entity durumu kullanilir.
+        if (analizTarihi.HasValue)
+            takipteQuery = takipteQuery.Where(x => x.AnalizTarihi <= analizTarihi.Value);
         if (hesapTuru.HasValue)
             takipteQuery = takipteQuery.Where(x => x.HesapTuru == hesapTuru.Value);
         var takipteKayitlar = await takipteQuery.ToListAsync(ct);
 
         // BUG-3 FIX: Local time kullan (TR UTC+3, gece 00-03 arası yanlış sonuç veriyordu)
-        var bugun = DateOnly.FromDateTime(DateTime.Now);
-        var bugunCozulen = await _db.HesapKontrolKayitlari
-            .CountAsync(x => x.CozulmeTarihi == bugun
-                          && (x.Durum == KayitDurumu.Cozuldu || x.Durum == KayitDurumu.Onaylandi), ct);
+        var cozumTarihi = analizTarihi ?? DateOnly.FromDateTime(DateTime.Now);
+        var cozulmeCountQuery = _db.HesapKontrolKayitlari
+            .Where(x => x.CozulmeTarihi == cozumTarihi
+                     && (x.Durum == KayitDurumu.Cozuldu || x.Durum == KayitDurumu.Onaylandi));
+        if (analizTarihi.HasValue)
+            cozulmeCountQuery = cozulmeCountQuery.Where(x => x.AnalizTarihi <= analizTarihi.Value);
+        var bugunCozulen = await cozulmeCountQuery.CountAsync(ct);
 
-        var sonStopaj = await _db.HesapKontrolKayitlari
-            .Where(x => x.HesapTuru == BankaHesapTuru.Stopaj)
+        var stopajQuery = _db.HesapKontrolKayitlari
+            .Where(x => x.HesapTuru == BankaHesapTuru.Stopaj);
+        if (analizTarihi.HasValue)
+            stopajQuery = stopajQuery.Where(x => x.AnalizTarihi <= analizTarihi.Value);
+
+        var sonStopaj = await stopajQuery
             .OrderByDescending(x => x.AnalizTarihi)
             .ThenByDescending(x => x.OlusturmaTarihi)
             .FirstOrDefaultAsync(ct);
@@ -355,11 +394,29 @@ public sealed partial class BankaHesapKontrolService
         DateOnly analizTarihi,
         CancellationToken ct = default)
     {
-        var aktifKayitlar = await _db.HesapKontrolKayitlari
+        var aktifKayitlar = await LoadActiveFollowRecordsAsync(analizTarihi, ct);
+
+        var totals = BuildActiveFollowTotals(analizTarihi, aktifKayitlar);
+        LogActiveFollowTotals(totals);
+        return totals;
+    }
+
+    private Task<List<HesapKontrolKaydi>> LoadActiveFollowRecordsAsync(
+        DateOnly analizTarihi,
+        CancellationToken ct)
+    {
+        return _db.HesapKontrolKayitlari
             .Where(x => x.AnalizTarihi <= analizTarihi
                      && x.HesapTuru != BankaHesapTuru.Stopaj
                      && x.Durum == KayitDurumu.Takipte)
             .ToListAsync(ct);
+    }
+
+    private static ActiveFollowTotals BuildActiveFollowTotals(
+        DateOnly analizTarihi,
+        IEnumerable<HesapKontrolKaydi> source)
+    {
+        var aktifKayitlar = source.ToList();
 
         decimal Net(BankaHesapTuru hesap) => aktifKayitlar
             .Where(x => x.HesapTuru == hesap && x.Sinif != FarkSinifi.Beklenen)
@@ -373,7 +430,7 @@ public sealed partial class BankaHesapKontrolService
             .Where(x => x.HesapTuru == hesap && x.Yon == KayitYonu.Fazla && x.Sinif != FarkSinifi.Beklenen)
             .Sum(x => x.Tutar);
 
-        var totals = new ActiveFollowTotals(
+        return new ActiveFollowTotals(
             analizTarihi,
             TahsilatNet: Net(BankaHesapTuru.Tahsilat),
             HarcNet: Net(BankaHesapTuru.Harc),
@@ -382,10 +439,13 @@ public sealed partial class BankaHesapKontrolService
             TahsilatFazla: Fazla(BankaHesapTuru.Tahsilat),
             HarcFazla: Fazla(BankaHesapTuru.Harc),
             KayitSayisi: aktifKayitlar.Count);
+    }
 
+    private void LogActiveFollowTotals(ActiveFollowTotals totals)
+    {
         _logger.LogInformation(
             "[HK-ACTIVE-TOTAL-SSOT] Date={Date} IncludedStatuses=Takipte Count={Count} TahsilatNet={TahsilatNet} HarcNet={HarcNet} TahsilatEksik={TahsilatEksik} HarcEksik={HarcEksik} TahsilatFazla={TahsilatFazla} HarcFazla={HarcFazla}",
-            analizTarihi,
+            totals.AnalizTarihi,
             totals.KayitSayisi,
             totals.TahsilatNet,
             totals.HarcNet,
@@ -393,27 +453,47 @@ public sealed partial class BankaHesapKontrolService
             totals.HarcEksik,
             totals.TahsilatFazla,
             totals.HarcFazla);
-
-        return totals;
     }
     public async Task<EksikFazlaAutoFill> GetAutoFillDataAsync(
         DateOnly analizTarihi,
         CancellationToken ct = default)
     {
-        var bugunKayitlar = await _db.HesapKontrolKayitlari
-            .Where(x => x.AnalizTarihi == analizTarihi)
-            .ToListAsync(ct);
+        var sources = await LoadAutoFillSourceSetsAsync(analizTarihi, ct);
+        return BuildAutoFillSummary(analizTarihi, sources);
+    }
 
-        if (bugunKayitlar.Count == 0)
+    public async Task<HesapKontrolImmutableAuditSnapshot> GetImmutableAuditSnapshotAsync(
+        DateOnly analizTarihi,
+        CancellationToken ct = default)
+    {
+        var sources = await LoadAutoFillSourceSetsAsync(analizTarihi, ct);
+        var summary = BuildAutoFillSummary(analizTarihi, sources);
+        var details = BuildImmutableAuditDetails(sources);
+        if (!HesapKontrolImmutableAuditDetailsValidator.TryValidate(details, out var validationError))
+            throw new InvalidOperationException(
+                $"Immutable Hesap Kontrol audit details validation failed: {validationError}");
+
+        return new HesapKontrolImmutableAuditSnapshot(summary, details);
+    }
+
+    private EksikFazlaAutoFill BuildAutoFillSummary(
+        DateOnly analizTarihi,
+        AutoFillSourceSets sources)
+    {
+        var bugunKayitlar = sources.BugunKayitlar;
+
+        if (bugunKayitlar.Count == 0
+            && sources.OncekiAciklar.Count == 0
+            && sources.BugunCozulenler.Count == 0
+            && sources.TakipteKayitlar.Count == 0
+            && sources.BugunTakipCozulenler.Count == 0)
         {
             return new EksikFazlaAutoFill(0, 0, 0, 0, 0, 0, false,
                 "ℹ️ Bu bölüm Hesap Kontrol modülü çalıştırıldığında kendiliğinden dolacaktır.");
         }
 
-        var aktifKayitlar = bugunKayitlar
-            .Where(x => x.HesapTuru != BankaHesapTuru.Stopaj
-                     && (x.Durum == KayitDurumu.Acik || x.Durum == KayitDurumu.Takipte))
-            .ToList();
+        var aktifKayitlar = sources.AktifKayitlar;
+        var takipteKayitlar = sources.TakipteKayitlar;
 
 
         decimal BeklenenNet(BankaHesapTuru hesap) =>
@@ -467,12 +547,7 @@ public sealed partial class BankaHesapKontrolService
         // Eski: x.Yon == KayitYonu.Eksik filtresi Fazla kayıtları (örn. 2.250 TL BİLİNMEYEN) dışarıda bırakıyordu.
         // Yeni: Yon filtresi kaldırıldı. Acik + Takipte durumlar dahil.
         // FarkSinifi.Beklenen (MASRAF, EFT İade vb.) hariç tutulmaya devam ediyor.
-        var oncekiAciklar = await _db.HesapKontrolKayitlari
-            .Where(x => x.AnalizTarihi < analizTarihi
-                     && (x.Durum == KayitDurumu.Acik || x.Durum == KayitDurumu.Takipte)
-                     && x.HesapTuru != BankaHesapTuru.Stopaj
-                     && x.Sinif != FarkSinifi.Beklenen)
-            .ToListAsync(ct);
+        var oncekiAciklar = sources.OncekiAciklar;
 
         // Net fark hesabı: Fazla = +Tutar, Eksik = -Tutar
         var oncekiAcikTahsilat = oncekiAciklar
@@ -493,19 +568,15 @@ public sealed partial class BankaHesapKontrolService
             oncekiAcikTahsilat,
             oncekiAcikHarc);
 
-        var bugunCozulenler = await _db.HesapKontrolKayitlari
-            .Where(x => x.CozulmeTarihi == analizTarihi
-                     && x.Durum == KayitDurumu.Cozuldu
-                     && x.AnalizTarihi < analizTarihi
-                     && x.Sinif != FarkSinifi.Beklenen)
-            .ToListAsync(ct);
+        var bugunCozulenler = sources.BugunCozulenler;
 
         var cozulenTahsilat = bugunCozulenler
             .Where(x => x.HesapTuru == BankaHesapTuru.Tahsilat).Sum(x => x.Tutar);
         var cozulenHarc = bugunCozulenler
             .Where(x => x.HesapTuru == BankaHesapTuru.Harc).Sum(x => x.Tutar);
 
-        var activeTotals = await GetActiveFollowTotalsAsync(analizTarihi, ct);
+        var activeTotals = BuildActiveFollowTotals(analizTarihi, takipteKayitlar);
+        LogActiveFollowTotals(activeTotals);
         var toplamFarkTahsilat = activeTotals.TahsilatNet;
         var toplamFarkHarc = activeTotals.HarcNet;
         var resolvedExcluded = bugunKayitlar.Count(x => x.HesapTuru != BankaHesapTuru.Stopaj
@@ -531,10 +602,7 @@ public sealed partial class BankaHesapKontrolService
             guneAitTahsilat,
             guneAitHarc);
 
-        var reconciliationKayitlar = bugunKayitlar
-            .Where(x => (x.Durum == KayitDurumu.Cozuldu || x.Durum == KayitDurumu.Onaylandi)
-                     && x.Sinif == FarkSinifi.Askida)
-            .ToList();
+        var reconciliationKayitlar = sources.ReconciliationKayitlar;
 
         var takipKasaEtkisiTahsilat = reconciliationKayitlar
             .Where(x => x.HesapTuru == BankaHesapTuru.Tahsilat && x.Yon == KayitYonu.Eksik)
@@ -559,11 +627,6 @@ public sealed partial class BankaHesapKontrolService
         var bekleyenSayisi = bugunKayitlar.Count(x => x.Sinif != FarkSinifi.Beklenen
                                                    && x.Durum == KayitDurumu.Acik
                                                    && x.HesapTuru != BankaHesapTuru.Stopaj);
-
-        var takipteKayitlar = await _db.HesapKontrolKayitlari
-            .Where(x => x.Durum == KayitDurumu.Takipte
-                     && x.HesapTuru != BankaHesapTuru.Stopaj)
-            .ToListAsync(ct);
 
         var takipteEksikTahsilat = takipteKayitlar
             .Where(x => x.HesapTuru == BankaHesapTuru.Tahsilat && x.Yon == KayitYonu.Eksik).Sum(x => x.Tutar);
@@ -592,12 +655,7 @@ public sealed partial class BankaHesapKontrolService
 
         // ─── Akıllı Takip Korelasyonu ───
         // Bugün takipten çözülen kayıtları getir (CrossDay gelen + el ile çözülen)
-        var bugunTakipCozulenler = await _db.HesapKontrolKayitlari
-            .Where(x => x.CozulmeTarihi == analizTarihi
-                     && x.TakipBaslangicTarihi.HasValue
-                     && x.HesapTuru != BankaHesapTuru.Stopaj
-                     && (x.Durum == KayitDurumu.Cozuldu || x.Durum == KayitDurumu.Onaylandi))
-            .ToListAsync(ct);
+        var bugunTakipCozulenler = sources.BugunTakipCozulenler;
 
         var takipDetaylar = new List<TakipCozumDetay>();
         foreach (var k in bugunTakipCozulenler)
@@ -643,5 +701,132 @@ public sealed partial class BankaHesapKontrolService
             BreakdownMesajHarc: BuildBreakdown(BankaHesapTuru.Harc),
             TakipCozumleri: takipDetaylar.Count > 0 ? takipDetaylar : null,
             TakipCozumBildirim: takipCozumBildirim);
+    }
+
+    private async Task<AutoFillSourceSets> LoadAutoFillSourceSetsAsync(
+        DateOnly analizTarihi,
+        CancellationToken ct)
+    {
+        var bugunKayitlar = await _db.HesapKontrolKayitlari
+            .Where(x => x.AnalizTarihi == analizTarihi)
+            .ToListAsync(ct);
+
+        var aktifKayitlar = bugunKayitlar
+            .Where(x => x.HesapTuru != BankaHesapTuru.Stopaj
+                     && (x.Durum == KayitDurumu.Acik || x.Durum == KayitDurumu.Takipte))
+            .ToList();
+
+        var oncekiAciklar = await _db.HesapKontrolKayitlari
+            .Where(x => x.AnalizTarihi < analizTarihi
+                     && (x.Durum == KayitDurumu.Acik || x.Durum == KayitDurumu.Takipte)
+                     && x.HesapTuru != BankaHesapTuru.Stopaj
+                     && x.Sinif != FarkSinifi.Beklenen)
+            .ToListAsync(ct);
+
+        var bugunCozulenler = await _db.HesapKontrolKayitlari
+            .Where(x => x.CozulmeTarihi == analizTarihi
+                     && x.Durum == KayitDurumu.Cozuldu
+                     && x.AnalizTarihi < analizTarihi
+                     && x.Sinif != FarkSinifi.Beklenen)
+            .ToListAsync(ct);
+
+        var reconciliationKayitlar = bugunKayitlar
+            .Where(x => (x.Durum == KayitDurumu.Cozuldu || x.Durum == KayitDurumu.Onaylandi)
+                     && x.Sinif == FarkSinifi.Askida)
+            .ToList();
+
+        var takipteKayitlar = await LoadActiveFollowRecordsAsync(analizTarihi, ct);
+
+        var bugunTakipCozulenler = await _db.HesapKontrolKayitlari
+            .Where(x => x.CozulmeTarihi == analizTarihi
+                     && x.TakipBaslangicTarihi.HasValue
+                     && x.HesapTuru != BankaHesapTuru.Stopaj
+                     && (x.Durum == KayitDurumu.Cozuldu || x.Durum == KayitDurumu.Onaylandi))
+            .ToListAsync(ct);
+
+        return new AutoFillSourceSets(
+            bugunKayitlar,
+            aktifKayitlar,
+            oncekiAciklar,
+            bugunCozulenler,
+            reconciliationKayitlar,
+            takipteKayitlar,
+            bugunTakipCozulenler);
+    }
+
+    private static HesapKontrolImmutableAuditDetails BuildImmutableAuditDetails(
+        AutoFillSourceSets sources)
+    {
+        var records = new Dictionary<Guid, HesapKontrolImmutableAuditRecord>();
+
+        IReadOnlyList<Guid> Capture(IEnumerable<HesapKontrolKaydi> source)
+        {
+            var materialized = source.ToList();
+            foreach (var entity in materialized)
+            {
+                var projected = ToImmutableAuditRecord(entity);
+                if (records.TryGetValue(projected.KayitId, out var existing)
+                    && existing != projected)
+                {
+                    throw new InvalidOperationException(
+                        $"Conflicting immutable audit record view: {projected.KayitId}");
+                }
+
+                records[projected.KayitId] = projected;
+            }
+
+            return materialized
+                .Select(entity => entity.Id)
+                .Distinct()
+                .OrderBy(id => id)
+                .ToArray();
+        }
+
+        var groups = new HesapKontrolImmutableAuditGroups(
+            Capture(sources.AktifKayitlar),
+            Capture(sources.OncekiAciklar),
+            Capture(sources.BugunCozulenler),
+            Capture(sources.ReconciliationKayitlar),
+            Capture(sources.TakipteKayitlar),
+            Capture(sources.BugunTakipCozulenler));
+
+        return new HesapKontrolImmutableAuditDetails(
+            HesapKontrolImmutableAuditDetailsValidator.OrderRecords(records.Values),
+            groups);
+    }
+
+    private static HesapKontrolImmutableAuditRecord ToImmutableAuditRecord(
+        HesapKontrolKaydi entity) => new(
+            entity.Id,
+            entity.AnalizTarihi,
+            entity.HesapTuru,
+            entity.Yon,
+            entity.Tutar,
+            entity.Durum,
+            entity.Sinif,
+            entity.DosyaNo,
+            entity.BirimAdi,
+            entity.TespitEdilenTip,
+            entity.TakipBaslangicTarihi,
+            entity.CozulmeTarihi,
+            entity.OnayTarihi);
+
+    private sealed record AutoFillSourceSets(
+        IReadOnlyList<HesapKontrolKaydi> BugunKayitlar,
+        IReadOnlyList<HesapKontrolKaydi> AktifKayitlar,
+        IReadOnlyList<HesapKontrolKaydi> OncekiAciklar,
+        IReadOnlyList<HesapKontrolKaydi> BugunCozulenler,
+        IReadOnlyList<HesapKontrolKaydi> ReconciliationKayitlar,
+        IReadOnlyList<HesapKontrolKaydi> TakipteKayitlar,
+        IReadOnlyList<HesapKontrolKaydi> BugunTakipCozulenler)
+    {
+        public static AutoFillSourceSets Empty { get; } = new(
+            Array.Empty<HesapKontrolKaydi>(),
+            Array.Empty<HesapKontrolKaydi>(),
+            Array.Empty<HesapKontrolKaydi>(),
+            Array.Empty<HesapKontrolKaydi>(),
+            Array.Empty<HesapKontrolKaydi>(),
+            Array.Empty<HesapKontrolKaydi>(),
+            Array.Empty<HesapKontrolKaydi>());
     }
 }

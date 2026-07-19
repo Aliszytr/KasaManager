@@ -6,6 +6,25 @@ namespace KasaManager.Domain.Reports;
 /// </summary>
 public sealed class KasaRaporData
 {
+    /// <summary>
+    /// Persisted payload contract version. Legacy JSON without this member
+    /// deserializes as 0.
+    /// </summary>
+    public int PayloadVersion { get; set; }
+
+    /// <summary>
+    /// Save-time, server-derived immutable Hesap Kontrol audit data.
+    /// Legacy JSON without this member deserializes as null.
+    /// </summary>
+    public KasaImmutableAuditData? ImmutableAudit { get; set; }
+
+    /// <summary>
+    /// PayloadVersion 2 icin minimum, actor icermeyen Hesap Kontrol kayit
+    /// ayrintilari. Application DTO'su katman bagimliligi olusturmadan JSON
+    /// sozlesmesinde korunur ve Web yukleme sinirinda acikca validate edilir.
+    /// </summary>
+    public System.Text.Json.JsonElement? ImmutableAuditDetails { get; set; }
+
     // ══════════════════════════════════════════════════════
     // META
     // ══════════════════════════════════════════════════════
@@ -157,7 +176,41 @@ public sealed class KasaRaporData
 }
 
 /// <summary>
-/// Kasa Üst Rapor tablosunun tek satırı. 
+/// Immutable, save-time audit summary derived only from the server-side
+/// Hesap Kontrol auto-fill query.
+/// </summary>
+public sealed class KasaImmutableAuditData
+{
+    public decimal GuneAitEksikFazlaTahsilat { get; set; }
+    public decimal GuneAitEksikFazlaHarc { get; set; }
+    public decimal OncekiGunAcikTahsilat { get; set; }
+    public decimal OncekiGunAcikHarc { get; set; }
+    public decimal BugunCozulenTahsilat { get; set; }
+    public decimal BugunCozulenHarc { get; set; }
+
+    public decimal TakipteEksikTahsilat { get; set; }
+    public decimal TakipteEksikHarc { get; set; }
+    public decimal TakipteFazlaTahsilat { get; set; }
+    public decimal TakipteFazlaHarc { get; set; }
+    public int TakipteSayisi { get; set; }
+
+    public decimal ToplamFarkTahsilat { get; set; }
+    public decimal ToplamFarkHarc { get; set; }
+    public decimal BeklenenTahsilat { get; set; }
+    public decimal BeklenenHarc { get; set; }
+    public decimal OlaganDisiTahsilat { get; set; }
+    public decimal OlaganDisiHarc { get; set; }
+
+    public decimal TakipKasaEtkisiTahsilat { get; set; }
+    public decimal TakipKasaEtkisiHarc { get; set; }
+    public decimal TakipKasaEtkisiNet { get; set; }
+
+    public string? BreakdownMesajTahsilat { get; set; }
+    public string? BreakdownMesajHarc { get; set; }
+}
+
+/// <summary>
+/// Kasa Üst Rapor tablosunun tek satırı.
 /// Key=kolonAdı, Value=değer metin olarak.
 /// </summary>
 public sealed class UstRaporSatir

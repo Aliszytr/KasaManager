@@ -37,7 +37,8 @@ namespace ParityRunner
                     KasaRaporDataJson = "{}",
                     FormulaSetName = "test"
                 };
-                await calcSnapshots.SaveAsync(dummy, CancellationToken.None);
+                await calcSnapshots.SaveAsync(
+                    dummy, 17, "Antigravity", CancellationToken.None);
                 
                 var devredenResult = await carryover.ResolveAsync(nextDay, CarryoverScope.GenelKasa, CancellationToken.None);
                 

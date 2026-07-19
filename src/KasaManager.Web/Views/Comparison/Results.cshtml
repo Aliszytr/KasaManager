@@ -147,9 +147,12 @@
                 </button>
                 @if (Model.ReportDate.HasValue)
                 {
-                    <a href="/HesapKontrol/QueryDate?tarih=@Model.ReportDate.Value.ToString("yyyy-MM-dd")" class="btn btn-outline-primary">
-                        <i class="fas fa-university me-2"></i> Hesap Kontrole Git
-                    </a>
+                    <form asp-controller="HesapKontrol" asp-action="RunAnalysis" method="post" class="d-inline">
+                        <input type="hidden" name="tarih" value="@Model.ReportDate.Value.ToString("yyyy-MM-dd")" />
+                        <button type="submit" class="btn btn-outline-primary">
+                            <i class="fas fa-university me-2"></i> Hesap Kontrol'e Aktar ve Aç
+                        </button>
+                    </form>
                 }
                 else
                 {

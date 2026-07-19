@@ -351,7 +351,8 @@ public sealed partial class KasaDraftService
         var defaultKayden = isGenel ? masrafReddiyatAgg.Diger : 0m;
         AddOverride("kayden_tahsilat", finalizeInputs.KaydenTahsilat ?? defaultKayden, isGenel ? "MasrafveReddiyat 'Kayden' (Diğer) toplamı." : "0 ise etkisiz.");
         AddOverride("kayden_harc", ov(null, finalizeInputs.KaydenHarc), "0 ise etkisiz." );
-        // ORPHAN: AddOverride("bankadan_cekilen", ov(null, finalizeInputs.BankadanCekilen), "0 ise etkisiz." );
+        if (finalizeInputs.BankadanCekilen.HasValue)
+            AddOverride("bankadan_cekilen", finalizeInputs.BankadanCekilen.Value, "Kullanıcı girişi (0 ise etkisiz)." );
         AddOverride("cesitli_nedenlerle_bankadan_cikamayan_tahsilat", ov(null, finalizeInputs.CesitliNedenlerleBankadanCikamayanTahsilat), "0 ise etkisiz." );
         // ORPHAN: AddOverride("bankaya_gonderilmis_deger", ov(null, finalizeInputs.BankayaGonderilmisDeger), "0 ise etkisiz." );
         AddOverride("vergiden_gelen", ov(null, finalizeInputs.VergidenGelen), "0 ise etkisiz." );

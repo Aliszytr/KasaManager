@@ -18,14 +18,38 @@ namespace KasaManager.Web.Controllers;
 public sealed class KasaRaporlarController : Controller
 {
     private readonly ICalculatedKasaSnapshotService _service;
+    private readonly ICurrentUser _currentUser;
     private readonly ILogger<KasaRaporlarController> _logger;
 
     public KasaRaporlarController(
         ICalculatedKasaSnapshotService service,
+        ICurrentUser currentUser,
         ILogger<KasaRaporlarController> logger)
     {
         _service = service;
+        _currentUser = currentUser;
         _logger = logger;
+    }
+
+    private bool TryResolveSnapshotActor(
+        out int actorUserId,
+        out string? actorUsername,
+        out bool isAdmin)
+    {
+        try
+        {
+            actorUserId = _currentUser.RequireAuthenticatedUserId();
+            actorUsername = _currentUser.Username;
+            isAdmin = _currentUser.IsInRole("Admin");
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            actorUserId = default;
+            actorUsername = null;
+            isAdmin = false;
+            return false;
+        }
     }
 
     // ══════════════════════════════════════════════════════
@@ -223,13 +247,23 @@ public sealed class KasaRaporlarController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> VersionuAktifYap(Guid id, CancellationToken ct)
     {
+        if (!TryResolveSnapshotActor(out var actorUserId, out _, out var isAdmin))
+            return Unauthorized();
+        if (!isAdmin)
+            return Forbid();
+
         var snapshot = await _service.GetByIdAsync(id, ct);
         if (snapshot is null)
             return Json(new { success = false, message = "Rapor bulunamadı." });
 
-        await _service.ActivateVersionAsync(id, ct);
+        var result = await _service.ActivateVersionAsync(id, actorUserId, isAdmin, ct);
+        if (result == SnapshotMutationResult.Forbidden)
+            return Forbid();
+        if (result == SnapshotMutationResult.NotFound)
+            return NotFound();
         _logger.LogInformation("Versiyon aktifleştirildi: Id={Id}, v{Version}", id, snapshot.Version);
         return Json(new { success = true, message = $"v{snapshot.Version} aktif olarak ayarlandı." });
     }
@@ -242,7 +276,15 @@ public sealed class KasaRaporlarController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Update(Guid id, string? name, string? description, string? notes, CancellationToken ct)
     {
-        await _service.UpdateAsync(id, name, description, notes, ct);
+        if (!TryResolveSnapshotActor(out var actorUserId, out _, out var isAdmin))
+            return Unauthorized();
+
+        var result = await _service.UpdateAsync(
+            id, name, description, notes, actorUserId, isAdmin, ct);
+        if (result == SnapshotMutationResult.Forbidden)
+            return Forbid();
+        if (result == SnapshotMutationResult.NotFound)
+            return NotFound();
         return Json(new { success = true, message = "Rapor güncellendi." });
     }
 
@@ -252,9 +294,20 @@ public sealed class KasaRaporlarController : Controller
     
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Sil(Guid id, CancellationToken ct)
     {
-        await _service.DeleteAsync(id, User?.Identity?.Name, ct);
+        if (!TryResolveSnapshotActor(out var actorUserId, out var actorUsername, out var isAdmin))
+            return Unauthorized();
+        if (!isAdmin)
+            return Forbid();
+
+        var result = await _service.DeleteAsync(
+            id, actorUserId, isAdmin, actorUsername ?? "Sistem", ct);
+        if (result == SnapshotMutationResult.Forbidden)
+            return Forbid();
+        if (result == SnapshotMutationResult.NotFound)
+            return NotFound();
         return Json(new { success = true, message = "Rapor silindi." });
     }
 
@@ -264,9 +317,19 @@ public sealed class KasaRaporlarController : Controller
     
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GeriYukle(Guid id, CancellationToken ct)
     {
-        await _service.RestoreAsync(id, ct);
+        if (!TryResolveSnapshotActor(out var actorUserId, out _, out var isAdmin))
+            return Unauthorized();
+        if (!isAdmin)
+            return Forbid();
+
+        var result = await _service.RestoreAsync(id, actorUserId, isAdmin, ct);
+        if (result == SnapshotMutationResult.Forbidden)
+            return Forbid();
+        if (result == SnapshotMutationResult.NotFound)
+            return NotFound();
         return Json(new { success = true, message = "Rapor geri yüklendi." });
     }
 

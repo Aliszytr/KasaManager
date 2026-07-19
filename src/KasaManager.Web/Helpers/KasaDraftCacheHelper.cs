@@ -49,7 +49,8 @@ public static class KasaDraftCacheHelper
         string userName,
         string kasaType,
         KasaPreviewViewModel model,
-        ILogger? log = null)
+        ILogger? log = null,
+        KasaDraftSourceContext? sourceContext = null)
     {
         var key = BuildKey(userName, kasaType);
 
@@ -59,7 +60,7 @@ public static class KasaDraftCacheHelper
 
             var infoMessage = $"📋 {model.KasaType} Kasa — {model.SelectedDate:dd.MM.yyyy} tarihli veriler, saat {DateTime.Now:HH:mm} itibariyle hesaplanmıştır.";
 
-            _store[key] = new DraftEntry(json, infoMessage, DateTime.UtcNow);
+            _store[key] = new DraftEntry(json, infoMessage, DateTime.UtcNow, sourceContext);
 
             log?.LogDebug(
                 "KasaDraft SAVED: Key={Key}, HasResults={HR}, FormulaRun={FR}, JSON={Size}b, Store={Count}",
@@ -129,6 +130,41 @@ public static class KasaDraftCacheHelper
         }
     }
 
+    /// <summary>
+    /// ViewModel ile hesaplamada kullanilan sunucu-tarafli kaynak baglamini ayni
+    /// cache entry'sinden atomik olarak yukler. Istemci girdisi bu baglama karismaz.
+    /// </summary>
+    public static Task<KasaDraftLoadResult?> TryLoadDraftSnapshotAsync(
+        string userName,
+        string kasaType,
+        ILogger? log = null)
+    {
+        var key = BuildKey(userName, kasaType);
+        if (!_store.TryGetValue(key, out var entry))
+            return Task.FromResult<KasaDraftLoadResult?>(null);
+
+        if (DateTime.UtcNow - entry.SavedAtUtc > DraftExpiry)
+        {
+            _store.TryRemove(key, out _);
+            return Task.FromResult<KasaDraftLoadResult?>(null);
+        }
+
+        try
+        {
+            var restored = JsonSerializer.Deserialize<KasaPreviewViewModel>(
+                entry.ViewModelJson, SafeJsonOpts);
+            return Task.FromResult(restored is null
+                ? null
+                : new KasaDraftLoadResult(restored, entry.SourceContext));
+        }
+        catch (Exception ex)
+        {
+            log?.LogError(ex, "KasaDraft SNAPSHOT LOAD FAILED: Key={Key}", key);
+            _store.TryRemove(key, out _);
+            return Task.FromResult<KasaDraftLoadResult?>(null);
+        }
+    }
+
     /// <summary>Tüm public settable property'leri source'dan target'a kopyalar.</summary>
     private static void CopyAllProperties(KasaPreviewViewModel source, KasaPreviewViewModel target)
     {
@@ -186,5 +222,22 @@ public static class KasaDraftCacheHelper
 
     // ─── Draft Entry ───
 
-    private sealed record DraftEntry(string ViewModelJson, string InfoMessage, DateTime SavedAtUtc);
+    private sealed record DraftEntry(
+        string ViewModelJson,
+        string InfoMessage,
+        DateTime SavedAtUtc,
+        KasaDraftSourceContext? SourceContext);
 }
+
+public sealed record KasaDraftSourceContext(
+    int Version,
+    DateOnly SelectedDate,
+    string KasaType,
+    string SourceKind,
+    string SourceIdentifier,
+    IReadOnlyList<string> FileNames,
+    string Fingerprint);
+
+public sealed record KasaDraftLoadResult(
+    KasaPreviewViewModel Model,
+    KasaDraftSourceContext? SourceContext);

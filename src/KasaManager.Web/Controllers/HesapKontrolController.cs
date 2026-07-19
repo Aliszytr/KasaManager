@@ -12,33 +12,52 @@ namespace KasaManager.Web.Controllers;
 [Authorize]
 public sealed class HesapKontrolController : Controller
 {
-    // ─── BUG-1 FIX: Akıllı File-Change Detection Cache ───
-    // Aynı dosyalar değişmeden sayfa yeniden yüklendiğinde analiz tekrar çalışmaz.
-    private static string? _lastAnalysisFileHash;
-    private static DateOnly? _lastAnalysisTarih;
-    private static readonly object _analysisLock = new();
+    private const string DateRangeValidationViewDataKey = "DateRangeValidationError";
+    private const string DateRangeValidationMessage =
+        "Başlangıç tarihi bitiş tarihinden sonra olamaz ve tarih aralığı seçilen analiz tarihini aşamaz.";
+
+    // FAZ-3: GET yalnız mevcut kayıtları okur; analiz state'i tutulmaz.
     private readonly IBankaHesapKontrolService _service;
+    private readonly ICurrentUser _currentUser;
 
     private readonly IHesapKontrolExportService _export;
     private readonly IFinansalIstisnaService _finansalIstisna;
-    private readonly IComparisonArchiveService _archive;
+    private readonly IHesapKontrolSourceResolver _sourceResolver;
     private readonly ILogger<HesapKontrolController> _log;
     private readonly IWebHostEnvironment _env;
 
     public HesapKontrolController(
         IBankaHesapKontrolService service,
+        ICurrentUser currentUser,
         IHesapKontrolExportService export,
         IFinansalIstisnaService finansalIstisna,
-        IComparisonArchiveService archive,
+        IHesapKontrolSourceResolver sourceResolver,
         ILogger<HesapKontrolController> log,
         IWebHostEnvironment env)
     {
         _service = service;
+        _currentUser = currentUser;
         _export = export;
         _finansalIstisna = finansalIstisna;
-        _archive = archive;
+        _sourceResolver = sourceResolver;
         _log = log;
         _env = env;
+    }
+
+    private bool TryResolveInteractiveActor(out int actorUserId, out string? actorUsername)
+    {
+        try
+        {
+            actorUserId = _currentUser.RequireAuthenticatedUserId();
+            actorUsername = _currentUser.Username;
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            actorUserId = default;
+            actorUsername = null;
+            return false;
+        }
     }
 
     // ─── C1: Dashboard + Açık Kayıt Listesi ───
@@ -63,54 +82,25 @@ public sealed class HesapKontrolController : Controller
         else
             analizTarihi = DateOnly.FromDateTime(DateTime.Now);
 
-        // ── Otomatik Analiz: Akıllı File-Change Detection ──
-        // Dosyalar değişmediyse aynı tarih için analiz tekrar çalışmaz.
-        try
+        if (!TryResolveIndexDateRange(
+                analizTarihi, baslangic, bitis, out var startDate, out var endDate))
         {
-            var uploadFolder = ResolveUploadFolder(analizTarihi);
-            var currentHash = ComputeUploadFolderHash(uploadFolder);
-            bool shouldAnalyze;
-
-            lock (_analysisLock)
+            ViewData[DateRangeValidationViewDataKey] = DateRangeValidationMessage;
+            return View(new HesapKontrolViewModel
             {
-                shouldAnalyze = _lastAnalysisFileHash != currentHash
-                             || _lastAnalysisTarih != analizTarihi;
-            }
-
-            if (shouldAnalyze)
-            {
-                var rapor = await _service.AnalyzeFromComparisonAsync(analizTarihi, uploadFolder, ct);
-                _log.LogInformation("HesapKontrol otomatik analiz tamamlandı: {Tarih}", analizTarihi);
-
-                lock (_analysisLock)
-                {
-                    _lastAnalysisFileHash = currentHash;
-                    _lastAnalysisTarih = analizTarihi;
-                }
-
-                // CrossDay eşleşme sonuçlarını kullanıcıya bildir
-                if (rapor.CrossDayEslesmeler.Count > 0)
-                {
-                    var toplamTutar = rapor.CrossDayEslesmeler.Sum(x => x.Tutar);
-                    TempData["CrossDay"] = $"✅ Takipteki {rapor.CrossDayEslesmeler.Count} kayıt DosyaNo doğrulanarak çözüldü! " +
-                        $"(Toplam: {toplamTutar:N2} ₺)";
-                }
-                if (rapor.PotansiyelEslesmeler.Count > 0)
-                {
-                    var potTutar = rapor.PotansiyelEslesmeler.Sum(x => x.Tutar);
-                    TempData["CrossDayPotansiyel"] = $"⚠️ {rapor.PotansiyelEslesmeler.Count} kısmi eşleşme onayınızı bekliyor ({potTutar:N2} ₺)";
-                    TempData["PotansiyelEslesmelerJson"] = System.Text.Json.JsonSerializer.Serialize(rapor.PotansiyelEslesmeler);
-                }
-            }
-            else
-            {
-                _log.LogDebug("HesapKontrol: Dosyalar değişmedi, analiz atlandı (tarih={Tarih})", analizTarihi);
-            }
+                ActiveTab = tab ?? "ozet",
+                FilterHesapTuru = hesapTuru,
+                FilterDurum = durum,
+                FilterBaslangic = startDate,
+                FilterBitis = endDate,
+                Arama = arama ?? "",
+                AnalizTarihi = analizTarihi
+            });
         }
-        catch (Exception ex)
-        {
-            _log.LogWarning(ex, "HesapKontrol otomatik analiz başarısız (sayfa yine de yüklenecek)");
-        }
+
+        // FAZ-3: GET artık salt okunurdur.
+        // Excel dosyaları okunmaz, analiz çalıştırılmaz, DB'ye yazılmaz.
+        // Analiz yalnızca RunAnalysis POST action'ı üzerinden başlatılır.
 
         // ── Servis çağrıları — her biri bağımsız try/catch ile korunur ──
         // Herhangi birinin başarısız olması diğerlerini veya sayfanın render'ını engellemez.
@@ -144,14 +134,10 @@ public sealed class HesapKontrolController : Controller
         try
         {
             takipteKayitlar = await _service.GetTrackedItemsAsync(
-                hesapTuru: hesapTuru, ct: ct);
+                hesapTuru: hesapTuru, analizTarihi: analizTarihi, ct: ct);
         }
         catch (OperationCanceledException) { _log.LogInformation("HesapKontrol takipte kayıtlar: istek iptal edildi"); }
         catch (Exception ex) { _log.LogError(ex, "HesapKontrol takipte kayıtlar alınamadı"); }
-
-        // Geçmiş tab için tarih aralığı
-        var startDate = DateOnly.TryParse(baslangic, out var s) ? s : DateOnly.FromDateTime(DateTime.Now.AddDays(-7));
-        var endDate = DateOnly.TryParse(bitis, out var e) ? e : DateOnly.FromDateTime(DateTime.Now);
 
         // Geçmiş verilerini HER ZAMAN yükle — tarih aralığında TÜM durumları getir
         var gecmis = new List<HesapKontrolKaydi>();
@@ -179,7 +165,7 @@ public sealed class HesapKontrolController : Controller
         TakipOzeti? takipOzeti = null;
         try
         {
-            takipOzeti = await _service.GetTrackingSummaryAsync(ct);
+            takipOzeti = await _service.GetTrackingSummaryAsync(analizTarihi, ct);
         }
         catch (OperationCanceledException) { _log.LogInformation("HesapKontrol takip özeti: istek iptal edildi"); }
         catch (Exception ex) { _log.LogError(ex, "HesapKontrol takip özeti alınamadı"); }
@@ -236,8 +222,10 @@ public sealed class HesapKontrolController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Confirm(Guid id, string? not, string? tarih = null)
     {
-        var kullanici = User.Identity?.Name ?? "Anonim";
-        var result = await _service.ConfirmMatchAsync(id, kullanici, not);
+        if (!TryResolveInteractiveActor(out var actorUserId, out var actorUsername))
+            return Unauthorized();
+
+        var result = await _service.ConfirmMatchAsync(id, actorUserId, actorUsername, not);
 
         if (result)
             TempData["Info"] = "✅ Kayıt başarıyla onaylandı.";
@@ -253,8 +241,10 @@ public sealed class HesapKontrolController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Cancel(Guid id, string? sebep, string? tarih = null)
     {
-        var kullanici = User.Identity?.Name ?? "Anonim";
-        var result = await _service.CancelAsync(id, kullanici, sebep);
+        if (!TryResolveInteractiveActor(out var actorUserId, out var actorUsername))
+            return Unauthorized();
+
+        var result = await _service.CancelAsync(id, actorUserId, actorUsername, sebep);
 
         if (result)
             TempData["Info"] = "🚫 Kayıt iptal edildi.";
@@ -271,12 +261,14 @@ public sealed class HesapKontrolController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> BulkCancel(List<Guid> ids, string? tarih = null)
     {
-        var kullanici = User.Identity?.Name ?? "Anonim";
+        if (!TryResolveInteractiveActor(out var actorUserId, out var actorUsername))
+            return Unauthorized();
+
         var count = 0;
 
         foreach (var id in ids)
         {
-            var result = await _service.CancelAsync(id, kullanici, "Toplu yok say");
+            var result = await _service.CancelAsync(id, actorUserId, actorUsername, "Toplu yok say");
             if (result) count++;
         }
 
@@ -290,7 +282,9 @@ public sealed class HesapKontrolController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> BulkDismissStale(int gunSiniri = 2, CancellationToken ct = default)
     {
-        var kullanici = User.Identity?.Name ?? "Anonim";
+        if (!TryResolveInteractiveActor(out var actorUserId, out var actorUsername))
+            return Unauthorized();
+
         var bugun = DateOnly.FromDateTime(DateTime.Today);
         var sinirTarih = bugun.AddDays(-gunSiniri);
 
@@ -304,7 +298,7 @@ public sealed class HesapKontrolController : Controller
         var count = 0;
         foreach (var k in staleKayitlar)
         {
-            var result = await _service.CancelAsync(k.Id, kullanici, $"Otomatik temizlik: {(bugun.DayNumber - k.AnalizTarihi.DayNumber)} günlük stale kayıt");
+            var result = await _service.CancelAsync(k.Id, actorUserId, actorUsername, $"Otomatik temizlik: {(bugun.DayNumber - k.AnalizTarihi.DayNumber)} günlük stale kayıt");
             if (result) count++;
         }
 
@@ -324,8 +318,10 @@ public sealed class HesapKontrolController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> StartTracking(Guid id, string? not, string? tarih = null)
     {
-        var kullanici = User.Identity?.Name ?? "Anonim";
-        var result = await _service.StartTrackingAsync(id, kullanici, not);
+        if (!TryResolveInteractiveActor(out var actorUserId, out var actorUsername))
+            return Unauthorized();
+
+        var result = await _service.StartTrackingAsync(id, actorUserId, actorUsername, not);
 
         if (result)
             TempData["Info"] = "📌 Kayıt takibe alındı. Takipte sekmesinden izleyebilirsiniz.";
@@ -341,8 +337,10 @@ public sealed class HesapKontrolController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Resolve(Guid id, string? not, string? tarih = null)
     {
-        var kullanici = User.Identity?.Name ?? "Anonim";
-        var result = await _service.ResolveTrackedAsync(id, kullanici, not);
+        if (!TryResolveInteractiveActor(out var actorUserId, out var actorUsername))
+            return Unauthorized();
+
+        var result = await _service.ResolveTrackedAsync(id, actorUserId, actorUsername, not);
 
         if (result)
             TempData["Info"] = "✅ Takipteki kayıt çözüldü olarak işaretlendi.";
@@ -358,8 +356,10 @@ public sealed class HesapKontrolController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Revert(Guid id, string? sebep, string? returnTab, string? tarih = null)
     {
-        var kullanici = User.Identity?.Name ?? "Anonim";
-        var result = await _service.RevertAsync(id, kullanici, sebep);
+        if (!TryResolveInteractiveActor(out var actorUserId, out var actorUsername))
+            return Unauthorized();
+
+        var result = await _service.RevertAsync(id, actorUserId, actorUsername, sebep);
 
         if (result)
             TempData["Info"] = "↩ Kayıt geri alındı ve Açık Kayıtlar'a döndü.";
@@ -378,8 +378,10 @@ public sealed class HesapKontrolController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> ApprovePotentialMatch(Guid eksikId, Guid fazlaId, string? tarih = null)
     {
-        var kullanici = User.Identity?.Name ?? "Anonim";
-        var result = await _service.ApprovePotentialMatchAsync(eksikId, fazlaId, kullanici);
+        if (!TryResolveInteractiveActor(out var actorUserId, out var actorUsername))
+            return Unauthorized();
+
+        var result = await _service.ApprovePotentialMatchAsync(eksikId, fazlaId, actorUserId, actorUsername);
 
         if (result)
             TempData["Info"] = "✅ Kısmi eşleşme onaylandı — kayıtlar çözüldü olarak işaretlendi.";
@@ -395,8 +397,10 @@ public sealed class HesapKontrolController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> RejectPotentialMatch(Guid eksikId, Guid fazlaId, string? tarih = null)
     {
-        var kullanici = User.Identity?.Name ?? "Anonim";
-        var result = await _service.RejectPotentialMatchAsync(eksikId, fazlaId, kullanici);
+        if (!TryResolveInteractiveActor(out var actorUserId, out var actorUsername))
+            return Unauthorized();
+
+        var result = await _service.RejectPotentialMatchAsync(eksikId, fazlaId, actorUserId, actorUsername);
 
         if (result)
             TempData["Info"] = "❌ Kısmi eşleşme reddedildi — kayıt takipte kalmaya devam ediyor.";
@@ -416,10 +420,13 @@ public sealed class HesapKontrolController : Controller
         Guid kayitId, int hesapTuru, int yon, decimal tutar,
         string? aciklama, string? analizTarihi, CancellationToken ct)
     {
+        if (!TryResolveInteractiveActor(out _, out var actorUsername))
+            return Unauthorized();
+
         try
         {
             var tarih = DateOnly.TryParse(analizTarihi, out var d) ? d : DateOnly.FromDateTime(DateTime.Today);
-            var kullanici = User.Identity?.Name ?? "Anonim";
+            var kullanici = actorUsername ?? "Anonim";
 
             // HesapKontrol yönüne göre istisna türü ve etki yönü belirle
             var istisnaYon = (KayitYonu)yon;
@@ -451,7 +458,7 @@ public sealed class HesapKontrolController : Controller
         catch (Exception ex)
         {
             _log.LogError(ex, "HK → Finansal İstisna oluşturma hatası");
-            TempData["Error"] = $"❌ İstisna oluşturulamadı: {ex.Message}";
+            TempData["Error"] = "❌ İstisna oluşturulamadı. Lütfen tekrar deneyin.";
         }
 
         // BUG-DATE-2 FIX: Status change — cache invalidation kaldırıldı.
@@ -466,7 +473,10 @@ public sealed class HesapKontrolController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> RunAnalysis(string? tarih, CancellationToken ct)
     {
-        // Formdan gelen tarihi parse et, yoksa en son snapshot tarihini kullan
+        if (!TryResolveInteractiveActor(out var actorUserId, out _))
+            return Unauthorized();
+
+        // Formdan gelen tarihi parse et, yoksa bugünü kullan
         DateOnly analizTarihi;
         if (DateOnly.TryParse(tarih, out var d))
         {
@@ -476,21 +486,52 @@ public sealed class HesapKontrolController : Controller
         {
             analizTarihi = DateOnly.FromDateTime(DateTime.Now);
         }
-        var uploadFolder = ResolveUploadFolder(analizTarihi);
+
+        var baseFolder = Path.Combine(_env.WebRootPath, "Data", "Raporlar");
+        var source = _sourceResolver.Resolve(baseFolder, analizTarihi);
+        if (source.IsValid
+            && source.SourceKind == HesapKontrolSourceKind.Current
+            && analizTarihi != DateOnly.FromDateTime(DateTime.Today))
+        {
+            source = HesapKontrolSourceResolution.Fail(
+                "Geçmiş tarih için yalnız tarihli arşiv kaynağı kullanılabilir.",
+                $"Historical source resolved to current folder. Date={analizTarihi:yyyy-MM-dd}.");
+        }
+        if (!source.IsValid)
+        {
+            _log.LogWarning(
+                "[HK-RUNANALYSIS] Geçerli kaynak bulunamadı. Tarih={Date} Detay={Detail}",
+                analizTarihi, source.TechnicalError);
+            TempData["Error"] =
+                "❌ Seçilen tarih için gerekli Excel kaynakları doğrulanamadı. " +
+                "Eksik veya geçersiz dosyaları kontrol ederek tekrar deneyin.";
+            return RedirectToAction("Index", new { analizTarihiStr = analizTarihi.ToString("yyyy-MM-dd") });
+        }
 
         try
         {
-            var rapor = await _service.AnalyzeFromComparisonAsync(analizTarihi, uploadFolder, ct);
+            var rapor = await _service.AnalyzeFromComparisonAsync(analizTarihi, source.Folder!, actorUserId, ct);
             TempData["Info"] = $"✅ Analiz tamamlandı: {rapor.OzetMesaj}";
+
+            if (rapor.CrossDayEslesmeler.Count > 0)
+            {
+                var toplamTutar = rapor.CrossDayEslesmeler.Sum(x => x.Tutar);
+                TempData["CrossDay"] = $"✅ Takipteki {rapor.CrossDayEslesmeler.Count} kayıt çözüldü! (Toplam: {toplamTutar:N2} ₺)";
+            }
+            if (rapor.PotansiyelEslesmeler.Count > 0)
+            {
+                var potTutar = rapor.PotansiyelEslesmeler.Sum(x => x.Tutar);
+                TempData["CrossDayPotansiyel"] = $"⚠️ {rapor.PotansiyelEslesmeler.Count} kısmi eşleşme onayınızı bekliyor ({potTutar:N2} ₺)";
+                TempData["PotansiyelEslesmelerJson"] = System.Text.Json.JsonSerializer.Serialize(rapor.PotansiyelEslesmeler);
+            }
         }
         catch (Exception ex)
         {
             _log.LogError(ex, "HesapKontrol analiz hatası");
-            TempData["Error"] = $"❌ Analiz hatası: {ex.Message}";
+            TempData["Error"] = "❌ Analiz tamamlanamadı. Lütfen tekrar deneyin.";
         }
 
-        InvalidateAnalysisCache(); // BUG-CACHE-1 FIX: Yeniden analiz sonrası cache temizlenir
-        return RedirectToAction("Index");
+        return RedirectToAction("Index", new { analizTarihiStr = analizTarihi.ToString("yyyy-MM-dd") });
     }
 
     // ─── D1b: Tarih Bazlı Gelişmiş Sorgu ("Zaman Makinesi") ───
@@ -545,7 +586,7 @@ public sealed class HesapKontrolController : Controller
         catch (Exception ex)
         {
             _log.LogError(ex, "HesapKontrol tarih sorgusu hatası: {Tarih}", queryDate);
-            TempData["Error"] = $"❌ Sorgu hatası: {ex.Message}";
+            TempData["Error"] = "❌ Sorgu tamamlanamadı. Lütfen tekrar deneyin.";
             return RedirectToAction("Index");
         }
     }
@@ -624,63 +665,26 @@ public sealed class HesapKontrolController : Controller
         return s;
     }
 
-    // ─── BUG-1 FIX: Upload klasörü dosya değişiklik hash'i ───
-    /// <summary>
-    /// Upload klasöründeki dosyaların LastWriteTime değerlerinden
-    /// bileşik bir hash üretir. Dosya değişikliği yoksa aynı hash döner.
-    /// </summary>
-    private static string ComputeUploadFolderHash(string uploadFolder)
+    private static bool TryResolveIndexDateRange(
+        DateOnly analizTarihi,
+        string? baslangic,
+        string? bitis,
+        out DateOnly startDate,
+        out DateOnly endDate)
     {
-        if (!System.IO.Directory.Exists(uploadFolder))
-            return "EMPTY";
+        var hasStart = DateOnly.TryParse(baslangic, out var parsedStart);
+        var hasEnd = DateOnly.TryParse(bitis, out var parsedEnd);
 
-        var files = System.IO.Directory.GetFiles(uploadFolder, "*.xls*")
-            .OrderBy(f => f)
-            .ToList();
+        startDate = hasStart
+            ? parsedStart
+            : hasEnd
+                ? parsedEnd.AddDays(-7)
+                : analizTarihi.AddDays(-7);
+        endDate = hasEnd ? parsedEnd : analizTarihi;
 
-        if (files.Count == 0)
-            return "EMPTY";
-
-        var sb = new System.Text.StringBuilder();
-        foreach (var f in files)
-        {
-            var info = new System.IO.FileInfo(f);
-            sb.Append(info.Name).Append('|')
-              .Append(info.LastWriteTimeUtc.Ticks).Append('|')
-              .Append(info.Length).Append(';');
-        }
-        return sb.ToString();
+        return startDate <= endDate
+            && startDate <= analizTarihi
+            && endDate <= analizTarihi;
     }
 
-    /// <summary>
-    /// Analiz cache'ini geçersiz kılar (dosya yükleme veya RunAnalysis sonrası).
-    /// </summary>
-    internal static void InvalidateAnalysisCache()
-    {
-        lock (_analysisLock)
-        {
-            _lastAnalysisFileHash = null;
-            _lastAnalysisTarih = null;
-        }
-    }
-
-    /// <summary>
-    /// Analiz tarihi için doğru upload klasörünü çözümler.
-    /// Arşiv klasörü mevcutsa onu kullanır, yoksa kök klasöre fallback yapar.
-    /// ComparisonController ile aynı IComparisonArchiveService mantığını kullanır.
-    /// </summary>
-    private string ResolveUploadFolder(DateOnly analizTarihi)
-    {
-        var baseFolder = Path.Combine(_env.WebRootPath, "Data", "Raporlar");
-        var archiveFolder = _archive.GetArchiveFolder(baseFolder, analizTarihi);
-        var resolved = archiveFolder ?? baseFolder;
-        var source = archiveFolder != null ? "Archive" : "BaseFallback";
-
-        _log.LogInformation(
-            "[HK-ARCHIVE-RESOLVE] Date={Date} BaseFolder={BaseFolder} ResolvedFolder={ResolvedFolder} Exists={Exists} Source={Source}",
-            analizTarihi, baseFolder, resolved,
-            System.IO.Directory.Exists(resolved), source);
-
-        return resolved;
-    }
 }

@@ -1,5 +1,6 @@
 using KasaManager.Application.Abstractions;
 using KasaManager.Web;
+using KasaManager.Web.DependencyInjection;
 using KasaManager.Web.Middleware;
 using KasaManager.Application.Services;
 using KasaManager.Application.Orchestration;
@@ -55,8 +56,8 @@ builder.Services.AddResponseCompression(options =>
     options.EnableForHttps = true;
 });
 
-// ✅ HttpContextAccessor (FormulaDesigner için gerekli)
-builder.Services.AddHttpContextAccessor();
+// ✅ HttpContextAccessor + authenticated actor abstraction
+builder.Services.AddCurrentUser();
 
 // ✅ Distributed Memory Cache + Session (Kasa Draft auto-save için)
 builder.Services.AddDistributedMemoryCache();
@@ -123,6 +124,7 @@ builder.Services.AddScoped<IComparisonService, ComparisonService>();
 builder.Services.AddScoped<IComparisonExportService, ComparisonExportService>();
 builder.Services.AddScoped<IComparisonDecisionService, KasaManager.Infrastructure.Services.ComparisonDecisionService>();
 builder.Services.AddScoped<IComparisonArchiveService, ComparisonArchiveService>();
+builder.Services.AddScoped<IHesapKontrolSourceResolver, HesapKontrolSourceResolver>();
 
 // ✅ Banka Hesap Kontrol Service
 builder.Services.AddScoped<IBankaHesapKontrolService, KasaManager.Infrastructure.Services.BankaHesapKontrolService>();

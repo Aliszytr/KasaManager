@@ -1,5 +1,15 @@
 using Xunit;
 using KasaManager.Domain.Helpers;
+using KasaManager.Web.Helpers;
+using KasaManager.Web.Models;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Abstractions;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.AspNetCore.Mvc.ModelBinding.Binders;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Primitives;
 
 namespace KasaManager.Tests.ParityProof;
 
@@ -194,5 +204,295 @@ public sealed class RoundingParityProofTest
 
         // En az 1 alanda Before ≠ After olmalı (rounding etkisi kanıtı)
         Assert.True(changed > 0, "En az 1 alanda rounding farkı bekleniyor");
+    }
+}
+
+public sealed class NegativeTahsilatWithdrawalTests
+{
+    private const decimal RawNegativeTahsilat = -27_846m;
+
+    [Fact]
+    public void NegativeTahsilat_NoBankWithdrawal_ShowsRequiredWithdrawal()
+    {
+        var model = new KasaPreviewViewModel { BankadanCekilen = 0m };
+
+        var decision = model.GetNegativeTahsilatWithdrawalDecision(RawNegativeTahsilat);
+
+        Assert.True(decision.ShouldShowModal);
+        Assert.Equal(27_846m, decision.RawShortfall);
+        Assert.Equal(27_846m, decision.RequiredTotalWithdrawal);
+        Assert.Equal(27_846m, decision.RemainingWithdrawal);
+    }
+
+    [Fact]
+    public void NegativeTahsilat_ExactWithdrawal_DoesNotShowModal()
+    {
+        var model = new KasaPreviewViewModel { BankadanCekilen = 27_846m };
+
+        var decision = model.GetNegativeTahsilatWithdrawalDecision(RawNegativeTahsilat);
+
+        Assert.False(decision.ShouldShowModal);
+        Assert.Equal(0m, decision.RemainingWithdrawal);
+    }
+
+    [Fact]
+    public void NegativeTahsilat_ExcessWithdrawal_DoesNotCreatePositiveDeposit()
+    {
+        var model = new KasaPreviewViewModel { BankadanCekilen = 28_766m };
+
+        var decision = model.GetNegativeTahsilatWithdrawalDecision(RawNegativeTahsilat);
+        var clampedBankayaYatirilacakTahsilat = Math.Max(0m, RawNegativeTahsilat);
+
+        Assert.False(decision.ShouldShowModal);
+        Assert.Equal(0m, decision.RemainingWithdrawal);
+        Assert.Equal(0m, clampedBankayaYatirilacakTahsilat);
+        Assert.Equal(920m, decision.ExistingWithdrawal - decision.RawShortfall);
+    }
+
+    [Fact]
+    public void NegativeTahsilat_PartialWithdrawal_ShowsRemainingAmount()
+    {
+        var model = new KasaPreviewViewModel { BankadanCekilen = 10_000m };
+
+        var decision = model.GetNegativeTahsilatWithdrawalDecision(RawNegativeTahsilat);
+
+        Assert.True(decision.ShouldShowModal);
+        Assert.Equal(17_846m, decision.RemainingWithdrawal);
+    }
+
+    [Fact]
+    public void PartialWithdrawal_DecisionReturnsExistingPlusRemainingAsRequiredTotal()
+    {
+        var model = new KasaPreviewViewModel { BankadanCekilen = 10_000m };
+
+        var decision = model.GetNegativeTahsilatWithdrawalDecision(RawNegativeTahsilat);
+
+        Assert.Equal(27_846m, decision.RawShortfall);
+        Assert.Equal(10_000m, decision.ExistingWithdrawal);
+        Assert.Equal(17_846m, decision.RemainingWithdrawal);
+        Assert.Equal(
+            decision.ExistingWithdrawal + decision.RemainingWithdrawal,
+            decision.RequiredTotalWithdrawal);
+        Assert.Equal(27_846m, decision.RequiredTotalWithdrawal);
+        Assert.True(decision.ShouldShowModal);
+    }
+
+    [Fact]
+    public void NoWithdrawal_RequiredTotalEqualsRawShortfall()
+    {
+        var model = new KasaPreviewViewModel { BankadanCekilen = 0m };
+
+        var decision = model.GetNegativeTahsilatWithdrawalDecision(RawNegativeTahsilat);
+
+        Assert.Equal(decision.RawShortfall, decision.RequiredTotalWithdrawal);
+        Assert.Equal(27_846m, decision.RequiredTotalWithdrawal);
+    }
+
+    [Fact]
+    public void ExactWithdrawal_DoesNotShowModal()
+    {
+        var model = new KasaPreviewViewModel { BankadanCekilen = 27_846m };
+
+        var decision = model.GetNegativeTahsilatWithdrawalDecision(RawNegativeTahsilat);
+
+        Assert.False(decision.ShouldShowModal);
+        Assert.Equal(27_846m, decision.RequiredTotalWithdrawal);
+    }
+
+    [Fact]
+    public void ExcessWithdrawal_DoesNotReduceExistingValue()
+    {
+        var model = new KasaPreviewViewModel { BankadanCekilen = 28_766m };
+
+        var decision = model.GetNegativeTahsilatWithdrawalDecision(RawNegativeTahsilat);
+
+        Assert.False(decision.ShouldShowModal);
+        Assert.Equal(28_766m, model.BankadanCekilen);
+        Assert.Equal(28_766m, decision.ExistingWithdrawal);
+        Assert.Equal(28_766m, decision.RequiredTotalWithdrawal);
+    }
+
+    [Fact]
+    public void PartialWithdrawal_ConfirmUsesRequiredTotalNotRemaining()
+    {
+        var model = new KasaPreviewViewModel { BankadanCekilen = 10_000m };
+        var decision = model.GetNegativeTahsilatWithdrawalDecision(RawNegativeTahsilat);
+        var projectRoot = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var viewPath = Path.Combine(
+            projectRoot, "src", "KasaManager.Web", "Views", "KasaPreview", "Index.cshtml");
+        var viewSource = File.ReadAllText(viewPath);
+
+        Assert.Equal(17_846m, decision.RemainingWithdrawal);
+        Assert.Equal(27_846m, decision.RequiredTotalWithdrawal);
+        Assert.Contains(
+            "var requiredTotalWithdrawal = @requiredTotalWithdrawal.ToString",
+            viewSource);
+        Assert.Contains(
+            "input.value = requiredTotalWithdrawal.toFixed(2).replace('.', ',');",
+            viewSource);
+        Assert.DoesNotContain("input.value = remainingWithdrawal", viewSource);
+        Assert.DoesNotContain(
+            "parseFloat(document.getElementById('bankadanCekmeTutar').value)",
+            viewSource);
+    }
+
+    [Fact]
+    public async Task TurkishDecimalBinding_TotalWithdrawal()
+    {
+        var model = new KasaPreviewViewModel { BankadanCekilen = 10_000m };
+        var decision = model.GetNegativeTahsilatWithdrawalDecision(RawNegativeTahsilat);
+        var postedValue = decision.RequiredTotalWithdrawal.ToString(
+            "F2",
+            System.Globalization.CultureInfo.GetCultureInfo("tr-TR"));
+
+        var binding = await BindTurkishDecimalAsync(postedValue);
+
+        Assert.Equal("27846,00", postedValue);
+        Assert.True(binding.Success);
+        Assert.Equal(27_846m, binding.Value);
+    }
+
+    [Fact]
+    public async Task BankadanCekilen_RoundTripsThroughRecalculate()
+    {
+        var binding = await BindTurkishDecimalAsync("28766,00");
+        Assert.True(binding.Success);
+        var boundValue = binding.Value;
+        var postedModel = new KasaPreviewViewModel
+        {
+            BankadanCekilen = boundValue,
+            KasaType = "Aksam",
+            SelectedDate = new DateOnly(2026, 7, 15),
+            HasResults = true
+        };
+
+        var recalculationDto = postedModel.ToDto();
+        var recalculatedModel = new KasaPreviewViewModel();
+        recalculatedModel.UpdateFromDto(recalculationDto);
+
+        var userName = $"negative-withdrawal-{Guid.NewGuid():N}";
+        try
+        {
+            await KasaDraftCacheHelper.SaveDraftAsync(
+                userName, "Aksam", recalculatedModel);
+            var restoredModel = new KasaPreviewViewModel();
+
+            var loaded = await KasaDraftCacheHelper.TryLoadDraftAsync(
+                userName, "Aksam", restoredModel);
+            var secondRecalculationDto = restoredModel.ToDto();
+
+            Assert.True(loaded);
+            Assert.Equal(28_766m, postedModel.BankadanCekilen);
+            Assert.Equal(28_766m, recalculationDto.BankadanCekilen);
+            Assert.Equal(28_766m, restoredModel.BankadanCekilen);
+            Assert.Equal(28_766m, secondRecalculationDto.BankadanCekilen);
+        }
+        finally
+        {
+            await KasaDraftCacheHelper.ClearDraftAsync(userName, "Aksam");
+        }
+    }
+
+    [Fact]
+    public async Task DraftCache_JsonRoundTrip_PreservesFinancialAndTurkishFields()
+    {
+        var userName = $"json-security-{Guid.NewGuid():N}";
+        var source = new KasaPreviewViewModel
+        {
+            KasaType = "Sabah",
+            SelectedDate = new DateOnly(2026, 7, 16),
+            BankadanCekilen = 28_766m,
+            BozukPara = 6_000m,
+            NakitPara = 4_000m,
+            VergideBirikenKasa = 31_984m,
+            KasayiYapan = "Çağrı Şahin",
+            Aciklama = "İstanbul veznesi — öğle açıklaması",
+            VergidenGelen = null
+        };
+
+        try
+        {
+            await KasaDraftCacheHelper.SaveDraftAsync(userName, "Sabah", source);
+            var restored = new KasaPreviewViewModel();
+
+            var loaded = await KasaDraftCacheHelper.TryLoadDraftAsync(
+                userName, "Sabah", restored);
+
+            Assert.True(loaded);
+            Assert.Equal(source.SelectedDate, restored.SelectedDate);
+            Assert.Equal(28_766m, restored.BankadanCekilen);
+            Assert.Equal(6_000m, restored.BozukPara);
+            Assert.Equal(4_000m, restored.NakitPara);
+            Assert.Equal(31_984m, restored.VergideBirikenKasa);
+            Assert.Equal("Çağrı Şahin", restored.KasayiYapan);
+            Assert.Equal("İstanbul veznesi — öğle açıklaması", restored.Aciklama);
+            Assert.Null(restored.VergidenGelen);
+        }
+        finally
+        {
+            await KasaDraftCacheHelper.ClearDraftAsync(userName, "Sabah");
+        }
+    }
+
+    [Theory]
+    [InlineData("27846", true, "27846")]
+    [InlineData("27846,00", true, "27846")]
+    [InlineData("27846.00", false, null)]
+    [InlineData("28.766,00", false, null)]
+    public async Task TurkishDecimalBinding_BankadanCekilen(
+        string postedValue,
+        bool expectedSuccess,
+        string? expectedInvariant)
+    {
+        var binding = await BindTurkishDecimalAsync(postedValue);
+
+        Assert.Equal(expectedSuccess, binding.Success);
+        if (expectedSuccess)
+        {
+            var expected = decimal.Parse(
+                expectedInvariant!,
+                System.Globalization.CultureInfo.InvariantCulture);
+            Assert.Equal(expected, binding.Value);
+        }
+    }
+
+    private static async Task<(bool Success, decimal Value)> BindTurkishDecimalAsync(
+        string postedValue)
+    {
+        var culture = System.Globalization.CultureInfo.GetCultureInfo("tr-TR");
+        var values = new Dictionary<string, StringValues>
+        {
+            [nameof(KasaPreviewViewModel.BankadanCekilen)] = postedValue
+        };
+        var valueProvider = new FormValueProvider(
+            BindingSource.Form,
+            new FormCollection(values),
+            culture);
+        var metadata = new EmptyModelMetadataProvider()
+            .GetMetadataForType(typeof(decimal));
+        var actionContext = new ActionContext(
+            new DefaultHttpContext(),
+            new RouteData(),
+            new ActionDescriptor(),
+            new ModelStateDictionary());
+        var bindingContext = DefaultModelBindingContext.CreateBindingContext(
+            actionContext,
+            valueProvider,
+            metadata,
+            bindingInfo: null,
+            modelName: nameof(KasaPreviewViewModel.BankadanCekilen));
+        var binder = new SimpleTypeModelBinder(
+            typeof(decimal),
+            NullLoggerFactory.Instance);
+
+        await binder.BindModelAsync(bindingContext);
+
+        if (!bindingContext.Result.IsModelSet)
+        {
+            return (false, 0m);
+        }
+
+        return (true, Assert.IsType<decimal>(bindingContext.Result.Model));
     }
 }

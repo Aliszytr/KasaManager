@@ -1,14 +1,20 @@
 using KasaManager.Application.Abstractions;
+using KasaManager.Application.Orchestration;
+using KasaManager.Application.Orchestration.Dtos;
+using KasaManager.Application.Pipeline;
 using KasaManager.Application.Services;
 using KasaManager.Domain.Abstractions;
+using KasaManager.Domain.FormulaEngine;
 using KasaManager.Domain.Projection;
 using KasaManager.Domain.Reports;
 using KasaManager.Domain.Reports.HesapKontrol;
 using KasaManager.Domain.Reports.Snapshots;
 using KasaManager.Domain.Settings;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
+using System.Globalization;
 
 namespace KasaManager.Tests.Application;
 
@@ -210,5 +216,340 @@ public sealed class KasaDraftServiceTests
         {
             Directory.Delete(tempDir, true);
         }
+    }
+
+    [Fact]
+    public async Task ExcessWithdrawal_RealCalculation_KeepsDepositZeroAndLeavesExcessInGeneralCash()
+    {
+        var date = new DateOnly(2026, 7, 15);
+        var kasaUstTable = new ImportedTable
+        {
+            SourceFileName = "KasaUstRapor.xlsx",
+            Kind = ImportFileKind.KasaUstRapor,
+            Rows =
+            {
+                new Dictionary<string, string?>
+                {
+                    ["satir"] = "TOPLAMLAR",
+                    ["tahsilat"] = "0",
+                    ["reddiyat"] = "0",
+                    ["harc"] = "0",
+                    ["stopaj"] = "0"
+                }
+            }
+        };
+
+        _importMock
+            .Setup(i => i.Import(It.IsAny<string>(), ImportFileKind.KasaUstRapor))
+            .Returns(Result<ImportedTable>.Success(kasaUstTable));
+        _globalDefaultsMock
+            .Setup(g => g.GetAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new KasaGlobalDefaultsSettings { Id = 1 });
+
+        var sut = CreateSut();
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllBytesAsync(
+            Path.Combine(tempDir, "KasaUstRapor.xlsx"),
+            Array.Empty<byte>());
+
+        try
+        {
+            var minimumResult = await sut.BuildAsync(
+                date,
+                tempDir,
+                new KasaDraftFinalizeInputs
+                {
+                    VergiKasaBakiyeToplam = 27_846m,
+                    BankadanCekilen = 27_846m
+                });
+            var excessResult = await sut.BuildAsync(
+                date,
+                tempDir,
+                new KasaDraftFinalizeInputs
+                {
+                    VergiKasaBakiyeToplam = 27_846m,
+                    BankadanCekilen = 37_846m
+                });
+
+            Assert.True(minimumResult.Ok, minimumResult.Error);
+            Assert.True(excessResult.Ok, excessResult.Error);
+
+            static decimal Field(KasaDraftBundle bundle, string key) =>
+                decimal.Parse(bundle.Aksam.Fields[key], CultureInfo.InvariantCulture);
+
+            var minimumDeposit = Field(minimumResult.Value!, "bankaya_yatirilacak_nakit");
+            var excessDeposit = Field(excessResult.Value!, "bankaya_yatirilacak_nakit");
+            var minimumGeneralCash = Field(minimumResult.Value!, "genel_kasa");
+            var excessGeneralCash = Field(excessResult.Value!, "genel_kasa");
+            var preservedWithdrawal = Field(excessResult.Value!, "bankadan_cekilen");
+
+            Assert.Equal(0m, minimumDeposit);
+            Assert.Equal(0m, excessDeposit);
+            Assert.Equal(10_000m, excessGeneralCash - minimumGeneralCash);
+            Assert.Equal(37_846m, preservedWithdrawal);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+}
+
+public sealed class KasaPreviewModeScopeTests
+{
+    [Theory]
+    [InlineData("Sabah", false)]
+    [InlineData("sabah", false)]
+    [InlineData("Aksam", true)]
+    public void LoadDataWarning_MentionsAksamModeOnlyForAksamKasa(
+        string kasaType,
+        bool shouldMentionAksamMode)
+    {
+        var method = typeof(KasaManager.Web.Controllers.KasaPreviewController).GetMethod(
+            "BuildLoadDataResultWarning",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+
+        Assert.NotNull(method);
+        var warning = Assert.IsType<string>(method!.Invoke(null, new object?[] { kasaType }));
+
+        Assert.Equal(shouldMentionAksamMode, warning.Contains("Akşam Kasa Modu"));
+        Assert.Contains("Eski sonuçlar güvenlik nedeniyle gösterilmedi", warning);
+    }
+
+    [Fact]
+    public void ProductionCalculatePaths_DoNotRouteSabahToHesapKontrolResolver()
+    {
+        var repositoryRoot = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var controllerPath = Path.Combine(
+            repositoryRoot, "src", "KasaManager.Web", "Controllers", "KasaPreviewController.cs");
+        var source = File.ReadAllText(controllerPath);
+
+        Assert.DoesNotContain("if (isSabah || isAksamTamGun)", source);
+        Assert.DoesNotContain("if (isSabahLC || isAksamTamGunLC)", source);
+        Assert.Contains("if (isAksamTamGun)", source);
+        Assert.Contains("if (isAksamTamGunLC)", source);
+    }
+}
+
+public sealed class BankadanCekilenFormulaEnginePoolTests
+{
+    private static readonly DateOnly TestDate = new(2026, 7, 15);
+
+    [Fact]
+    public async Task BuildUnifiedPoolAsync_BankadanCekilen_AddsManualOverride()
+    {
+        using var harness = CreateHarness();
+
+        var result = await harness.Drafts.BuildUnifiedPoolAsync(
+            TestDate,
+            harness.UploadFolder,
+            new KasaDraftFinalizeInputs { BankadanCekilen = 28_766m },
+            kasaScope: "Aksam",
+            skipSlimPoolFilter: true);
+
+        Assert.True(result.Ok, result.Error);
+        var entry = Assert.Single(result.Value!, x => x.CanonicalKey == "bankadan_cekilen");
+        Assert.Equal(UnifiedPoolValueType.Override, entry.Type);
+        Assert.Equal(28_766m, PoolDecimal(entry));
+    }
+
+    [Fact]
+    public async Task FormulaEngine_WithdrawalIncrease_RaisesGeneralCashBySameAmount()
+    {
+        using var harness = CreateHarness();
+
+        var minimum = await RunFormulaEngineAsync(harness, 27_846m);
+        var excess = await RunFormulaEngineAsync(harness, 37_846m);
+
+        Assert.Equal(0m, Output(minimum, "bankaya_yatirilacak_tahsilat"));
+        Assert.Equal(0m, Output(excess, "bankaya_yatirilacak_tahsilat"));
+        Assert.Equal(10_000m, Output(excess, "genel_kasa") - Output(minimum, "genel_kasa"));
+    }
+
+    [Fact]
+    public async Task FormulaEngine_PositiveWithdrawal_KeepsPoolKeyAvailableForRazor()
+    {
+        using var harness = CreateHarness();
+
+        var dto = await RunFormulaEngineAsync(harness, 28_766m);
+
+        var entry = Assert.Single(dto.PoolEntries, x => x.CanonicalKey == "bankadan_cekilen");
+        Assert.Equal(28_766m, PoolDecimal(entry));
+        Assert.NotNull(dto.FormulaRun);
+    }
+
+    [Fact]
+    public async Task BuildUnifiedPoolAsync_NullWithdrawal_DoesNotCreateWithdrawalEntry()
+    {
+        using var harness = CreateHarness();
+
+        var result = await harness.Drafts.BuildUnifiedPoolAsync(
+            TestDate,
+            harness.UploadFolder,
+            new KasaDraftFinalizeInputs { BankadanCekilen = null },
+            kasaScope: "Aksam",
+            skipSlimPoolFilter: true);
+
+        Assert.True(result.Ok, result.Error);
+        Assert.DoesNotContain(result.Value!, x => x.CanonicalKey == "bankadan_cekilen");
+    }
+
+    [Fact]
+    public async Task BuildUnifiedPoolAsync_ExplicitZero_KeepsZeroOverride()
+    {
+        using var harness = CreateHarness();
+
+        var result = await harness.Drafts.BuildUnifiedPoolAsync(
+            TestDate,
+            harness.UploadFolder,
+            new KasaDraftFinalizeInputs { BankadanCekilen = 0m },
+            kasaScope: "Aksam",
+            skipSlimPoolFilter: true);
+
+        Assert.True(result.Ok, result.Error);
+        var entry = Assert.Single(result.Value!, x => x.CanonicalKey == "bankadan_cekilen");
+        Assert.Equal(UnifiedPoolValueType.Override, entry.Type);
+        Assert.Equal(0m, PoolDecimal(entry));
+    }
+
+    private static async Task<KasaPreviewDto> RunFormulaEngineAsync(TestHarness harness, decimal withdrawal)
+    {
+        var dto = new KasaPreviewDto
+        {
+            SelectedDate = TestDate,
+            BankadanCekilen = withdrawal,
+            VergiKasaBakiyeToplam = 27_846m
+        };
+
+        await harness.Orchestrator.LoadActiveFormulaSetByScopeAsync(dto, "Aksam", CancellationToken.None);
+        await harness.Orchestrator.RunFormulaEnginePreviewAsync(dto, harness.UploadFolder, CancellationToken.None);
+
+        Assert.Empty(dto.Errors);
+        Assert.NotNull(dto.FormulaRun);
+        return dto;
+    }
+
+    private static decimal Output(KasaPreviewDto dto, string key) => dto.FormulaRun!.Outputs[key];
+
+    private static decimal PoolDecimal(UnifiedPoolEntry entry) =>
+        decimal.Parse(entry.Value, NumberStyles.Any, CultureInfo.InvariantCulture);
+
+    private static TestHarness CreateHarness()
+    {
+        var import = new Mock<IImportOrchestrator>();
+        var defaults = new Mock<IKasaGlobalDefaultsService>();
+        var hesapKontrol = new Mock<IBankaHesapKontrolService>();
+        var carryover = new Mock<ICarryoverResolver>();
+        var projection = new Mock<IEksikFazlaProjectionEngine>();
+        var snapshots = new Mock<IKasaRaporSnapshotService>();
+        var formulaStore = new Mock<IFormulaSetStore>();
+        var scopeFactory = new Mock<IServiceScopeFactory>();
+
+        var settings = new KasaGlobalDefaultsSettings { Id = 1 };
+        defaults.Setup(x => x.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync(settings);
+        defaults.Setup(x => x.GetOrCreateAsync(It.IsAny<CancellationToken>())).ReturnsAsync(settings);
+
+        hesapKontrol
+            .Setup(x => x.GetHistoryAsync(
+                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<BankaHesapTuru?>(),
+                It.IsAny<KayitDurumu?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<HesapKontrolKaydi>());
+
+        carryover
+            .Setup(x => x.ResolveAsync(It.IsAny<DateOnly>(), It.IsAny<CarryoverScope>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CarryoverResolutionResult(
+                0m, "dunden_devreden_kasa_nakit", TestDate, null, "Test", "Test", true));
+
+        projection
+            .Setup(x => x.ProjectAsync(It.IsAny<ProjectionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProjectionResult(
+                TestDate, true, 0m, 0m, 0m, 0m, 0m, 0m, false, new List<ProjectionDayNode>()));
+
+        snapshots
+            .Setup(x => x.GetAsync(It.IsAny<DateOnly>(), It.IsAny<KasaRaporTuru>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new KasaRaporSnapshot
+            {
+                RaporTarihi = TestDate,
+                RaporTuru = KasaRaporTuru.Genel,
+                Rows =
+                {
+                    new KasaRaporSnapshotRow
+                    {
+                        Veznedar = "Test Veznedar",
+                        IsSelected = true,
+                        Bakiye = 27_846m
+                    }
+                }
+            });
+        formulaStore
+            .Setup(x => x.ListAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<KasaManager.Domain.FormulaEngine.Authoring.PersistedFormulaSet>());
+        scopeFactory
+            .Setup(x => x.CreateScope())
+            .Throws(new InvalidOperationException("Comparison service is not needed by this regression test."));
+
+        var table = new ImportedTable
+        {
+            SourceFileName = "KasaUstRapor.xlsx",
+            Kind = ImportFileKind.KasaUstRapor,
+            Rows =
+            {
+                new Dictionary<string, string?>
+                {
+                    ["satir"] = "TOPLAMLAR",
+                    ["tahsilat"] = "0",
+                    ["reddiyat"] = "0",
+                    ["harc"] = "0",
+                    ["stopaj"] = "0"
+                }
+            }
+        };
+        import
+            .Setup(x => x.Import(It.IsAny<string>(), ImportFileKind.KasaUstRapor))
+            .Returns(Result<ImportedTable>.Success(table));
+        import
+            .Setup(x => x.ImportTrueSource(It.IsAny<string>(), It.IsAny<ImportFileKind>()))
+            .Returns(Result<ImportedTable>.Fail("Testte mevcut olmayan kaynak."));
+
+        var drafts = new KasaDraftService(
+            import.Object,
+            defaults.Object,
+            hesapKontrol.Object,
+            Mock.Of<ILogger<KasaDraftService>>(),
+            carryover.Object,
+            Options.Create(new UstRaporSourceOptions()),
+            projection.Object);
+
+        var orchestrator = new KasaOrchestrator(
+            drafts,
+            new FormulaEngineService(),
+            snapshots.Object,
+            defaults.Object,
+            formulaStore.Object,
+            Mock.Of<IDataPipeline>(),
+            Mock.Of<ILogger<KasaOrchestrator>>(),
+            scopeFactory.Object);
+
+        return new TestHarness(drafts, orchestrator);
+    }
+
+    private sealed class TestHarness : IDisposable
+    {
+        public TestHarness(KasaDraftService drafts, KasaOrchestrator orchestrator)
+        {
+            Drafts = drafts;
+            Orchestrator = orchestrator;
+            UploadFolder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(UploadFolder);
+            File.WriteAllBytes(Path.Combine(UploadFolder, "KasaUstRapor.xlsx"), Array.Empty<byte>());
+        }
+
+        public KasaDraftService Drafts { get; }
+        public KasaOrchestrator Orchestrator { get; }
+        public string UploadFolder { get; }
+
+        public void Dispose() => Directory.Delete(UploadFolder, recursive: true);
     }
 }

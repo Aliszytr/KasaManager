@@ -71,9 +71,29 @@
     <div class="d-flex align-items-center gap-2">
         @if (Model.SelectedDate.HasValue && Model.HasResults)
         {
-            <a href="/HesapKontrol/QueryDate?tarih=@Model.SelectedDate.Value.ToString("yyyy-MM-dd")" class="btn btn-sm btn-outline-info rounded-pill fw-semibold" title="Bu Kasa İçin Hesap Kontrol" style="box-shadow: 0 2px 4px rgba(14, 165, 233, 0.1);">
-                <i class="fas fa-list-check me-1"></i>Hesap Kontrol
-            </a>
+            @if (kasaTypeClass == "sabah" || kasaTypeClass == "aksam")
+            {
+                @if (!Model.LoadedSnapshotId.HasValue)
+                {
+                    <form id="kasaHesapKontrolContextForm" asp-controller="KasaPreview" asp-action="RunHesapKontrolFromContext" method="post" class="d-none">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="kasaType" value="@Model.KasaType" />
+                    </form>
+                }
+                else
+                {
+                    <form id="kasaHesapKontrolContextForm" asp-controller="KasaPreview" asp-action="RunHesapKontrolFromSavedSnapshot" method="post" class="d-none">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="savedSnapshotId" value="@Model.LoadedSnapshotId.Value" />
+                    </form>
+                }
+                <button type="submit" form="kasaHesapKontrolContextForm"
+                        class="btn btn-sm btn-outline-info rounded-pill fw-semibold"
+                        title="Analizi bu kasanın doğrulanmış kaynaklarıyla çalıştırır"
+                        style="box-shadow: 0 2px 4px rgba(14, 165, 233, 0.1);">
+                    <i class="fas fa-list-check me-1"></i>Hesap Kontrolü Çalıştır ve Aç
+                </button>
+            }
             
             <div class="dropdown">
                 <button class="btn btn-sm btn-outline-warning rounded-pill fw-semibold dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Bu Kasa İçin Karşılaştırma" style="box-shadow: 0 2px 4px rgba(245, 158, 11, 0.1);">
@@ -611,7 +631,7 @@
                         </div>
                         <div class="col-md-4 col-lg-3">
                             <label class="kasa-form-label">Bankadan Çekilen</label>
-                            <input type="number" step="0.01" class="kasa-form-input money-input"
+                            <input type="text" inputmode="decimal" class="kasa-form-input money-input"
                                    asp-for="BankadanCekilen" />
                         </div>
                         <div class="col-md-4 col-lg-3">
@@ -665,12 +685,121 @@
                     </div>
                 </button>
                 <div x-show="openEF" x-transition class="mt-3 p-4 border shadow-sm" style="background: rgba(255,255,255,0.7); border-radius: 8px;">
-                    <div class="alert" style="background: rgba(8,145,178,0.06); border: 1px solid rgba(8,145,178,0.2); border-radius: var(--radius-md); padding: 8px 14px; margin-bottom: 12px;">
-                        <small style="color: var(--kasa-info);">
-                            <i class="fas fa-info-circle me-1"></i>
-                            @(Model.HesapKontrolAutoFillMessage ?? "Bu bölüm Hesap Kontrol modülü çalıştırıldığında kendiliğinden dolacaktır.")
-                        </small>
-                    </div>
+                    @if (!string.IsNullOrWhiteSpace(Model.ImmutableAuditNotice))
+                    {
+                        <div class="alert alert-info" role="alert" aria-live="polite"
+                             data-testid="immutable-audit-notice"
+                             style="border-radius: var(--radius-md); padding: 8px 14px; margin-bottom: 12px;">
+                            <small><i class="fas fa-info-circle me-1"></i>@Model.ImmutableAuditNotice</small>
+                        </div>
+                    }
+                    else if (Model.HasOnlyZeroLoadedImmutableAuditData)
+                    {
+                        <div class="alert alert-secondary" role="status" aria-live="polite"
+                             data-testid="immutable-audit-zero-result"
+                             style="border-radius: var(--radius-md); padding: 8px 14px; margin-bottom: 12px;">
+                            <small><i class="fas fa-check-circle me-1"></i>Kaydetme anında takipte eksik veya fazla kayıt bulunmuyordu.</small>
+                        </div>
+                    }
+                    else if (Model.HasImmutableAuditData && Model.LoadedAuditPayloadVersion is 1 or 2)
+                    {
+                        <div class="alert alert-info" role="status" aria-live="polite"
+                             data-testid="immutable-audit-loaded"
+                             style="border-radius: var(--radius-md); padding: 8px 14px; margin-bottom: 12px;">
+                            <small><i class="fas fa-history me-1"></i>Takip ve fark değerleri raporun kaydetme anındaki audit verileridir.</small>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert" style="background: rgba(8,145,178,0.06); border: 1px solid rgba(8,145,178,0.2); border-radius: var(--radius-md); padding: 8px 14px; margin-bottom: 12px;">
+                            <small style="color: var(--kasa-info);">
+                                <i class="fas fa-info-circle me-1"></i>
+                                @(Model.HesapKontrolAutoFillMessage ?? "Bu bölüm Hesap Kontrol modülü çalıştırıldığında kendiliğinden dolacaktır.")
+                            </small>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(Model.ImmutableAuditRecordDetailsNotice))
+                    {
+                        var detailsCorrupt = Model.ImmutableAuditRecordDetailsNotice.Contains(
+                            "bozuk", StringComparison.OrdinalIgnoreCase);
+                        <div class="alert @(detailsCorrupt ? "alert-danger" : "alert-info")"
+                             role="@(detailsCorrupt ? "alert" : "status")"
+                             data-testid="immutable-audit-details-notice"
+                             style="border-radius: var(--radius-md); padding: 8px 14px; margin-bottom: 12px;">
+                            <small><i class="fas fa-list-check me-1"></i>@Model.ImmutableAuditRecordDetailsNotice</small>
+                        </div>
+                    }
+                    else if (Model.HasImmutableAuditRecordDetails && Model.ImmutableAuditRecords.Count == 0)
+                    {
+                        <div class="alert alert-secondary" role="status"
+                             data-testid="immutable-audit-details-empty"
+                             style="border-radius: var(--radius-md); padding: 8px 14px; margin-bottom: 12px;">
+                            <small><i class="fas fa-check-circle me-1"></i>Kaydetme anında bu kapsamda HK kaydı bulunmuyordu.</small>
+                        </div>
+                    }
+                    else if (Model.HasImmutableAuditRecordDetails)
+                    {
+                        var recordLookup = Model.ImmutableAuditRecords.ToDictionary(record => record.KayitId);
+                        var detailGroups = new (string Name, IReadOnlyList<Guid> Ids)[]
+                        {
+                            ("Aktif kayıtlar", Model.ImmutableAuditRecordGroups.AktifKayitlar),
+                            ("Önceki açıklar", Model.ImmutableAuditRecordGroups.OncekiAciklar),
+                            ("Bugün çözülenler", Model.ImmutableAuditRecordGroups.BugunCozulenler),
+                            ("Reconciliation kayıtları", Model.ImmutableAuditRecordGroups.ReconciliationKayitlar),
+                            ("Takipte kayıtlar", Model.ImmutableAuditRecordGroups.TakipteKayitlar),
+                            ("Bugün takipten çözülenler", Model.ImmutableAuditRecordGroups.BugunTakipCozulenler)
+                        };
+
+                        <div data-testid="immutable-audit-details" class="mb-3">
+                            @foreach (var group in detailGroups.Where(group => group.Ids.Count > 0))
+                            {
+                                <div class="mb-3" data-testid="immutable-audit-details-group">
+                                    <h6 class="mb-2"><i class="fas fa-layer-group me-1"></i>@group.Name</h6>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-striped align-middle"
+                                               data-testid="immutable-audit-details-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Analiz tarihi</th>
+                                                    <th>Hesap</th>
+                                                    <th>Yön</th>
+                                                    <th>Tutar</th>
+                                                    <th>Durum</th>
+                                                    <th>Sınıf</th>
+                                                    <th>Dosya no</th>
+                                                    <th>Birim</th>
+                                                    <th>Tespit tipi</th>
+                                                    <th>Takip başlangıcı</th>
+                                                    <th>Çözülme tarihi</th>
+                                                    <th>Onay tarihi</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var id in group.Ids)
+                                                {
+                                                    var record = recordLookup[id];
+                                                    <tr>
+                                                        <td>@record.AnalizTarihi.ToString("dd.MM.yyyy")</td>
+                                                        <td>@record.HesapTuru</td>
+                                                        <td>@record.Yon</td>
+                                                        <td>@record.Tutar.ToString("N2") ₺</td>
+                                                        <td>@record.KaydetmeAnindakiDurum</td>
+                                                        <td>@record.Sinif</td>
+                                                        <td>@(record.DosyaNo ?? "—")</td>
+                                                        <td>@(record.BirimAdi ?? "—")</td>
+                                                        <td>@(record.TespitEdilenTip ?? "—")</td>
+                                                        <td>@(record.TakipBaslangicTarihi?.ToString("dd.MM.yyyy") ?? "—")</td>
+                                                        <td>@(record.CozulmeTarihi?.ToString("dd.MM.yyyy") ?? "—")</td>
+                                                        <td>@(record.OnayTarihi?.ToLocalTime().ToString("dd.MM.yyyy HH:mm") ?? "—")</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
                     @if (Model.TakipteSayisi > 0)
                     {
                         <div class="alert" style="background: rgba(142,68,173,0.06); border: 1px solid rgba(142,68,173,0.25); border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 12px; border-left: 4px solid #8e44ad;">
@@ -697,10 +826,10 @@
                                         }
                                     </div>
                                 </div>
-                                <a href="/HesapKontrol/QueryDate?tarih=@(Model.SelectedDate?.ToString("yyyy-MM-dd"))&tab=takipte"
-                                   style="font-size: 0.8rem; color: #8e44ad; text-decoration: underline;">
-                                    <i class="fas fa-external-link-alt me-1"></i>Hesap Kontrol (Geçmiş Detay)
-                                </a>
+                                <button type="submit" form="kasaHesapKontrolContextForm"
+                                        style="font-size: 0.8rem; color: #8e44ad; text-decoration: underline; background: none; border: 0; padding: 0;">
+                                    <i class="fas fa-external-link-alt me-1"></i>Hesap Kontrolü Çalıştır ve Aç
+                                </button>
                             </div>
                         </div>
                     }
@@ -1019,6 +1148,18 @@
         // ResultVal: Formül çıktıları > Pool
         // Önce formül sonuçlarında (direkt + alias) ara, sonra pool'da ara
         string ResultVal(string key) {
+            decimal? immutableAuditValue = key switch {
+                "gune_ait_eksik_fazla_harc"         => Model.GuneAitEksikFazlaHarc,
+                "gune_ait_eksik_fazla_tahsilat"     => Model.GuneAitEksikFazlaTahsilat,
+                "dunden_eksik_fazla_harc"           => Model.DundenEksikFazlaHarc,
+                "dunden_eksik_fazla_tahsilat"       => Model.DundenEksikFazlaTahsilat,
+                "dunden_eksik_fazla_gelen_harc"     => Model.DundenEksikFazlaGelenHarc,
+                "dunden_eksik_fazla_gelen_tahsilat" => Model.DundenEksikFazlaGelenTahsilat,
+                _                                   => null
+            };
+            if (immutableAuditValue.HasValue)
+                return immutableAuditValue.Value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
+
             // 1. Direkt formül çıktısı
             if (resultFields.TryGetValue(key, out var v)) return v;
             // 2. Alias üzerinden formül çıktısı (ÖNCELİKLİ — formül sonuçları pool'dan üstün)
@@ -1059,6 +1200,17 @@
 
         // ResultValRaw: ham decimal değer — Banka Fişi hidden input'ları için
         decimal ResultValRaw(string key) {
+            decimal? immutableAuditValue = key switch {
+                "gune_ait_eksik_fazla_harc"         => Model.GuneAitEksikFazlaHarc,
+                "gune_ait_eksik_fazla_tahsilat"     => Model.GuneAitEksikFazlaTahsilat,
+                "dunden_eksik_fazla_harc"           => Model.DundenEksikFazlaHarc,
+                "dunden_eksik_fazla_tahsilat"       => Model.DundenEksikFazlaTahsilat,
+                "dunden_eksik_fazla_gelen_harc"     => Model.DundenEksikFazlaGelenHarc,
+                "dunden_eksik_fazla_gelen_tahsilat" => Model.DundenEksikFazlaGelenTahsilat,
+                _                                   => null
+            };
+            if (immutableAuditValue.HasValue) return immutableAuditValue.Value;
+
             if (Model.FormulaRun?.Outputs != null && Model.FormulaRun.Outputs.TryGetValue(key, out var v)) return v;
             if (keyAliases.TryGetValue(key, out var aliases))
             {
@@ -2148,12 +2300,12 @@
                             @Model.CrossDayBildirim
                         </div>
                     </div>
-                    <a href="/HesapKontrol/QueryDate?tarih=@(Model.SelectedDate?.ToString("yyyy-MM-dd"))&tab=takipte" class="kasa-btn"
-                       style="font-size: 11px; padding: 6px 14px; border-radius: 8px;
-                              background: rgba(34,197,94,0.1); color: #22c55e;
-                              border: 1px solid rgba(34,197,94,0.3); white-space: nowrap; text-decoration: none;">
-                        <i class="fas fa-external-link-alt me-1"></i> Detaylar
-                    </a>
+                    <button type="submit" form="kasaHesapKontrolContextForm" class="kasa-btn"
+                            style="font-size: 11px; padding: 6px 14px; border-radius: 8px;
+                                   background: rgba(34,197,94,0.1); color: #22c55e;
+                                   border: 1px solid rgba(34,197,94,0.3); white-space: nowrap; cursor: pointer;">
+                        <i class="fas fa-external-link-alt me-1"></i> Hesap Kontrolü Çalıştır ve Aç
+                    </button>
                 </div>
             </div>
         </div>
@@ -2190,12 +2342,12 @@
                             </div>
                         }
                     </div>
-                    <a href="/HesapKontrol/QueryDate?tarih=@(Model.SelectedDate?.ToString("yyyy-MM-dd"))&tab=takipte" class="kasa-btn"
-                       style="font-size: 11px; padding: 6px 14px; border-radius: 8px;
-                              background: rgba(8,145,178,0.1); color: #0891b2;
-                              border: 1px solid rgba(8,145,178,0.3); white-space: nowrap; text-decoration: none;">
-                        <i class="fas fa-external-link-alt me-1"></i> Takip Detayları
-                    </a>
+                    <button type="submit" form="kasaHesapKontrolContextForm" class="kasa-btn"
+                            style="font-size: 11px; padding: 6px 14px; border-radius: 8px;
+                                   background: rgba(8,145,178,0.1); color: #0891b2;
+                                   border: 1px solid rgba(8,145,178,0.3); white-space: nowrap; cursor: pointer;">
+                        <i class="fas fa-external-link-alt me-1"></i> Hesap Kontrolü Çalıştır ve Aç
+                    </button>
                 </div>
             </div>
         </div>
@@ -3056,6 +3208,19 @@
                         <span style="font-size:11px; font-weight:500; color:var(--text-muted, #6b7280); margin-left:6px;">v@(Model.LoadedSnapshotVersion)</span>
                     </div>
                     <div style="font-size:11px; color:var(--text-muted, #6b7280);">Yüklü rapor — değişiklikleri "Güncelle" ile kaydedebilir veya "Sil" ile kaldırabilirsiniz</div>
+                    @if (!string.IsNullOrEmpty(Model.Aciklama) || !string.IsNullOrEmpty(Model.MuhabereNo))
+                    {
+                        <div style="font-size:11px; color:var(--text-muted, #6b7280); margin-top:3px; display:flex; gap:12px; flex-wrap:wrap;">
+                            @if (!string.IsNullOrEmpty(Model.Aciklama))
+                            {
+                                <span><strong>Açıklama:</strong> @Model.Aciklama</span>
+                            }
+                            @if (!string.IsNullOrEmpty(Model.MuhabereNo))
+                            {
+                                <span><strong>Muhabere No:</strong> @Model.MuhabereNo</span>
+                            }
+                        </div>
+                    }
                 </div>
                 <input type="hidden" id="loadedSnapshotId" value="@Model.LoadedSnapshotId" />
             </div>
@@ -3343,8 +3508,10 @@
     {
         negatifTahsilatDeger = _ntVal;
     }
-    var tahsilatNegatifMi = negatifTahsilatDeger < 0 && Model.HasResults;
-    var oneriBankadanCekilecek = Math.Abs(negatifTahsilatDeger);
+    var negatifTahsilatKarari = Model.GetNegativeTahsilatWithdrawalDecision(negatifTahsilatDeger);
+    var tahsilatNegatifMi = negatifTahsilatKarari.ShouldShowModal && Model.HasResults;
+    var remainingWithdrawal = negatifTahsilatKarari.RemainingWithdrawal;
+    var requiredTotalWithdrawal = negatifTahsilatKarari.RequiredTotalWithdrawal;
 }
 @if (tahsilatNegatifMi)
 {
@@ -3376,20 +3543,20 @@
                     @negatifTahsilatDeger.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR")) <span class="money-currency" style="font-size:13px;">₺</span>
                 </div>
             </div>
-            <!-- Öneri ve düzenlenebilir input -->
+            <!-- Kalan çekim ihtiyacı -->
             <div style="padding:14px 16px; background:rgba(16,185,129,0.06); border-radius:10px; border:1px solid rgba(16,185,129,0.2);">
                 <label style="display:block; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:8px;">
-                    <i class="fas fa-university me-1" style="color:var(--kasa-warning);"></i>Bankadan Çekilecek Tutar
+                    <i class="fas fa-university me-1" style="color:var(--kasa-warning);"></i>Kalan Bankadan Çekim İhtiyacı
                 </label>
                 <div style="display:flex; align-items:center; gap:8px;">
-                    <input type="number" id="bankadanCekmeTutar" step="0.01" min="0"
-                           value="@oneriBankadanCekilecek.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)"
+                    <input type="number" id="bankadanCekmeTutar" step="0.01" min="0" readonly
+                           value="@remainingWithdrawal.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)"
                            style="flex:1; padding:10px 14px; font-size:18px; font-weight:700; border:2px solid var(--kasa-success); border-radius:8px; background:var(--input-bg, white); color:var(--text-primary); text-align:right;" />
                     <span style="font-size:14px; font-weight:700; color:var(--text-muted);">₺</span>
                 </div>
                 <div style="font-size:10px; color:var(--text-muted); margin-top:6px;">
-                    <i class="fas fa-info-circle me-1"></i>Önerilen minimum tutar: <strong>@oneriBankadanCekilecek.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR")) ₺</strong>
-                    — İsterseniz daha yüksek bir tutar girebilirsiniz (ör. kasada nakit kalması için).
+                    <i class="fas fa-info-circle me-1"></i><strong>@remainingWithdrawal.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR")) ₺</strong> daha çekilmelidir.
+                    Onay sonrasında toplam çekilen tutar <strong>@requiredTotalWithdrawal.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR")) ₺</strong> olarak kaydedilir.
                 </div>
             </div>
         </div>
@@ -3416,13 +3583,14 @@
 (function() {
     var btn = document.getElementById('bankadanCekmeOnayla');
     if (!btn) return;
+    var remainingWithdrawal = @remainingWithdrawal.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+    var requiredTotalWithdrawal = @requiredTotalWithdrawal.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
     btn.addEventListener('click', function() {
-        var tutar = parseFloat(document.getElementById('bankadanCekmeTutar').value) || 0;
-        if (tutar <= 0) { alert('Lütfen geçerli bir tutar girin.'); return; }
+        if (remainingWithdrawal <= 0 || requiredTotalWithdrawal <= 0) { return; }
         // BankadanCekilen input'unu bul ve doldur
         var input = document.querySelector('input[name="BankadanCekilen"]');
         if (input) {
-            input.value = tutar.toFixed(2);
+            input.value = requiredTotalWithdrawal.toFixed(2).replace('.', ',');
         }
         // Modalı kapat
         document.getElementById('bankadanCekmeModal').style.display = 'none';
@@ -3461,6 +3629,7 @@
             <input type="hidden" asp-for="KasaType" />
             <input type="hidden" asp-for="KasayiYapan" />
             <input type="hidden" asp-for="DbFormulaSetId" />
+            <input type="hidden" asp-for="LoadedSnapshotId" />
             <input type="hidden" name="RptGunlukNot" class="rpt-gunluk-not" value="" />
             <input type="hidden" name="ConfirmOverwrite" id="confirmOverwrite" value="false" />
             <input type="hidden" name="SaveInputsJson" id="saveInputsJson" value="@(Model.FormulaRun?.Inputs != null ? System.Text.Json.JsonSerializer.Serialize(Model.FormulaRun.Inputs) : "{}")" />
@@ -3690,6 +3859,10 @@
         }
 
         var fd = new FormData(form);
+        var loadedIdEl = document.getElementById('loadedSnapshotId');
+        if (loadedIdEl && loadedIdEl.value) {
+            fd.set('LoadedSnapshotId', loadedIdEl.value);
+        }
         fetch(form.action, { method: 'POST', body: fd })
             .then(function(r) {
                 if (!r.ok) throw new Error('Sunucu hatası: ' + r.status);

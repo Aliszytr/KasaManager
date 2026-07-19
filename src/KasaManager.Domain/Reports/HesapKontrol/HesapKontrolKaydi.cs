@@ -164,6 +164,21 @@ public sealed class HesapKontrolKaydi
     /// <summary>Kaydı oluşturan kullanıcı</summary>
     public string? CreatedBy { get; set; }
 
+    /// <summary>Kaydı oluşturan interactive actor'ın stabil kullanıcı ID'si</summary>
+    public int? CreatedByUserId { get; set; }
+
+    /// <summary>Takip geçişini yapan interactive actor'ın stabil kullanıcı ID'si</summary>
+    public int? TrackingStartedByUserId { get; set; }
+
+    /// <summary>Çözüm geçişini yapan interactive actor'ın stabil kullanıcı ID'si</summary>
+    public int? ResolvedByUserId { get; set; }
+
+    /// <summary>Onay geçişini yapan interactive actor'ın stabil kullanıcı ID'si</summary>
+    public int? ApprovedByUserId { get; set; }
+
+    /// <summary>İptal geçişini yapan interactive actor'ın stabil kullanıcı ID'si</summary>
+    public int? CancelledByUserId { get; set; }
+
     // ─── Geri Alma ───
 
     /// <summary>Geri alma işlemini yapan kullanıcı (null ise geri alınmamış)</summary>

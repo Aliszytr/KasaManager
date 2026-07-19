@@ -27,6 +27,7 @@ public sealed class GenelKasaRaporController : Controller
     private readonly IReportDataBuilder _reportBuilder;
     private readonly IExportService _exportService;
     private readonly ICalculatedKasaSnapshotService _calcSnapshots;
+    private readonly ICurrentUser _currentUser;
     private readonly ILogger<GenelKasaRaporController> _log;
 
     public GenelKasaRaporController(
@@ -37,6 +38,7 @@ public sealed class GenelKasaRaporController : Controller
         IReportDataBuilder reportBuilder,
         IExportService exportService,
         ICalculatedKasaSnapshotService calcSnapshots,
+        ICurrentUser currentUser,
         ILogger<GenelKasaRaporController> log)
     {
         _env = env;
@@ -46,7 +48,29 @@ public sealed class GenelKasaRaporController : Controller
         _reportBuilder = reportBuilder;
         _exportService = exportService;
         _calcSnapshots = calcSnapshots;
+        _currentUser = currentUser;
         _log = log;
+    }
+
+    private bool TryResolveSnapshotActor(
+        out int actorUserId,
+        out string? actorUsername,
+        out bool isAdmin)
+    {
+        try
+        {
+            actorUserId = _currentUser.RequireAuthenticatedUserId();
+            actorUsername = _currentUser.Username;
+            isAdmin = _currentUser.IsInRole("Admin");
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            actorUserId = default;
+            actorUsername = null;
+            isAdmin = false;
+            return false;
+        }
     }
 
     [HttpGet]
@@ -204,6 +228,9 @@ public sealed class GenelKasaRaporController : Controller
         [FromForm] bool confirmBankaDiagnosticOverride,
         CancellationToken ct)
     {
+        if (!TryResolveSnapshotActor(out var actorUserId, out var actorUsername, out _))
+            return Unauthorized();
+
         try
         {
             decimal? parsedGelmeyen = null;
@@ -279,7 +306,7 @@ public sealed class GenelKasaRaporController : Controller
                 RaporTarihi = tarih,
                 KasaTuru = KasaRaporTuru.Genel,
                 Name = raporAdi,
-                CalculatedBy = SaveVeznedar?.Trim() ?? "Sistem",
+                CalculatedBy = actorUsername ?? "Sistem",
                 InputsJson = inputsJson,
                 OutputsJson = outputsJson,
                 KasaRaporDataJson = raporDataJson,
@@ -289,7 +316,8 @@ public sealed class GenelKasaRaporController : Controller
             // Hesaplama sonucu arşiv olarak DB'ye yazılıyor.
             // Bu, snapshot bağımlılığı DEĞİL — CarryoverResolver'ın gelecekte
             // devreden değerini okuyabilmesi için zorunlu arşiv kaydıdır.
-            await _calcSnapshots.SaveAsync(snapshot, ct);
+            await _calcSnapshots.SaveAsync(
+                snapshot, actorUserId, actorUsername ?? "Sistem", ct);
 
             _log.LogInformation("GenelKasa rapor kaydedildi ve arşivlendi: {Name}, Tarih={Tarih}",
                 snapshot.Name, snapshot.RaporTarihi);
@@ -407,13 +435,24 @@ public sealed class GenelKasaRaporController : Controller
         [FromForm] string? notes,
         CancellationToken ct)
     {
+        if (!TryResolveSnapshotActor(out var actorUserId, out _, out var isAdmin))
+            return Unauthorized();
+        if (!isAdmin)
+            return Forbid();
+
         try
         {
             var snapshot = await _calcSnapshots.GetByIdAsync(snapshotId, ct);
             if (snapshot is null)
                 return Json(new { ok = false, message = "Rapor bulunamadı." });
 
-            await _calcSnapshots.UpdateAsync(snapshotId, name?.Trim(), null, notes?.Trim(), ct);
+            var result = await _calcSnapshots.UpdateAsync(
+                snapshotId, name?.Trim(), null, notes?.Trim(),
+                actorUserId, isAdmin, ct);
+            if (result == SnapshotMutationResult.Forbidden)
+                return Forbid();
+            if (result == SnapshotMutationResult.NotFound)
+                return Json(new { ok = false, message = "Rapor bulunamadı." });
 
             return Json(new { ok = true, message = $"✅ Rapor güncellendi: {name?.Trim() ?? snapshot.Name}" });
         }
@@ -433,13 +472,23 @@ public sealed class GenelKasaRaporController : Controller
         [FromForm] Guid snapshotId,
         CancellationToken ct)
     {
+        if (!TryResolveSnapshotActor(out var actorUserId, out var actorUsername, out var isAdmin))
+            return Unauthorized();
+        if (!isAdmin)
+            return Forbid();
+
         try
         {
             var snapshot = await _calcSnapshots.GetByIdAsync(snapshotId, ct);
             if (snapshot is null)
                 return Json(new { ok = false, message = "Rapor bulunamadı." });
 
-            await _calcSnapshots.DeleteAsync(snapshotId, null, ct);
+            var result = await _calcSnapshots.DeleteAsync(
+                snapshotId, actorUserId, isAdmin, actorUsername ?? "Sistem", ct);
+            if (result == SnapshotMutationResult.Forbidden)
+                return Forbid();
+            if (result == SnapshotMutationResult.NotFound)
+                return Json(new { ok = false, message = "Rapor bulunamadı." });
 
             return Json(new { ok = true, message = $"🗑️ Rapor silindi: {snapshot.Name}" });
         }

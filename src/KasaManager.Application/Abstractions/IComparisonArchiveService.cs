@@ -29,3 +29,45 @@ public interface IComparisonArchiveService
     /// </summary>
     int CleanupOldArchives(string uploadFolder, int retentionDays = 60);
 }
+
+public sealed record HesapKontrolSourceResolution(
+    string? Folder,
+    string? Error,
+    string? TechnicalError = null,
+    HesapKontrolSourceKind SourceKind = HesapKontrolSourceKind.Unknown)
+{
+    public bool IsValid => Folder is not null && Error is null;
+
+    public static HesapKontrolSourceResolution Success(
+        string folder,
+        HesapKontrolSourceKind sourceKind = HesapKontrolSourceKind.Unknown) =>
+        new(folder, null, null, sourceKind);
+    public static HesapKontrolSourceResolution Fail(string error, string? technicalError = null) =>
+        new(null, error, technicalError);
+}
+
+public enum HesapKontrolSourceKind
+{
+    Unknown = 0,
+    Archive = 1,
+    Current = 2
+}
+
+/// <summary>
+/// Hesap Kontrol analiz kaynağını arşiv öncelikli çözümler ve Excel dosyalarını
+/// herhangi bir import veya kalıcı veri işlemi başlatmadan doğrular.
+/// </summary>
+public interface IHesapKontrolSourceResolver
+{
+    HesapKontrolSourceResolution Resolve(string baseFolder, DateOnly analizTarihi);
+    string? Validate(string folder, DateOnly analizTarihi);
+}
+
+/// <summary>
+/// Her karşılaştırmayı kendi dosya çiftiyle değerlendiren analizler için
+/// en az bir çalışabilir dosya çifti bulunduğunu doğrular.
+/// </summary>
+public interface IPartialHesapKontrolSourceValidator
+{
+    string? ValidateForAnalysis(string folder, DateOnly analizTarihi);
+}

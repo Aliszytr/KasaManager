@@ -816,9 +816,15 @@ namespace KasaManager.Infrastructure.Migrations
                     b.Property<DateTime>("AnalizTarihi")
                         .HasColumnType("datetime2");
 
+                    b.Property<int?>("ApprovedByUserId")
+                        .HasColumnType("int");
+
                     b.Property<string>("BirimAdi")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<int?>("CancelledByUserId")
+                        .HasColumnType("int");
 
                     b.Property<Guid?>("CozulmeKaynakId")
                         .HasColumnType("uniqueidentifier");
@@ -829,6 +835,9 @@ namespace KasaManager.Infrastructure.Migrations
                     b.Property<string>("CreatedBy")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("int");
 
                     b.Property<string>("DosyaNo")
                         .HasMaxLength(100)
@@ -870,6 +879,9 @@ namespace KasaManager.Infrastructure.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<int?>("ResolvedByUserId")
+                        .HasColumnType("int");
+
                     b.Property<int>("Sinif")
                         .HasColumnType("int");
 
@@ -882,6 +894,9 @@ namespace KasaManager.Infrastructure.Migrations
                     b.Property<string>("TespitEdilenTip")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("TrackingStartedByUserId")
+                        .HasColumnType("int");
 
                     b.Property<decimal>("Tutar")
                         .HasPrecision(18, 2)
@@ -914,12 +929,18 @@ namespace KasaManager.Infrastructure.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<int?>("CalculatedByUserId")
+                        .HasColumnType("int");
+
                     b.Property<DateTime?>("DeletedAtUtc")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("DeletedBy")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<int?>("DeletedByUserId")
+                        .HasColumnType("int");
 
                     b.Property<string>("Description")
                         .HasMaxLength(500)

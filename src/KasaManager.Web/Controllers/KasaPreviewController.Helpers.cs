@@ -1,7 +1,10 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using KasaManager.Application.Abstractions;
 using KasaManager.Domain.Reports;
 using KasaManager.Domain.Validation;
+using KasaManager.Web.Helpers;
 using KasaManager.Web.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -261,6 +264,283 @@ public sealed partial class KasaPreviewController
         return data;
     }
 
+    /// <summary>
+    /// Builds the version-2 immutable audit payload exclusively from the
+    /// server-side Hesap Kontrol query for the canonical save date.
+    /// Exceptions intentionally propagate so SaveReport cannot persist a
+    /// partial version-2 payload.
+    /// </summary>
+    private async Task<(KasaImmutableAuditData Summary, HesapKontrolImmutableAuditDetails Details)>
+        BuildImmutableAuditAsync(
+        DateOnly raporTarihi,
+        CancellationToken ct)
+    {
+        var snapshot = await _hesapKontrol.GetImmutableAuditSnapshotAsync(raporTarihi, ct);
+        if (!HesapKontrolImmutableAuditDetailsValidator.TryValidate(
+                snapshot.Details,
+                out var validationError))
+        {
+            throw new InvalidOperationException(
+                $"Immutable Hesap Kontrol audit details validation failed: {validationError}");
+        }
+
+        var fill = snapshot.Summary;
+
+        var summary = new KasaImmutableAuditData
+        {
+            GuneAitEksikFazlaTahsilat = fill.GuneAitEksikFazlaTahsilat,
+            GuneAitEksikFazlaHarc = fill.GuneAitEksikFazlaHarc,
+            OncekiGunAcikTahsilat = fill.OncekiGunAcikTahsilat,
+            OncekiGunAcikHarc = fill.OncekiGunAcikHarc,
+            BugunCozulenTahsilat = fill.BugunCozulenTahsilat,
+            BugunCozulenHarc = fill.BugunCozulenHarc,
+            TakipteEksikTahsilat = fill.TakipteEksikTahsilat,
+            TakipteEksikHarc = fill.TakipteEksikHarc,
+            TakipteFazlaTahsilat = fill.TakipteFazlaTahsilat,
+            TakipteFazlaHarc = fill.TakipteFazlaHarc,
+            TakipteSayisi = fill.TakipteSayisi,
+            ToplamFarkTahsilat = fill.ToplamFarkTahsilat,
+            ToplamFarkHarc = fill.ToplamFarkHarc,
+            BeklenenTahsilat = fill.BeklenenTahsilat,
+            BeklenenHarc = fill.BeklenenHarc,
+            OlaganDisiTahsilat = fill.OlaganDisiTahsilat,
+            OlaganDisiHarc = fill.OlaganDisiHarc,
+            TakipKasaEtkisiTahsilat = fill.TakipKasaEtkisiTahsilat,
+            TakipKasaEtkisiHarc = fill.TakipKasaEtkisiHarc,
+            TakipKasaEtkisiNet = fill.TakipKasaEtkisiNet,
+            BreakdownMesajTahsilat = fill.BreakdownMesajTahsilat,
+            BreakdownMesajHarc = fill.BreakdownMesajHarc
+        };
+
+        if (snapshot.Details.Records.Count == 0 && !IsZeroImmutableAuditSummary(summary))
+        {
+            throw new InvalidOperationException(
+                "Immutable Hesap Kontrol audit summary/details parity failed: nonzero-empty");
+        }
+
+        return (summary, snapshot.Details);
+    }
+
+    private static bool TryReadHistoricalImmutableAudit(
+        string? persistedPayloadJson,
+        out (KasaImmutableAuditData Summary, HesapKontrolImmutableAuditDetails Details) audit,
+        out int payloadVersion,
+        out string error)
+    {
+        audit = default;
+        payloadVersion = 0;
+        error = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(persistedPayloadJson))
+        {
+            error = "payload-empty";
+            return false;
+        }
+
+        try
+        {
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var payload = JsonSerializer.Deserialize<KasaRaporData>(persistedPayloadJson, options);
+            if (payload is null || payload.PayloadVersion is not (1 or 2))
+            {
+                error = "payload-version";
+                return false;
+            }
+
+            if (!IsValidImmutableAuditSummary(payload.ImmutableAudit))
+            {
+                error = "summary-invalid";
+                return false;
+            }
+
+            payloadVersion = payload.PayloadVersion;
+            if (payload.PayloadVersion == 1)
+            {
+                // V1 persisted the server-derived scalar audit but had no record-detail
+                // contract. Preserve that contract on compatibility saves; never invent
+                // details and never fall back to request-bound financial values.
+                audit = (payload.ImmutableAudit!, new HesapKontrolImmutableAuditDetails(
+                    Array.Empty<HesapKontrolImmutableAuditRecord>(),
+                    new HesapKontrolImmutableAuditGroups(
+                        Array.Empty<Guid>(), Array.Empty<Guid>(), Array.Empty<Guid>(),
+                        Array.Empty<Guid>(), Array.Empty<Guid>(), Array.Empty<Guid>())));
+                return true;
+            }
+
+            if (!payload.ImmutableAuditDetails.HasValue
+                || payload.ImmutableAuditDetails.Value.ValueKind
+                    is JsonValueKind.Null or JsonValueKind.Undefined)
+            {
+                error = "details-missing";
+                return false;
+            }
+
+            var details = payload.ImmutableAuditDetails.Value
+                .Deserialize<HesapKontrolImmutableAuditDetails>(options);
+            if (details?.Records is null
+                || details.Groups is null
+                || details.Groups.AktifKayitlar is null
+                || details.Groups.OncekiAciklar is null
+                || details.Groups.BugunCozulenler is null
+                || details.Groups.ReconciliationKayitlar is null
+                || details.Groups.TakipteKayitlar is null
+                || details.Groups.BugunTakipCozulenler is null)
+            {
+                error = "details-null-member";
+                return false;
+            }
+
+            // Re-materialize only the safe 13-field DTO and canonical ordering.
+            // Extra JSON members (actor, notes, path/source metadata) cannot flow
+            // into the new immutable audit payload through this boundary.
+            var normalizedDetails = new HesapKontrolImmutableAuditDetails(
+                HesapKontrolImmutableAuditDetailsValidator.OrderRecords(details.Records),
+                new HesapKontrolImmutableAuditGroups(
+                    details.Groups.AktifKayitlar.OrderBy(id => id).ToArray(),
+                    details.Groups.OncekiAciklar.OrderBy(id => id).ToArray(),
+                    details.Groups.BugunCozulenler.OrderBy(id => id).ToArray(),
+                    details.Groups.ReconciliationKayitlar.OrderBy(id => id).ToArray(),
+                    details.Groups.TakipteKayitlar.OrderBy(id => id).ToArray(),
+                    details.Groups.BugunTakipCozulenler.OrderBy(id => id).ToArray()));
+
+            if (!HesapKontrolImmutableAuditDetailsValidator.TryValidate(
+                    normalizedDetails,
+                    out var validationError))
+            {
+                error = validationError ?? "details-invalid";
+                return false;
+            }
+
+            if (normalizedDetails.Records.Count == 0
+                && !IsZeroImmutableAuditSummary(payload.ImmutableAudit!))
+            {
+                error = "summary-details-nonzero-empty";
+                return false;
+            }
+
+            audit = (payload.ImmutableAudit!, normalizedDetails);
+            return true;
+        }
+        catch (JsonException)
+        {
+            error = "payload-json";
+            return false;
+        }
+        catch (NotSupportedException)
+        {
+            error = "payload-not-supported";
+            return false;
+        }
+    }
+
+    private static bool IsValidImmutableAuditSummary(KasaImmutableAuditData? audit) =>
+        audit is not null && audit.TakipteSayisi >= 0;
+
+    private static bool IsZeroImmutableAuditSummary(KasaImmutableAuditData audit) =>
+        audit.GuneAitEksikFazlaTahsilat == 0m
+        && audit.GuneAitEksikFazlaHarc == 0m
+        && audit.OncekiGunAcikTahsilat == 0m
+        && audit.OncekiGunAcikHarc == 0m
+        && audit.BugunCozulenTahsilat == 0m
+        && audit.BugunCozulenHarc == 0m
+        && audit.TakipteEksikTahsilat == 0m
+        && audit.TakipteEksikHarc == 0m
+        && audit.TakipteFazlaTahsilat == 0m
+        && audit.TakipteFazlaHarc == 0m
+        && audit.TakipteSayisi == 0
+        && audit.ToplamFarkTahsilat == 0m
+        && audit.ToplamFarkHarc == 0m
+        && audit.BeklenenTahsilat == 0m
+        && audit.BeklenenHarc == 0m
+        && audit.OlaganDisiTahsilat == 0m
+        && audit.OlaganDisiHarc == 0m
+        && audit.TakipKasaEtkisiTahsilat == 0m
+        && audit.TakipKasaEtkisiHarc == 0m
+        && audit.TakipKasaEtkisiNet == 0m;
+
+    private static void ApplyImmutableAuditSummary(
+        KasaPreviewViewModel model,
+        KasaImmutableAuditData audit)
+    {
+        model.GuneAitEksikFazlaTahsilat = audit.GuneAitEksikFazlaTahsilat;
+        model.GuneAitEksikFazlaHarc = audit.GuneAitEksikFazlaHarc;
+        model.DundenEksikFazlaTahsilat = audit.OncekiGunAcikTahsilat;
+        model.DundenEksikFazlaHarc = audit.OncekiGunAcikHarc;
+        model.DundenEksikFazlaGelenTahsilat = audit.BugunCozulenTahsilat;
+        model.DundenEksikFazlaGelenHarc = audit.BugunCozulenHarc;
+        model.TakipteEksikTahsilat = audit.TakipteEksikTahsilat;
+        model.TakipteEksikHarc = audit.TakipteEksikHarc;
+        model.TakipteFazlaTahsilat = audit.TakipteFazlaTahsilat;
+        model.TakipteFazlaHarc = audit.TakipteFazlaHarc;
+        model.TakipteSayisi = audit.TakipteSayisi;
+        model.ToplamFarkTahsilat = audit.ToplamFarkTahsilat;
+        model.ToplamFarkHarc = audit.ToplamFarkHarc;
+        model.BeklenenTahsilat = audit.BeklenenTahsilat;
+        model.BeklenenHarc = audit.BeklenenHarc;
+        model.OlaganDisiTahsilat = audit.OlaganDisiTahsilat;
+        model.OlaganDisiHarc = audit.OlaganDisiHarc;
+        model.TakipKasaEtkisiTahsilat = audit.TakipKasaEtkisiTahsilat;
+        model.TakipKasaEtkisiHarc = audit.TakipKasaEtkisiHarc;
+        model.TakipKasaEtkisiNet = audit.TakipKasaEtkisiNet;
+        model.BreakdownMesajTahsilat = audit.BreakdownMesajTahsilat;
+        model.BreakdownMesajHarc = audit.BreakdownMesajHarc;
+    }
+
+    private static bool TryApplyImmutableAuditDetails(
+        KasaPreviewViewModel model,
+        JsonElement? serializedDetails,
+        KasaImmutableAuditData scalarAudit)
+    {
+        if (!serializedDetails.HasValue
+            || serializedDetails.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            return false;
+
+        try
+        {
+            var details = serializedDetails.Value.Deserialize<HesapKontrolImmutableAuditDetails>(
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (!HesapKontrolImmutableAuditDetailsValidator.TryValidate(details, out _))
+                return false;
+            if (details!.Records.Count == 0 && !IsZeroImmutableAuditSummary(scalarAudit))
+                return false;
+
+            model.ImmutableAuditRecords = details.Records
+                .Select(record => new ImmutableAuditRecordViewModel(
+                    record.KayitId,
+                    record.AnalizTarihi,
+                    record.HesapTuru,
+                    record.Yon,
+                    record.Tutar,
+                    record.KaydetmeAnindakiDurum,
+                    record.Sinif,
+                    record.DosyaNo,
+                    record.BirimAdi,
+                    record.TespitEdilenTip,
+                    record.TakipBaslangicTarihi,
+                    record.CozulmeTarihi,
+                    record.OnayTarihi))
+                .ToArray();
+            model.ImmutableAuditRecordGroups = new ImmutableAuditRecordGroupsViewModel(
+                details.Groups.AktifKayitlar.ToArray(),
+                details.Groups.OncekiAciklar.ToArray(),
+                details.Groups.BugunCozulenler.ToArray(),
+                details.Groups.ReconciliationKayitlar.ToArray(),
+                details.Groups.TakipteKayitlar.ToArray(),
+                details.Groups.BugunTakipCozulenler.ToArray());
+            model.HasImmutableAuditRecordDetails = true;
+            model.ImmutableAuditRecordDetailsNotice = null;
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+        catch (NotSupportedException)
+        {
+            return false;
+        }
+    }
+
     // =========================================================================
     // Private Helpers
     // =========================================================================
@@ -270,6 +550,14 @@ public sealed partial class KasaPreviewController
     /// </summary>
     private async Task TryAutoFillEksikFazlaAsync(KasaPreviewViewModel model, CancellationToken ct)
     {
+        model.HasImmutableAuditData = false;
+        model.ImmutableAuditNotice = null;
+        model.LoadedAuditPayloadVersion = 0;
+        model.HasImmutableAuditRecordDetails = false;
+        model.ImmutableAuditRecordDetailsNotice = null;
+        model.ImmutableAuditRecords = Array.Empty<ImmutableAuditRecordViewModel>();
+        model.ImmutableAuditRecordGroups = ImmutableAuditRecordGroupsViewModel.Empty;
+
         try
         {
             var beforeGuneT = model.GuneAitEksikFazlaTahsilat;
@@ -310,6 +598,7 @@ public sealed partial class KasaPreviewController
             // Akıllı Takip Korelasyonu
             model.TakipCozumleri = fill.TakipCozumleri;
             model.TakipCozumBildirim = fill.TakipCozumBildirim;
+            model.HasImmutableAuditData = true;
 
             // BUG-2 FIX: CrossDay burada tekrar çağrılmıyor.
             // AnalyzeFromComparisonAsync zaten CrossDayReconcileAsync'i çalıştırır.
@@ -419,11 +708,483 @@ public sealed partial class KasaPreviewController
         }
     }
 
+    private async Task TryRunHesapKontrolAnalysisAsync(
+        KasaPreviewViewModel model,
+        DateOnly analizTarihi,
+        string baseFolder,
+        string actionName,
+        int actorUserId,
+        CancellationToken ct)
+    {
+        var source = _hesapKontrolSourceResolver.Resolve(baseFolder, analizTarihi);
+        if (source.IsValid
+            && source.SourceKind == HesapKontrolSourceKind.Current
+            && analizTarihi != DateOnly.FromDateTime(DateTime.Today))
+        {
+            source = HesapKontrolSourceResolution.Fail(
+                "Geçmiş tarih için yalnız tarihli arşiv kaynağı kullanılabilir.",
+                $"Historical source resolved to current folder. Date={analizTarihi:yyyy-MM-dd}.");
+        }
+        if (!source.IsValid)
+        {
+            _log.LogWarning(
+                "[HK-PREVIEW-GATE] Analiz kaynağı doğrulanamadı. Action={Action} Date={Date} Detail={Detail}",
+                actionName, analizTarihi, source.TechnicalError);
+            model.Errors.Add(
+                "Seçilen tarih için gerekli Excel kaynakları doğrulanamadı. " +
+                "Eksik veya geçersiz dosyaları kontrol ederek tekrar deneyin.");
+            return;
+        }
+
+        try
+        {
+            var rapor = await _hesapKontrol.AnalyzeFromComparisonAsync(
+                analizTarihi, source.Folder!, actorUserId, ct);
+            _log.LogInformation(
+                "HesapKontrol analiz tamamlandı. Action={Action} Date={Date} Ozet={Ozet}",
+                actionName, analizTarihi, rapor.OzetMesaj);
+            if (rapor.OzetMesaj?.Contains("Uyarı:", StringComparison.Ordinal) == true)
+                model.Warnings.Add(rapor.OzetMesaj);
+            await TryAutoFillEksikFazlaAsync(model, ct);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(
+                ex,
+                "HesapKontrol otomatik analiz başarısız. Action={Action} Date={Date}; sonuçlar etkilenmedi",
+                actionName, analizTarihi);
+            model.Errors.Add(
+                "Hesap kontrol analizi tamamlanamadı. Lütfen dosyaları kontrol ederek tekrar deneyin.");
+        }
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RunHesapKontrolFromContext(
+        string? kasaType,
+        CancellationToken ct)
+    {
+        if (!TryResolveHesapKontrolActor(out var actorUserId))
+            return Unauthorized();
+
+        var normalizedType = string.IsNullOrWhiteSpace(kasaType)
+            ? string.Empty
+            : NormalizeKasaType(kasaType);
+        if (normalizedType is not ("Sabah" or "Aksam"))
+            return FailKasaContextTransition(normalizedType,
+                "Hesap Kontrol için geçerli bir Sabah/Akşam kasa bağlamı seçilmedi.");
+
+        var userName = _currentUser.Username;
+        if (string.IsNullOrWhiteSpace(userName))
+            return FailKasaContextTransition(normalizedType,
+                "Oturum kullanıcısı doğrulanamadığı için Hesap Kontrol analizi başlatılmadı.");
+
+        var snapshot = await KasaDraftCacheHelper.TryLoadDraftSnapshotAsync(
+            userName, normalizedType, _log);
+        var draft = snapshot?.Model;
+        var context = snapshot?.SourceContext;
+        if (draft is null
+            || !draft.HasResults
+            || draft.Errors.Count > 0
+            || !draft.SelectedDate.HasValue
+            || !string.Equals(NormalizeKasaType(draft.KasaType), normalizedType,
+                StringComparison.Ordinal))
+        {
+            return FailKasaContextTransition(normalizedType,
+                "Bu kasa için başarılı ve güncel bir hesaplama taslağı bulunamadı. Önce kasayı yeniden hesaplayın.");
+        }
+
+        if (context is null
+            || context.Version != 1
+            || context.SelectedDate != draft.SelectedDate.Value
+            || !string.Equals(context.KasaType, normalizedType, StringComparison.Ordinal)
+            || !string.Equals(context.SourceKind, nameof(HesapKontrolSourceKind.Current),
+                StringComparison.Ordinal)
+            || !string.Equals(context.SourceIdentifier, "current-upload-bundle",
+                StringComparison.Ordinal))
+        {
+            return FailKasaContextTransition(normalizedType,
+                "Kasa hesaplamasının Excel kaynak bağlamı doğrulanamadı. Kasayı mevcut dosyalarla yeniden hesaplayın.");
+        }
+
+        var uploadPath = ResolveUploadFolderAbsolute();
+        var sourceSnapshot = await TryCreateVerifiedKasaSourceSnapshotAsync(
+            uploadPath, context, ct);
+        if (sourceSnapshot is null)
+        {
+            _log.LogWarning(
+                "[HK-KASA-CONTEXT] Kaynak paketi hesaplama sonrasında değişti. User={User} KasaType={KasaType} Date={Date}",
+                userName, normalizedType, draft.SelectedDate);
+            return FailKasaContextTransition(normalizedType,
+                "Hesaplamadan sonra Excel kaynakları değişti. Güvenlik için analiz başlatılmadı; kasayı yeniden hesaplayın.");
+        }
+
+        try
+        {
+            var report = await _hesapKontrol.AnalyzeFromComparisonAsync(
+                draft.SelectedDate.Value, sourceSnapshot, actorUserId, ct);
+            TempData["Info"] = $"Hesap Kontrol analizi tamamlandı: {report.OzetMesaj}";
+            return RedirectToAction("Index", "HesapKontrol", new
+            {
+                analizTarihiStr = draft.SelectedDate.Value.ToString("yyyy-MM-dd"),
+                tab = "takipte"
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex,
+                "[HK-KASA-CONTEXT] Analiz tamamlanamadı. User={User} KasaType={KasaType} Date={Date}",
+                userName, normalizedType, draft.SelectedDate);
+            return FailKasaContextTransition(normalizedType,
+                "Hesap Kontrol analizi tamamlanamadı. Excel kaynaklarını kontrol edip tekrar deneyin.");
+        }
+        finally
+        {
+            TryDeleteKasaSourceSnapshot(sourceSnapshot);
+        }
+    }
+
+    private IActionResult FailKasaContextTransition(string kasaType, string message)
+    {
+        TempData["Error"] = message;
+        return RedirectToAction(nameof(Index), new
+        {
+            kasaType = string.IsNullOrWhiteSpace(kasaType) ? null : kasaType
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RunHesapKontrolFromSavedSnapshot(
+        Guid savedSnapshotId,
+        CancellationToken ct)
+    {
+        if (!TryResolveHesapKontrolActor(out var actorUserId))
+            return Unauthorized();
+
+        var userName = _currentUser.Username;
+        if (string.IsNullOrWhiteSpace(userName))
+            return FailSavedSnapshotTransition(
+                savedSnapshotId,
+                "Oturum kullanıcısı doğrulanamadığı için kayıtlı rapor analizi başlatılmadı.",
+                canReload: false);
+
+        var savedSnapshot = await _calcSnapshots.GetByIdAsync(savedSnapshotId, ct);
+        if (savedSnapshot is null)
+            return FailSavedSnapshotTransition(
+                savedSnapshotId,
+                "Kayıtlı Kasa raporu bulunamadı.",
+                canReload: false);
+
+        if (savedSnapshot.IsDeleted || !savedSnapshot.IsActive)
+            return FailSavedSnapshotTransition(
+                savedSnapshotId,
+                "Silinmiş veya pasif bir Kasa raporu analiz edilemez.",
+                canReload: false);
+
+        var kasaType = savedSnapshot.KasaTuru switch
+        {
+            KasaRaporTuru.Sabah => "Sabah",
+            KasaRaporTuru.Aksam => "Aksam",
+            _ => null
+        };
+        if (kasaType is null)
+            return FailSavedSnapshotTransition(
+                savedSnapshotId,
+                "Yalnız Sabah veya Akşam Kasa raporları Hesap Kontrol'e aktarılabilir.",
+                canReload: true);
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var retentionDays = Math.Max(
+            1, _cfg.GetValue<int>("Comparison:ArchiveRetentionDays", 60));
+        var earliestAllowedDate = today.AddDays(-retentionDays);
+        if (savedSnapshot.RaporTarihi < earliestAllowedDate
+            || savedSnapshot.RaporTarihi > today)
+        {
+            return FailSavedSnapshotTransition(
+                savedSnapshotId,
+                $"Rapor tarihi izin verilen {retentionDays} günlük arşiv penceresinin dışında.",
+                canReload: true);
+        }
+
+        var baseFolder = ResolveUploadFolderAbsolute();
+        var source = _hesapKontrolSourceResolver.Resolve(
+            baseFolder, savedSnapshot.RaporTarihi);
+        if (!source.IsValid
+            || source.SourceKind != HesapKontrolSourceKind.Archive
+            || !IsCanonicalHistoricalArchiveFolder(
+                baseFolder, source.Folder, savedSnapshot.RaporTarihi))
+        {
+            _log.LogWarning(
+                "[HK-SAVED-SNAPSHOT] Historical archive çözülemedi. Snapshot={SnapshotId} Date={Date} Kind={Kind} Detail={Detail}",
+                savedSnapshot.Id, savedSnapshot.RaporTarihi, source.SourceKind,
+                source.TechnicalError);
+            return FailSavedSnapshotTransition(
+                savedSnapshotId,
+                "Kayıtlı raporun tarihli arşiv kaynağı doğrulanamadı. Current kaynak kullanılmadı.",
+                canReload: true);
+        }
+
+        var archiveContext = await CaptureKasaDraftSourceContextAsync(
+            source.Folder!, savedSnapshot.RaporTarihi, kasaType, ct);
+        if (archiveContext is null)
+            return FailSavedSnapshotTransition(
+                savedSnapshotId,
+                "Tarihsel arşiv paketinin fingerprint'i üretilemedi.",
+                canReload: true);
+
+        var sourceSnapshot = await TryCreateVerifiedKasaSourceSnapshotAsync(
+            source.Folder!, archiveContext, ct);
+        if (sourceSnapshot is null)
+            return FailSavedSnapshotTransition(
+                savedSnapshotId,
+                "Tarihsel arşiv paketi doğrulama sırasında değişti; analiz başlatılmadı.",
+                canReload: true);
+
+        try
+        {
+            var report = await _hesapKontrol.AnalyzeFromComparisonAsync(
+                savedSnapshot.RaporTarihi, sourceSnapshot, actorUserId, ct);
+            TempData["Info"] = $"Hesap Kontrol analizi tamamlandı: {report.OzetMesaj}";
+            return RedirectToAction("QueryDate", "HesapKontrol", new
+            {
+                tarih = savedSnapshot.RaporTarihi.ToString("yyyy-MM-dd"),
+                tab = "takipte"
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex,
+                "[HK-SAVED-SNAPSHOT] Analiz tamamlanamadı. Snapshot={SnapshotId} Date={Date}",
+                savedSnapshot.Id, savedSnapshot.RaporTarihi);
+            return FailSavedSnapshotTransition(
+                savedSnapshotId,
+                "Kayıtlı raporun Hesap Kontrol analizi tamamlanamadı.",
+                canReload: true);
+        }
+        finally
+        {
+            TryDeleteKasaSourceSnapshot(sourceSnapshot);
+        }
+    }
+
+    private IActionResult FailSavedSnapshotTransition(
+        Guid savedSnapshotId,
+        string message,
+        bool canReload)
+    {
+        TempData["Error"] = message;
+        return canReload
+            ? RedirectToAction(nameof(LoadSnapshot), new { id = savedSnapshotId })
+            : RedirectToAction("Index", "KasaRaporlar");
+    }
+
+    private bool TryResolveHesapKontrolActor(out int actorUserId)
+    {
+        try
+        {
+            actorUserId = _currentUser.RequireAuthenticatedUserId();
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            actorUserId = default;
+            return false;
+        }
+    }
+
+    private static bool IsCanonicalHistoricalArchiveFolder(
+        string baseFolder,
+        string? resolvedFolder,
+        DateOnly reportDate)
+    {
+        if (string.IsNullOrWhiteSpace(resolvedFolder))
+            return false;
+
+        try
+        {
+            var expected = Path.GetFullPath(Path.Combine(
+                baseFolder, "archive", reportDate.ToString("yyyy-MM-dd")));
+            var actual = Path.GetFullPath(resolvedFolder);
+            return string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string BuildLoadDataResultWarning(string? kasaType)
+    {
+        var guidance = kasaType?.Equals("Aksam", StringComparison.OrdinalIgnoreCase) == true
+            ? "Lütfen Akşam Kasa Modu (Mesai Sonu / Tam Gün) seçimini ve yüklenen dosya setini kontrol edin. "
+            : "Lütfen bu kasa türü için yüklenen dosya setini kontrol edin. ";
+
+        return "Veriler yüklendi ancak bu mod için hesaplama sonucu üretilemedi. " +
+               guidance +
+               "Eski sonuçlar güvenlik nedeniyle gösterilmedi.";
+    }
+
     private string ResolveUploadFolderAbsolute()
     {
         var sub = _cfg.GetValue<string>("Upload:SubFolder") ?? "Data\\Raporlar";
         sub = sub.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
         return Path.Combine(_env.WebRootPath, sub);
+    }
+
+    private async Task<KasaDraftSourceContext?> CaptureKasaDraftSourceContextAsync(
+        string uploadFolder,
+        DateOnly? selectedDate,
+        string kasaType,
+        CancellationToken ct)
+    {
+        if (!selectedDate.HasValue || !Directory.Exists(uploadFolder))
+            return null;
+
+        try
+        {
+            var files = Directory.GetFiles(uploadFolder, "*.xls*", SearchOption.TopDirectoryOnly)
+                .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (files.Length == 0)
+                return null;
+
+            var manifest = new StringBuilder();
+            var fileNames = new List<string>(files.Length);
+            foreach (var file in files)
+            {
+                ct.ThrowIfCancellationRequested();
+                var fileName = Path.GetFileName(file);
+                fileNames.Add(fileName);
+
+                await using var stream = new FileStream(
+                    file, FileMode.Open, FileAccess.Read, FileShare.Read,
+                    bufferSize: 81920, useAsync: true);
+                var contentHash = await SHA256.HashDataAsync(stream, ct);
+                manifest
+                    .Append(fileName.ToUpperInvariant())
+                    .Append(':')
+                    .Append(Convert.ToHexString(contentHash))
+                    .Append('\n');
+            }
+
+            var bundleHash = SHA256.HashData(Encoding.UTF8.GetBytes(manifest.ToString()));
+            return new KasaDraftSourceContext(
+                Version: 1,
+                SelectedDate: selectedDate.Value,
+                KasaType: NormalizeKasaType(kasaType),
+                SourceKind: nameof(HesapKontrolSourceKind.Current),
+                SourceIdentifier: "current-upload-bundle",
+                FileNames: fileNames,
+                Fingerprint: Convert.ToHexString(bundleHash));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex,
+                "Kasa kaynak baglami olusturulamadi. KasaType={KasaType}", kasaType);
+            return null;
+        }
+    }
+
+    private async Task<string?> TryCreateVerifiedKasaSourceSnapshotAsync(
+        string sourceFolder,
+        KasaDraftSourceContext expectedContext,
+        CancellationToken ct)
+    {
+        var snapshotFolder = Path.Combine(
+            Path.GetTempPath(), "KasaManager", "HesapKontrolContext", Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(snapshotFolder);
+            foreach (var sourceFile in Directory.GetFiles(
+                         sourceFolder, "*.xls*", SearchOption.TopDirectoryOnly))
+            {
+                ct.ThrowIfCancellationRequested();
+                var targetFile = Path.Combine(snapshotFolder, Path.GetFileName(sourceFile));
+                await using var input = new FileStream(
+                    sourceFile, FileMode.Open, FileAccess.Read, FileShare.Read,
+                    bufferSize: 81920, useAsync: true);
+                await using var output = new FileStream(
+                    targetFile, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                    bufferSize: 81920, useAsync: true);
+                await input.CopyToAsync(output, ct);
+            }
+
+            var snapshotContext = await CaptureKasaDraftSourceContextAsync(
+                snapshotFolder,
+                expectedContext.SelectedDate,
+                expectedContext.KasaType,
+                ct);
+            if (snapshotContext is not null
+                && string.Equals(expectedContext.Fingerprint, snapshotContext.Fingerprint,
+                    StringComparison.Ordinal))
+            {
+                return snapshotFolder;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            TryDeleteKasaSourceSnapshot(snapshotFolder);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Kasa kaynak snapshot'i olusturulamadi.");
+        }
+
+        TryDeleteKasaSourceSnapshot(snapshotFolder);
+        return null;
+    }
+
+    private void TryDeleteKasaSourceSnapshot(string snapshotFolder)
+    {
+        try
+        {
+            if (Directory.Exists(snapshotFolder))
+                Directory.Delete(snapshotFolder, recursive: true);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Kasa kaynak snapshot'i temizlenemedi.");
+        }
+    }
+
+    private async Task<KasaDraftSourceContext?> VerifyKasaDraftSourceContextAsync(
+        KasaDraftSourceContext? beforeCalculation,
+        string uploadFolder,
+        DateOnly? selectedDate,
+        string kasaType,
+        CancellationToken ct)
+    {
+        if (beforeCalculation is null)
+            return null;
+
+        var afterCalculation = await CaptureKasaDraftSourceContextAsync(
+            uploadFolder, selectedDate, kasaType, ct);
+        if (afterCalculation is null
+            || beforeCalculation.Version != afterCalculation.Version
+            || !string.Equals(beforeCalculation.Fingerprint, afterCalculation.Fingerprint,
+                StringComparison.Ordinal))
+        {
+            _log.LogWarning(
+                "Kasa hesaplamasi sirasinda kaynak paketi degisti; kaynak baglami kaydedilmedi. KasaType={KasaType}",
+                kasaType);
+            return null;
+        }
+
+        return afterCalculation;
     }
 
     /// <summary>
