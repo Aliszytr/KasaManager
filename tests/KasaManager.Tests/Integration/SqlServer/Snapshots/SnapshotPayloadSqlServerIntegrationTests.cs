@@ -52,7 +52,7 @@ public sealed class SnapshotPayloadSqlServerIntegrationTests
     }
 
     [SqlServerFact]
-    public async Task SaveReport_PayloadVersionTwo_DoesNotPersistActorUsernameInFinancialJson()
+    public async Task SaveReport_PayloadVersionTwo_PersistsCashierButNotCreatorInFinancialJson()
     {
         var webRoot = Path.Combine(Path.GetTempPath(), $"kasa_c42c_{Guid.NewGuid():N}");
         Directory.CreateDirectory(Path.Combine(webRoot, "Data", "Raporlar"));
@@ -98,11 +98,13 @@ public sealed class SnapshotPayloadSqlServerIntegrationTests
             Assert.Equal("Aksam", payload.RootElement.GetProperty("KasaTuru").GetString());
             Assert.Equal(1234.5678m, payload.RootElement.GetProperty("BankadanCekilen").GetDecimal());
             Assert.True(payload.RootElement.TryGetProperty("MuhabereNo", out _));
+            Assert.Equal(
+                "C4.2C actor isolation",
+                payload.RootElement.GetProperty("KasayiYapan").GetString());
 
             var propertyNames = EnumeratePropertyNames(payload.RootElement).ToArray();
             var forbiddenActorProperties = new[]
             {
-                "KasayiYapan",
                 "CreatedByUserId",
                 "TrackingStartedByUserId",
                 "ResolvedByUserId",
@@ -250,7 +252,7 @@ public sealed class SnapshotPayloadSqlServerIntegrationTests
     }
 
     [SqlServerFact]
-    public async Task SaveReport_PersistedJsonTree_ContainsNoActorDescriptionNotePathOrSourceProperties()
+    public async Task SaveReport_PersistedJsonTree_ContainsReportMetadataButNoAuditActorPathOrSourceProperties()
     {
         var webRoot = CreateWebRoot();
 
@@ -281,9 +283,13 @@ public sealed class SnapshotPayloadSqlServerIntegrationTests
                 .SingleAsync();
             using var payload = JsonDocument.Parse(savedJson!);
             var propertyNames = EnumeratePropertyNames(payload.RootElement).ToArray();
+            Assert.Equal(
+                "C4.2C actor isolation",
+                payload.RootElement.GetProperty("KasayiYapan").GetString());
+            Assert.True(payload.RootElement.TryGetProperty("Aciklama", out _));
+            Assert.Equal(string.Empty, payload.RootElement.GetProperty("GunlukNot").GetString());
             var forbidden = new[]
             {
-                "KasayiYapan",
                 "CreatedBy",
                 "CreatedByUserId",
                 "TrackingStartedBy",
@@ -298,8 +304,6 @@ public sealed class SnapshotPayloadSqlServerIntegrationTests
                 "CalculatedByUserId",
                 "DeletedBy",
                 "DeletedByUserId",
-                "Aciklama",
-                "GunlukNot",
                 "Notlar",
                 "Description",
                 "Notes",
@@ -540,9 +544,9 @@ public sealed class SnapshotPayloadSqlServerIntegrationTests
             Assert.DoesNotContain("second-server-actor", saved.KasaRaporDataJson, StringComparison.Ordinal);
 
             using var payload = JsonDocument.Parse(saved.KasaRaporDataJson!);
-            Assert.DoesNotContain(
-                EnumeratePropertyNames(payload.RootElement),
-                name => name.Equals("KasayiYapan", StringComparison.OrdinalIgnoreCase));
+            Assert.Equal(
+                "C4.2C actor isolation",
+                payload.RootElement.GetProperty("KasayiYapan").GetString());
 
             var daily = await readContext.DailyCalculationResults
                 .AsNoTracking()
@@ -562,7 +566,7 @@ public sealed class SnapshotPayloadSqlServerIntegrationTests
     }
 
     [SqlServerFact]
-    public async Task LoadSnapshot_LegacyV0V1V2ActorProperty_RemainsReadableAndIsNotTrusted()
+    public async Task LoadSnapshot_LegacyV0V1V2CashierProperty_RemainsReadable()
     {
         for (var payloadVersion = 0; payloadVersion <= 2; payloadVersion++)
         {
@@ -576,7 +580,7 @@ public sealed class SnapshotPayloadSqlServerIntegrationTests
                     PayloadVersion = payloadVersion,
                     Tarih = reportDate,
                     KasaTuru = "Aksam",
-                    KasayiYapan = "legacy-untrusted-actor",
+                    KasayiYapan = "legacy-cashier",
                     Aciklama = "legacy-description",
                     GunlukNot = "legacy-daily-note",
                     MuhabereNo = "MUH/2060-0042",
@@ -628,8 +632,7 @@ public sealed class SnapshotPayloadSqlServerIntegrationTests
                     payloadVersion == 0 ? 88.99m : 0m,
                     model.GuneAitEksikFazlaTahsilat);
                 Assert.Equal(payloadVersion, model.LoadedAuditPayloadVersion);
-                Assert.Equal("relational-creator", model.KasayiYapan);
-                Assert.NotEqual("legacy-untrusted-actor", model.KasayiYapan);
+                Assert.Equal("legacy-cashier", model.KasayiYapan);
                 Assert.Equal("legacy-description", model.Aciklama);
                 Assert.Equal("legacy-daily-note", model.GunlukKasaNotu);
                 Assert.Equal("MUH/2060-0042", model.MuhabereNo);

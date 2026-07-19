@@ -837,6 +837,9 @@ public sealed partial class KasaPreviewController : Controller
         {
             var raporAdi = Request.Form["SaveRaporAdi"].ToString().Trim();
             var raporNot = Request.Form["RptGunlukNot"].ToString().Trim();
+            var kasayiYapan = !string.IsNullOrWhiteSpace(raporAdi)
+                ? raporAdi
+                : model.KasayiYapan?.Trim();
             var inputsJson = Request.Form["SaveInputsJson"].ToString();
             var outputsJson = Request.Form["SaveOutputsJson"].ToString();
             var confirmOverwrite = Request.Form["ConfirmOverwrite"].ToString()
@@ -898,6 +901,9 @@ public sealed partial class KasaPreviewController : Controller
 
             // KasaRaporData oluştur ve serialize et
             var kasaRaporData = await BuildKasaRaporDataAsync(model, includeUstRapor: true, ct);
+            kasaRaporData.KasayiYapan = kasayiYapan;
+            kasaRaporData.Aciklama = model.Aciklama;
+            kasaRaporData.GunlukNot = raporNot;
 
             // Auto-generate name if empty
             if (string.IsNullOrWhiteSpace(raporAdi))
@@ -1010,14 +1016,6 @@ public sealed partial class KasaPreviewController : Controller
 
             var kasaRaporDataJson = JsonSerializer.Serialize(
                 kasaRaporData,
-                new JsonSerializerOptions { WriteIndented = false });
-            var persistencePayload = System.Text.Json.Nodes.JsonNode
-                .Parse(kasaRaporDataJson)?.AsObject()
-                ?? throw new InvalidOperationException("Snapshot persistence payload could not be created.");
-            persistencePayload.Remove(nameof(KasaRaporData.KasayiYapan));
-            persistencePayload.Remove(nameof(KasaRaporData.Aciklama));
-            persistencePayload.Remove(nameof(KasaRaporData.GunlukNot));
-            kasaRaporDataJson = persistencePayload.ToJsonString(
                 new JsonSerializerOptions { WriteIndented = false });
 
             var snapshot = new CalculatedKasaSnapshot
@@ -1421,6 +1419,7 @@ public sealed partial class KasaPreviewController : Controller
                     model.BozukPara = raporData.BozukPara;
                     model.NakitPara = raporData.NakitPara;
                     model.GelmeyenD = raporData.GelmeyenD;
+                    model.KasayiYapan = raporData.KasayiYapan;
                     model.Aciklama = raporData.Aciklama;
                     model.MuhabereNo = raporData.MuhabereNo;
 
@@ -1454,7 +1453,8 @@ public sealed partial class KasaPreviewController : Controller
         model.LoadedSnapshotId = snapshot.Id;
         model.LoadedSnapshotName = snapshot.Name;
         model.LoadedSnapshotVersion = snapshot.Version;
-        model.KasayiYapan = snapshot.CalculatedBy;
+        if (string.IsNullOrWhiteSpace(model.KasayiYapan))
+            model.KasayiYapan = snapshot.CalculatedBy;
 
         // Ortak hydration (UstRapor panel, IBAN vb.)
         // NOT: VergiKasa alanları artık yukarıda KasaRaporDataJson'dan restore edildi.

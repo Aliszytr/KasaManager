@@ -112,6 +112,52 @@ public sealed class KasaPreviewImmutableAuditPersistenceTests
     }
 
     [Fact]
+    public async Task SaveAndLoad_RoundTripsCashierDescriptionAndDailyNote_SeparatelyFromCreator()
+    {
+        var currentUser = new Mock<ICurrentUser>();
+        currentUser.SetupGet(value => value.IsAuthenticated).Returns(true);
+        currentUser.SetupGet(value => value.UserId).Returns(17);
+        currentUser.SetupGet(value => value.Username).Returns("admin");
+        using var fixture = CreateFixture(currentUser.Object);
+        fixture.Analysis
+            .Setup(service => service.GetImmutableAuditSnapshotAsync(
+                SaveDate, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HesapKontrolImmutableAuditSnapshot(
+                new EksikFazlaAutoFill(0, 0, 0, 0, 0, 0, false, "no data"),
+                EmptyDetails()));
+        fixture.Controller.HttpContext.Request.Form = new FormCollection(
+            new Dictionary<string, StringValues>
+            {
+                ["SaveRaporAdi"] = "ESRA DAĞAŞAN",
+                ["SaveInputsJson"] = "{}",
+                ["SaveOutputsJson"] = "{}",
+                ["RptGunlukNot"] = "Günlük kasa notu"
+            });
+        var saveModel = NewModel();
+        saveModel.Aciklama = "Kasa açıklaması";
+
+        AssertSuccessful(await fixture.Controller.SaveReport(
+            saveModel, CancellationToken.None));
+
+        var payload = SavedPayload(fixture);
+        Assert.Equal("ESRA DAĞAŞAN", payload.KasayiYapan);
+        Assert.Equal("Kasa açıklaması", payload.Aciklama);
+        Assert.Equal("Günlük kasa notu", payload.GunlukNot);
+        Assert.Equal("admin", fixture.SavedSnapshot!.CalculatedBy);
+        fixture.Snapshots.Setup(service => service.GetByIdAsync(
+                fixture.SavedSnapshot.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(fixture.SavedSnapshot);
+
+        var loadedResult = Assert.IsType<ViewResult>(await fixture.Controller.LoadSnapshot(
+            fixture.SavedSnapshot.Id, CancellationToken.None));
+        var loaded = Assert.IsType<KasaPreviewViewModel>(loadedResult.Model);
+        Assert.Equal("ESRA DAĞAŞAN", loaded.KasayiYapan);
+        Assert.Equal("Kasa açıklaması", loaded.Aciklama);
+        Assert.Equal("Günlük kasa notu", loaded.GunlukKasaNotu);
+        Assert.Equal("admin", fixture.SavedSnapshot.CalculatedBy);
+    }
+
+    [Fact]
     public async Task SaveReport_WithNoTrackingData_PersistsNonNullRealZeroAudit()
     {
         using var fixture = CreateFixture();

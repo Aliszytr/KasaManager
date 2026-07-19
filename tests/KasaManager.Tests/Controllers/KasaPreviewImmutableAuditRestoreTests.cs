@@ -59,7 +59,7 @@ public sealed class KasaPreviewImmutableAuditRestoreTests
         Assert.Equal("legacy-description", model.Aciklama);
         Assert.Equal("legacy-daily-note", model.GunlukKasaNotu);
         Assert.Equal("MUH/2026-0042", model.MuhabereNo);
-        Assert.Equal("audit-user", model.KasayiYapan);
+        Assert.Equal("legacy-untrusted-actor", model.KasayiYapan);
         Assert.Contains("\"MuhabereNo\":\"MUH/2026-0042\"", fixture.Snapshot.KasaRaporDataJson);
         Assert.False(model.HasImmutableAuditData);
         Assert.Equal(0, model.LoadedAuditPayloadVersion);
@@ -106,16 +106,28 @@ public sealed class KasaPreviewImmutableAuditRestoreTests
     }
 
     [Fact]
-    public async Task LoadSnapshot_LegacyActorSpoof_CannotOverrideRelationalCreator()
+    public async Task LoadSnapshot_PersistedCashier_TakesPriorityOverRelationalCreator()
     {
         using var fixture = CreateFixture(
-            new KasaRaporData { KasayiYapan = "spoof-user" },
+            new KasaRaporData { KasayiYapan = "persisted-cashier" },
             snapshotCalculatedBy: "real-creator");
 
         var model = await LoadModelAsync(fixture);
 
-        Assert.Equal("real-creator", model.KasayiYapan);
-        Assert.NotEqual("spoof-user", model.KasayiYapan);
+        Assert.Equal("persisted-cashier", model.KasayiYapan);
+        AssertNoLiveHesapKontrolCalls(fixture);
+    }
+
+    [Fact]
+    public async Task LoadSnapshot_MissingCashier_FallsBackToRelationalCreator()
+    {
+        using var fixture = CreateFixture(
+            new KasaRaporData(),
+            snapshotCalculatedBy: "legacy-creator");
+
+        var model = await LoadModelAsync(fixture);
+
+        Assert.Equal("legacy-creator", model.KasayiYapan);
         AssertNoLiveHesapKontrolCalls(fixture);
     }
 
@@ -622,6 +634,22 @@ public sealed class KasaPreviewImmutableAuditRestoreTests
         Assert.DoesNotContain("Html.Raw", block, StringComparison.Ordinal);
         Assert.DoesNotContain("name=\"MuhabereNo\"", block, StringComparison.Ordinal);
         Assert.DoesNotContain("asp-for=\"MuhabereNo\"", block, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Razor_CashierCardAndSaveForm_BindBusinessMetadataFields()
+    {
+        var source = File.ReadAllText(GetRepositoryPath(
+            "src", "KasaManager.Web", "Views", "KasaPreview", "Index.cshtml"));
+        var cardStart = source.IndexOf("Kasayı Yapan", StringComparison.Ordinal);
+        var cardEnd = source.IndexOf("Günlük Kasa Notu", cardStart, StringComparison.Ordinal);
+        Assert.True(cardStart >= 0 && cardEnd > cardStart);
+        var card = source[cardStart..cardEnd];
+
+        Assert.Contains("Model.KasayiYapan", card, StringComparison.Ordinal);
+        Assert.DoesNotContain("CalculatedBy", card, StringComparison.Ordinal);
+        Assert.Contains("id=\"saveReportForm\"", source, StringComparison.Ordinal);
+        Assert.Contains("asp-for=\"Aciklama\"", source, StringComparison.Ordinal);
     }
 
     private static async Task<KasaPreviewViewModel> LoadModelAsync(TestFixture fixture)

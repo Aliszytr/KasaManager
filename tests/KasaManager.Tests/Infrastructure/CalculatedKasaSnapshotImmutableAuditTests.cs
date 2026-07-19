@@ -1,3 +1,4 @@
+using KasaManager.Application.Abstractions;
 using KasaManager.Domain.Reports;
 using KasaManager.Domain.Reports.Snapshots;
 using KasaManager.Infrastructure.Persistence;
@@ -5,6 +6,7 @@ using KasaManager.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
+using System.Text.Json;
 
 namespace KasaManager.Tests.Infrastructure;
 
@@ -81,6 +83,23 @@ public sealed class CalculatedKasaSnapshotImmutableAuditTests : IDisposable
         Assert.Equal(evening, savedEvening.KasaRaporDataJson);
     }
 
+    [Fact]
+    public async Task DailyNoteOnlyChange_RemainsNoOpAndDoesNotCreateVersion()
+    {
+        var date = new DateOnly(2026, 7, 19);
+        var first = NewMetadataSnapshot(date, "ilk not");
+        var second = NewMetadataSnapshot(date, "değişen not");
+
+        var persistedFirst = await _service.SaveAsync(first, 17, "admin");
+        var persistedSecond = await _service.SaveAsync(second, 17, "admin");
+
+        Assert.Equal(persistedFirst.Id, persistedSecond.Id);
+        var saved = Assert.Single(await _db.CalculatedKasaSnapshots.ToListAsync());
+        Assert.Equal(1, saved.Version);
+        var payload = JsonSerializer.Deserialize<KasaRaporData>(saved.KasaRaporDataJson!);
+        Assert.Equal("ilk not", payload!.GunlukNot);
+    }
+
     public void Dispose() => _db.Dispose();
 
     private static CalculatedKasaSnapshot NewSnapshot(
@@ -93,5 +112,27 @@ public sealed class CalculatedKasaSnapshotImmutableAuditTests : IDisposable
         InputsJson = json,
         OutputsJson = "{}",
         KasaRaporDataJson = json
+    };
+
+    private static CalculatedKasaSnapshot NewMetadataSnapshot(DateOnly date, string note) => new()
+    {
+        RaporTarihi = date,
+        KasaTuru = KasaRaporTuru.Aksam,
+        InputsJson = "{}",
+        OutputsJson = "{}",
+        KasaRaporDataJson = JsonSerializer.Serialize(new KasaRaporData
+        {
+            PayloadVersion = 2,
+            KasayiYapan = "ESRA DAĞAŞAN",
+            Aciklama = "aynı açıklama",
+            GunlukNot = note,
+            ImmutableAudit = new KasaImmutableAuditData(),
+            ImmutableAuditDetails = JsonSerializer.SerializeToElement(
+                new HesapKontrolImmutableAuditDetails(
+                    Array.Empty<HesapKontrolImmutableAuditRecord>(),
+                    new HesapKontrolImmutableAuditGroups(
+                        Array.Empty<Guid>(), Array.Empty<Guid>(), Array.Empty<Guid>(),
+                        Array.Empty<Guid>(), Array.Empty<Guid>(), Array.Empty<Guid>())))
+        })
     };
 }
