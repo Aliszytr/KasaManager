@@ -401,16 +401,30 @@ public sealed partial class BankaHesapKontrolService
         return totals;
     }
 
+    public async Task<ActiveFollowTotals> GetDailyFollowTotalsAsync(
+        DateOnly analizTarihi,
+        CancellationToken ct = default)
+    {
+        var gunlukKayitlar = await ActiveFollowRecordsQuery()
+            .Where(x => x.AnalizTarihi == analizTarihi)
+            .ToListAsync(ct);
+
+        return BuildActiveFollowTotals(analizTarihi, gunlukKayitlar);
+    }
+
     private Task<List<HesapKontrolKaydi>> LoadActiveFollowRecordsAsync(
         DateOnly analizTarihi,
         CancellationToken ct)
     {
-        return _db.HesapKontrolKayitlari
-            .Where(x => x.AnalizTarihi <= analizTarihi
-                     && x.HesapTuru != BankaHesapTuru.Stopaj
-                     && x.Durum == KayitDurumu.Takipte)
+        return ActiveFollowRecordsQuery()
+            .Where(x => x.AnalizTarihi <= analizTarihi)
             .ToListAsync(ct);
     }
+
+    private IQueryable<HesapKontrolKaydi> ActiveFollowRecordsQuery() =>
+        _db.HesapKontrolKayitlari
+            .Where(x => x.HesapTuru != BankaHesapTuru.Stopaj
+                     && x.Durum == KayitDurumu.Takipte);
 
     private static ActiveFollowTotals BuildActiveFollowTotals(
         DateOnly analizTarihi,

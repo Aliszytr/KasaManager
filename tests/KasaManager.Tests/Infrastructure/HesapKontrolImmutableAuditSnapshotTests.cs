@@ -18,6 +18,34 @@ public sealed class HesapKontrolImmutableAuditSnapshotTests
     private static readonly DateOnly AuditDate = new(2026, 7, 18);
 
     [Fact]
+    public async Task DailyFollowTotals_TwoTrackedDays_ReturnOnlyReportDayForTahsilatAndHarc()
+    {
+        var day1 = new DateOnly(2070, 3, 11);
+        var day2 = day1.AddDays(1);
+        await using var db = CreateDb();
+        db.AddRange(
+            NewRecord(day1, BankaHesapTuru.Tahsilat, KayitYonu.Eksik, 3_000m,
+                KayitDurumu.Takipte, FarkSinifi.Bilinmeyen, trackingDate: day1),
+            NewRecord(day2, BankaHesapTuru.Tahsilat, KayitYonu.Eksik, 29_000m,
+                KayitDurumu.Takipte, FarkSinifi.Bilinmeyen, trackingDate: day2),
+            NewRecord(day1, BankaHesapTuru.Harc, KayitYonu.Eksik, 4_000m,
+                KayitDurumu.Takipte, FarkSinifi.Bilinmeyen, trackingDate: day1),
+            NewRecord(day2, BankaHesapTuru.Harc, KayitYonu.Eksik, 7_000m,
+                KayitDurumu.Takipte, FarkSinifi.Bilinmeyen, trackingDate: day2));
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+        var cumulative = await service.GetActiveFollowTotalsAsync(day2);
+        var daily = await service.GetDailyFollowTotalsAsync(day2);
+
+        Assert.Equal(-32_000m, cumulative.TahsilatNet);
+        Assert.Equal(-11_000m, cumulative.HarcNet);
+        Assert.Equal(-29_000m, daily.TahsilatNet);
+        Assert.Equal(-7_000m, daily.HarcNet);
+        Assert.Equal(2, daily.KayitSayisi);
+    }
+
+    [Fact]
     public async Task ImmutableSnapshot_UsesCanonicalPredicatesAndPreservesEveryScalarParityRule()
     {
         await using var db = CreateDb();

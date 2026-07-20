@@ -219,6 +219,61 @@ public sealed class KasaDraftServiceTests
     }
 
     [Fact]
+    public async Task BuildUnifiedPoolAsync_SabahFollowGateway_UsesOnlyReportDayTotals()
+    {
+        var day2 = new DateOnly(2070, 3, 12);
+        var defaults = new KasaGlobalDefaultsSettings { Id = 1 };
+        var table = new ImportedTable
+        {
+            SourceFileName = "KasaUstRapor.xlsx",
+            Kind = ImportFileKind.KasaUstRapor,
+            Rows =
+            {
+                new Dictionary<string, string?>
+                {
+                    ["satir"] = "TOPLAMLAR",
+                    ["tahsilat"] = "0",
+                    ["reddiyat"] = "0",
+                    ["harc"] = "0",
+                    ["stopaj"] = "0"
+                }
+            }
+        };
+
+        _globalDefaultsMock.Setup(x => x.GetOrCreateAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(defaults);
+        _importMock.Setup(x => x.Import(It.IsAny<string>(), ImportFileKind.KasaUstRapor))
+            .Returns(Result<ImportedTable>.Success(table));
+        _hesapKontrolMock.Setup(x => x.GetActiveFollowTotalsAsync(day2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ActiveFollowTotals(day2, -32_000m, -11_000m, 32_000m, 11_000m, 0m, 0m, 4));
+        _hesapKontrolMock.Setup(x => x.GetDailyFollowTotalsAsync(day2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ActiveFollowTotals(day2, -29_000m, -7_000m, 29_000m, 7_000m, 0m, 0m, 2));
+
+        var sut = CreateSut();
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllBytesAsync(Path.Combine(tempDir, "KasaUstRapor.xlsx"), Array.Empty<byte>());
+
+        try
+        {
+            var result = await sut.BuildUnifiedPoolAsync(
+                day2, tempDir, kasaScope: "Sabah", skipSlimPoolFilter: true);
+
+            Assert.True(result.Ok, result.Error);
+            decimal Value(string key) => decimal.Parse(
+                Assert.Single(result.Value!, x => x.CanonicalKey == key).Value,
+                CultureInfo.InvariantCulture);
+
+            Assert.Equal(-29_000m, Value("takip_kasa_etkisi_tahsilat"));
+            Assert.Equal(-7_000m, Value("takip_kasa_etkisi_harc"));
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
     public async Task ExcessWithdrawal_RealCalculation_KeepsDepositZeroAndLeavesExcessInGeneralCash()
     {
         var date = new DateOnly(2026, 7, 15);
