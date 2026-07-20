@@ -42,6 +42,29 @@ public sealed class KasaOrchestratorTests
         _loggerMock.Object,
         _scopeFactoryMock.Object);
 
+    [Fact]
+    public async Task SaveDbFormulaSetAsync_SystemPoolKeyAsTarget_ReturnsValidationError()
+    {
+        var dto = new KasaPreviewDto
+        {
+            DbFormulaSetName = "Invalid system target",
+            PoolEntries =
+            {
+                new UnifiedPoolEntry { CanonicalKey = "takip_kasa_etkisi_tahsilat", Value = "100", IncludeInCalculations = true }
+            },
+            Mappings =
+            {
+                new KasaPreviewMappingRow { TargetKey = "takip_kasa_etkisi_tahsilat", Mode = "Formula", Expression = "1" }
+            }
+        };
+
+        await CreateSut().SaveDbFormulaSetAsync(dto, isUpdate: false, CancellationToken.None);
+
+        Assert.Contains(dto.Errors, error => error.Contains("sistem anahtarı", StringComparison.OrdinalIgnoreCase));
+        _formulaStoreMock.Verify(store => store.CreateAsync(
+            It.IsAny<PersistedFormulaSet>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     // ───────────────────────────────────────────
     // LoadPreviewAsync
     // ───────────────────────────────────────────

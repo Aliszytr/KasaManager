@@ -1,5 +1,7 @@
 using System.Text.Json;
+using KasaManager.Application.Abstractions;
 using KasaManager.Application.Orchestration.Dtos;
+using KasaManager.Domain.FormulaEngine;
 using KasaManager.Domain.FormulaEngine.Authoring;
 using Microsoft.Extensions.Logging;
 
@@ -68,6 +70,7 @@ public partial class KasaOrchestrator
 
     public async Task CreateDbFormulaSetAsync(KasaPreviewDto dto, CancellationToken ct)
     {
+        if (!ValidateFormulaTargets(dto)) return;
         try {
             var set = BuildPersistedSetFromUi(dto, forceId: Guid.NewGuid(), resetLineIds: true);
             await _formulaSetStore.CreateAsync(set, ct);
@@ -79,6 +82,7 @@ public partial class KasaOrchestrator
     
     public async Task SaveDbFormulaSetAsync(KasaPreviewDto dto, bool isUpdate, CancellationToken ct)
     {
+         if (!ValidateFormulaTargets(dto)) return;
          try
         {
             if (isUpdate)
@@ -193,6 +197,25 @@ public partial class KasaOrchestrator
                 IsHidden = x.IsHidden
             }).ToList()
         };
+    }
+
+    private static bool ValidateFormulaTargets(KasaPreviewDto dto)
+    {
+        var systemKeys = (dto.PoolEntries ?? new List<UnifiedPoolEntry>())
+            .Select(entry => entry.CanonicalKey)
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var invalidTargets = (dto.Mappings ?? new List<KasaPreviewMappingRow>())
+            .Select(mapping => mapping.TargetKey?.Trim())
+            .Where(target => !string.IsNullOrWhiteSpace(target) && systemKeys.Contains(target!))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (invalidTargets.Length == 0) return true;
+
+        dto.Errors.Add(
+            $"Sistem anahtarı formül hedefi olarak kullanılamaz: {string.Join(", ", invalidTargets)}. Bu anahtarlar UnifiedPool tarafından sağlanır.");
+        return false;
     }
 
     private async Task<bool> TryRecoverAndRetrySaveAsync(KasaPreviewDto dto, CancellationToken ct)

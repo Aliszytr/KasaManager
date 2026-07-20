@@ -8,6 +8,7 @@ using KasaManager.Domain.Constants;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using NCalc;
 
 namespace KasaManager.Application.Services;
@@ -247,8 +248,29 @@ public sealed class FormulaEngineService : IFormulaEngineService
             Overrides = new Dictionary<string, decimal>(overrideMap, StringComparer.OrdinalIgnoreCase)
         };
 
-        // 3. Dependency Ordering
-        var ordered = OrderByDependencies(formulaSet.Templates);
+        // 3. System-key guard + Dependency Ordering
+        // System keys are derived from the actual UnifiedPool; no second key list is maintained.
+        var systemKeys = poolEntries
+            .Select(entry => entry.CanonicalKey)
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var runnableTemplates = new List<FormulaTemplate>(formulaSet.Templates.Count);
+        foreach (var template in formulaSet.Templates)
+        {
+            if (systemKeys.Contains(template.TargetKey))
+            {
+                _log.LogWarning(
+                    "[FORMULA-SYSTEM-KEY-SKIPPED] FormulaSetId={FormulaSetId} TargetKey={TargetKey} Reason=UnifiedPoolSystemKeyCollision",
+                    formulaSet.Id,
+                    template.TargetKey);
+                continue;
+            }
+
+            runnableTemplates.Add(template);
+        }
+
+        if (!TryOrderByDependencies(runnableTemplates, out var ordered, out var cycle))
+            return Result<CalculationRun>.Fail($"Döngüsel formül bağımlılığı tespit edildi: {cycle}.");
 
         // 4. Evaluator (NCalc) Loop
         // Context: Inputs (read-only) + Overrides (read-only) + Outputs (write-then-read)
@@ -372,7 +394,10 @@ public sealed class FormulaEngineService : IFormulaEngineService
 
 
 
-    private static IReadOnlyList<FormulaTemplate> OrderByDependencies(IReadOnlyList<FormulaTemplate> templates)
+    private static bool TryOrderByDependencies(
+        IReadOnlyList<FormulaTemplate> templates,
+        out IReadOnlyList<FormulaTemplate> ordered,
+        out string? cycle)
     {
         // Basit topolojik sıralama: bağımlılık ağırlıkları ile.
         // sonraya_devredecek → beklenen_banka → mutabakat_farki zinciri doğru sırada hesaplanmalı.
@@ -384,7 +409,63 @@ public sealed class FormulaEngineService : IFormulaEngineService
             _ => 0
         };
 
-        return templates.OrderBy(x => GetWeight(x.TargetKey)).ToList(); 
+        var targets = templates
+            .Where(template => !string.IsNullOrWhiteSpace(template.TargetKey))
+            .Select(template => template.TargetKey)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var dependencies = templates
+            .GroupBy(template => template.TargetKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .SelectMany(template => Regex.Matches(template.Expression ?? string.Empty, @"[A-Za-z_][A-Za-z0-9_]*")
+                        .Select(match => match.Value))
+                    .Where(targets.Contains)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray(),
+                StringComparer.OrdinalIgnoreCase);
+        var states = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var path = new List<string>();
+        string? detectedCycle = null;
+
+        bool Visit(string target)
+        {
+            if (states.TryGetValue(target, out var state))
+            {
+                if (state == 2) return true;
+                if (state == 1)
+                {
+                    var start = path.FindIndex(key => key.Equals(target, StringComparison.OrdinalIgnoreCase));
+                    detectedCycle = string.Join(" -> ", path.Skip(start).Append(target));
+                    return false;
+                }
+            }
+
+            states[target] = 1;
+            path.Add(target);
+            foreach (var dependency in dependencies[target])
+            {
+                if (!Visit(dependency)) return false;
+            }
+            path.RemoveAt(path.Count - 1);
+            states[target] = 2;
+            return true;
+        }
+
+        cycle = null;
+        foreach (var target in dependencies.Keys)
+        {
+            if (!Visit(target))
+            {
+                ordered = Array.Empty<FormulaTemplate>();
+                cycle = detectedCycle;
+                return false;
+            }
+        }
+
+        // Preserve the legacy stable order for all valid sets.
+        ordered = templates.OrderBy(x => GetWeight(x.TargetKey)).ToList();
+        return true;
     }
 
     private static void EnsureCanonicalAliases(CalculationRun run) { }

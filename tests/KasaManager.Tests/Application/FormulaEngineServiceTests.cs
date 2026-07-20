@@ -2,6 +2,8 @@ using KasaManager.Application.Abstractions;
 using KasaManager.Application.Services;
 using KasaManager.Domain.FormulaEngine;
 using KasaManager.Domain.Reports;
+using Microsoft.Extensions.Logging;
+using Moq;
 using Xunit;
 
 namespace KasaManager.Tests.Application;
@@ -12,6 +14,93 @@ namespace KasaManager.Tests.Application;
 public class FormulaEngineServiceTests
 {
     private readonly FormulaEngineService _engine = new();
+
+    [Fact]
+    public void Run_SelfReferentialFormula_ReturnsCyclicFormulaError()
+    {
+        var set = new FormulaSet
+        {
+            Id = "cycle-self", Name = "Self cycle",
+            Templates = { new() { Id = "x", TargetKey = "x", Expression = "x + 1", Name = "X", Version = "1" } }
+        };
+
+        var result = _engine.Run(new DateOnly(2070, 8, 1), set, Array.Empty<UnifiedPoolEntry>());
+
+        Assert.False(result.Ok);
+        Assert.Contains("döngüsel formül", result.Error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Run_CrossFormulaCycle_ReturnsCyclicFormulaError()
+    {
+        var set = new FormulaSet
+        {
+            Id = "cycle-cross", Name = "Cross cycle",
+            Templates =
+            {
+                new() { Id = "a", TargetKey = "a", Expression = "b + 1", Name = "A", Version = "1" },
+                new() { Id = "b", TargetKey = "b", Expression = "a + 1", Name = "B", Version = "1" }
+            }
+        };
+
+        var result = _engine.Run(new DateOnly(2070, 8, 2), set, Array.Empty<UnifiedPoolEntry>());
+
+        Assert.False(result.Ok);
+        Assert.Contains("döngüsel formül", result.Error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Run_ExistingSystemKeyTarget_SkipsLineKeepsPoolInputAndLogsWarning()
+    {
+        var logger = new Mock<ILogger<FormulaEngineService>>();
+        var engine = new FormulaEngineService(logger.Object);
+        var set = new FormulaSet
+        {
+            Id = "legacy-invalid", Name = "Legacy invalid",
+            Templates =
+            {
+                new() { Id = "legacy", TargetKey = "takip_kasa_etkisi_tahsilat", Expression = "1", Name = "Legacy", Version = "1" }
+            }
+        };
+        var pool = new[]
+        {
+            new UnifiedPoolEntry { CanonicalKey = "takip_kasa_etkisi_tahsilat", Value = "987", IncludeInCalculations = true }
+        };
+
+        var result = engine.Run(new DateOnly(2070, 8, 3), set, pool);
+
+        Assert.True(result.Ok, result.Error);
+        Assert.Equal(987m, result.Value!.Inputs["takip_kasa_etkisi_tahsilat"]);
+        Assert.DoesNotContain("takip_kasa_etkisi_tahsilat", result.Value.Outputs.Keys);
+        logger.Verify(log => log.Log(
+            LogLevel.Warning,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("FORMULA-SYSTEM-KEY-SKIPPED")),
+            It.IsAny<Exception?>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
+    [Fact]
+    public void Run_BuiltInSeedSets_PreserveLegacyStableOrdering()
+    {
+        static int LegacyWeight(string? key) => key switch
+        {
+            "sonraya_devredecek" => 90,
+            "beklenen_banka" => 95,
+            "mutabakat_farki" => 99,
+            _ => 0
+        };
+
+        foreach (var set in _engine.GetBuiltInFormulaSets())
+        {
+            var expected = set.Templates.OrderBy(template => LegacyWeight(template.TargetKey))
+                .Select(template => template.TargetKey);
+            var result = _engine.Run(new DateOnly(2070, 8, 4), set, Array.Empty<UnifiedPoolEntry>());
+
+            Assert.True(result.Ok, result.Error);
+            Assert.Equal(expected, result.Value!.Explain.Select(item => item.TargetKey));
+        }
+    }
 
     // ── GetBuiltInFormulaSets ──
 
@@ -233,7 +322,8 @@ public class FormulaEngineServiceTests
         var result = _engine.Run(new DateOnly(2026, 5, 6), formulaSet, pool);
 
         Assert.True(result.Ok, result.Error);
-        Assert.Equal(0m, result.Value!.Outputs["tespit_edilen_eksik_fazla"]);
+        Assert.Equal(0m, result.Value!.Inputs["tespit_edilen_eksik_fazla"]);
+        Assert.DoesNotContain("tespit_edilen_eksik_fazla", result.Value.Outputs.Keys);
         Assert.Equal(0m, result.Value!.Outputs["gune_ait_eksik_fazla_tahsilat"]);
         Assert.NotEqual(15900m, result.Value!.Outputs["gune_ait_eksik_fazla_tahsilat"]);
     }
