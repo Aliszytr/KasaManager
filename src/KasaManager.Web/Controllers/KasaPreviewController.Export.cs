@@ -36,10 +36,6 @@ public sealed partial class KasaPreviewController
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> DownloadBankaFisi(KasaPreviewViewModel model, CancellationToken ct)
     {
-        decimal ParseForm(string name)
-            => decimal.TryParse(Request.Form[name], System.Globalization.NumberStyles.Any,
-                   System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 0;
-
         var defaults = await _globalDefaults.GetAsync(ct);
         var tarih = model.SelectedDate ?? DateOnly.FromDateTime(DateTime.Today);
         var effectiveKasaType = !string.IsNullOrEmpty(model.KasaType) ? model.KasaType : "Aksam";
@@ -51,16 +47,16 @@ public sealed partial class KasaPreviewController
             Hazirlayan = model.KasayiYapan,
             HesapAdiStopaj = defaults.HesapAdiStopaj,
             IbanStopaj = defaults.IbanStopaj,
-            TutarStopaj = ParseForm("PdfStopaj"),
+            TutarStopaj = TryParseAmount(Request.Form["PdfStopaj"].ToString(), "Request.Form[PdfStopaj]", out var tutarStopaj) ? tutarStopaj : 0m,
             HesapAdiMasraf = defaults.HesapAdiMasraf,
             IbanMasraf = defaults.IbanMasraf,
-            TutarMasraf = ParseForm("PdfTahsilat"),
+            TutarMasraf = TryParseAmount(Request.Form["PdfTahsilat"].ToString(), "Request.Form[PdfTahsilat]", out var tutarMasraf) ? tutarMasraf : 0m,
             HesapAdiHarc = defaults.HesapAdiHarc,
             IbanHarc = defaults.IbanHarc,
-            TutarHarc = ParseForm("PdfHarc"),
-            KasadakiNakit = ParseForm("PdfKasadakiNakit"),
-            DundenDevredenBanka = ParseForm("PdfDevredenBanka"),
-            YarinaDevredecekBanka = ParseForm("PdfDevredecekBanka"),
+            TutarHarc = TryParseAmount(Request.Form["PdfHarc"].ToString(), "Request.Form[PdfHarc]", out var tutarHarc) ? tutarHarc : 0m,
+            KasadakiNakit = TryParseAmount(Request.Form["PdfKasadakiNakit"].ToString(), "Request.Form[PdfKasadakiNakit]", out var kasadakiNakit) ? kasadakiNakit : 0m,
+            DundenDevredenBanka = TryParseAmount(Request.Form["PdfDevredenBanka"].ToString(), "Request.Form[PdfDevredenBanka]", out var dundenDevredenBanka) ? dundenDevredenBanka : 0m,
+            YarinaDevredecekBanka = TryParseAmount(Request.Form["PdfDevredecekBanka"].ToString(), "Request.Form[PdfDevredecekBanka]", out var yarinaDevredecekBanka) ? yarinaDevredecekBanka : 0m,
         };
 
         var document = new KasaManager.Infrastructure.Pdf.BankaFisiDocument(data);

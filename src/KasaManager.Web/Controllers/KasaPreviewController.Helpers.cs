@@ -160,8 +160,9 @@ public sealed partial class KasaPreviewController
         KasaPreviewViewModel model, bool includeUstRapor, CancellationToken ct)
     {
         decimal PF(string name)
-            => decimal.TryParse(Request.Form[name], System.Globalization.NumberStyles.Any,
-                   System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 0;
+            => TryParseAmount(Request.Form[name].ToString(), $"Request.Form[{name}]", out var value)
+                ? value
+                : 0m;
 
         // FIX: Quick Save formu Rpt... hidden alanlarını içermez.
         // Form alanı gerçekten gönderildiyse form değerini, gönderilmediyse model

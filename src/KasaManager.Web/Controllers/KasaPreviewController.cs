@@ -863,9 +863,14 @@ public sealed partial class KasaPreviewController : Controller
                     using var doc = System.Text.Json.JsonDocument.Parse(outputsJson);
                     foreach (var prop in doc.RootElement.EnumerateObject())
                     {
-                        allOutputs[prop.Name] = prop.Value.ValueKind == System.Text.Json.JsonValueKind.Number
+                        var rawOutput = prop.Value.ValueKind == System.Text.Json.JsonValueKind.Number
                             ? prop.Value.GetRawText()
                             : prop.Value.GetString() ?? prop.Value.GetRawText();
+                        if (TryParseAmount(rawOutput, $"Save.Outputs[{prop.Name}]", out var parsedOutput))
+                        {
+                            allOutputs[prop.Name] = parsedOutput.ToString(
+                                System.Globalization.CultureInfo.InvariantCulture);
+                        }
                     }
                 }
 
@@ -881,8 +886,7 @@ public sealed partial class KasaPreviewController : Controller
                 {
                     var raw = Request.Form[formKey].ToString();
                     if (!string.IsNullOrWhiteSpace(raw) &&
-                        decimal.TryParse(raw, System.Globalization.NumberStyles.Any,
-                            System.Globalization.CultureInfo.InvariantCulture, out var val) &&
+                        TryParseAmount(raw, $"Request.Form[{formKey}]", out var val) &&
                         val != 0m)
                     {
                         allOutputs[poolKey] = val.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
@@ -1001,9 +1005,14 @@ public sealed partial class KasaPreviewController : Controller
             {
                 foreach (var property in outputsDocument.RootElement.EnumerateObject())
                 {
-                    consistentOutputs[property.Name] = property.Value.ValueKind == JsonValueKind.String
+                    var rawOutput = property.Value.ValueKind == JsonValueKind.String
                         ? property.Value.GetString() ?? string.Empty
                         : property.Value.GetRawText();
+                    if (TryParseAmount(rawOutput, $"Persist.Outputs[{property.Name}]", out var parsedOutput))
+                    {
+                        consistentOutputs[property.Name] = parsedOutput.ToString(
+                            System.Globalization.CultureInfo.InvariantCulture);
+                    }
                 }
             }
             consistentOutputs["gune_ait_eksik_fazla_tahsilat"] = immutableAudit.Summary.GuneAitEksikFazlaTahsilat.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -1274,10 +1283,9 @@ public sealed partial class KasaPreviewController : Controller
                         outputs[property.Name] = numericValue;
                     }
                     else if (property.Value.ValueKind == JsonValueKind.String
-                             && decimal.TryParse(
+                             && TryParseAmount(
                                  property.Value.GetString(),
-                                 System.Globalization.NumberStyles.Any,
-                                 System.Globalization.CultureInfo.InvariantCulture,
+                                 $"Snapshot.Outputs[{property.Name}]",
                                  out var stringValue))
                     {
                         outputs[property.Name] = stringValue;
@@ -1462,6 +1470,69 @@ public sealed partial class KasaPreviewController : Controller
 
         TempData["SuccessMessage"] = $"✅ Rapor yüklendi: {snapshot.Name} (v{snapshot.Version})";
         return View("Index", model);
+    }
+
+    private bool TryParseAmount(string? raw, string context, out decimal value)
+    {
+        value = 0m;
+        if (string.IsNullOrWhiteSpace(raw))
+            return true;
+
+        const System.Globalization.NumberStyles styles = System.Globalization.NumberStyles.Any;
+        var invariantOk = decimal.TryParse(
+            raw, styles, System.Globalization.CultureInfo.InvariantCulture, out var invariantValue);
+        var turkishOk = decimal.TryParse(
+            raw, styles, System.Globalization.CultureInfo.GetCultureInfo("tr-TR"), out var turkishValue);
+
+        if (invariantOk && turkishOk)
+        {
+            if (invariantValue == turkishValue)
+            {
+                value = invariantValue;
+                return true;
+            }
+
+            var lastDot = raw.LastIndexOf('.');
+            var lastComma = raw.LastIndexOf(',');
+            if (lastDot >= 0 && lastComma >= 0)
+            {
+                value = lastDot > lastComma ? invariantValue : turkishValue;
+                return true;
+            }
+
+            var separatorIndex = Math.Max(lastDot, lastComma);
+            var separator = raw[separatorIndex];
+            var hasSingleSeparator = raw.IndexOf(separator) == separatorIndex;
+            var fractionalDigits = raw.Length - separatorIndex - 1;
+            if (hasSingleSeparator && fractionalDigits != 3)
+            {
+                value = invariantValue;
+                return true;
+            }
+
+            value = invariantValue;
+            _log.LogWarning(
+                "[AMOUNT-PARSE-AMBIGUOUS] Context={Context} Raw={Raw} InvariantValue={InvariantValue} TurkishValue={TurkishValue} Winner=Invariant",
+                context, raw, invariantValue, turkishValue);
+            return true;
+        }
+
+        if (invariantOk)
+        {
+            value = invariantValue;
+            return true;
+        }
+
+        if (turkishOk)
+        {
+            value = turkishValue;
+            return true;
+        }
+
+        _log.LogWarning(
+            "[AMOUNT-PARSE-FAILED] Context={Context} Raw={Raw} Fallback=Zero",
+            context, raw);
+        return false;
     }
 
     /// <summary>

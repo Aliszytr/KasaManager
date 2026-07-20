@@ -30,6 +30,46 @@ public sealed class KasaPreviewImmutableAuditPersistenceTests
 {
     private static readonly DateOnly SaveDate = new(2026, 7, 14);
 
+    [Theory]
+    [InlineData("98.738,00", 98738.00)]
+    [InlineData("1,234.56", 1234.56)]
+    public async Task SaveLoad_CultureFormattedOutput_RoundTripsWithoutAmbiguousWarning(
+        string posted,
+        decimal expected)
+    {
+        using var fixture = CreateFixture();
+        fixture.Analysis.Setup(service => service.GetImmutableAuditSnapshotAsync(
+                SaveDate, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HesapKontrolImmutableAuditSnapshot(
+                new EksikFazlaAutoFill(0, 0, 0, 0, 0, 0, false, "no data"),
+                EmptyDetails()));
+        fixture.Controller.HttpContext.Request.Form = new FormCollection(
+            new Dictionary<string, StringValues>
+            {
+                ["SaveRaporAdi"] = "Culture round-trip",
+                ["SaveInputsJson"] = "{}",
+                ["SaveOutputsJson"] = $"{{\"genel_kasa\":\"{posted}\"}}",
+                ["RptGenelKasa"] = posted,
+                ["RptGunlukNot"] = ""
+            });
+
+        AssertSuccessful(await fixture.Controller.SaveReport(NewModel(), CancellationToken.None));
+        fixture.Snapshots.Setup(service => service.GetByIdAsync(
+                fixture.SavedSnapshot!.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(fixture.SavedSnapshot);
+        var loadedResult = Assert.IsType<ViewResult>(await fixture.Controller.LoadSnapshot(
+            fixture.SavedSnapshot!.Id, CancellationToken.None));
+        var loaded = Assert.IsType<KasaPreviewViewModel>(loadedResult.Model);
+
+        Assert.Equal(expected, loaded.FormulaRun!.Outputs["genel_kasa"]);
+        fixture.Logger.Verify(logger => logger.Log(
+            LogLevel.Warning,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("AMOUNT-PARSE-AMBIGUOUS")),
+            It.IsAny<Exception?>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Never);
+    }
+
     [Fact]
     public async Task SaveReport_IgnoresModelBoundAuditValues_AndPersistsServerSideResult()
     {
@@ -882,6 +922,7 @@ public sealed class KasaPreviewImmutableAuditPersistenceTests
                 SaveDate, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<FinansalIstisna>());
 
+        var logger = new Mock<ILogger<KasaPreviewController>>();
         var controller = new KasaPreviewController(
             Mock.Of<IKasaOrchestrator>(),
             environment.Object,
@@ -900,7 +941,7 @@ public sealed class KasaPreviewImmutableAuditPersistenceTests
             financialExceptions.Object,
             Mock.Of<IFinansalIstisnaAnomaliService>(),
             Mock.Of<IDistributedCache>(),
-            Mock.Of<ILogger<KasaPreviewController>>(),
+            logger.Object,
             Mock.Of<IKasaReadModelService>(),
             snapshots.Object,
             Mock.Of<IKasaRaporSnapshotService>());
@@ -926,7 +967,7 @@ public sealed class KasaPreviewImmutableAuditPersistenceTests
             .Returns("/KasaPreview/LoadSnapshot/test");
         controller.Url = url.Object;
 
-        var fixture = new TestFixture(webRoot, controller, analysis, snapshots);
+        var fixture = new TestFixture(webRoot, controller, analysis, snapshots, logger);
         snapshots.Setup(service => service.SaveAsync(
                 It.IsAny<CalculatedKasaSnapshot>(), It.IsAny<int>(), It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
@@ -982,18 +1023,21 @@ public sealed class KasaPreviewImmutableAuditPersistenceTests
             string webRoot,
             KasaPreviewController controller,
             Mock<IBankaHesapKontrolService> analysis,
-            Mock<ICalculatedKasaSnapshotService> snapshots)
+            Mock<ICalculatedKasaSnapshotService> snapshots,
+            Mock<ILogger<KasaPreviewController>> logger)
         {
             WebRoot = webRoot;
             Controller = controller;
             Analysis = analysis;
             Snapshots = snapshots;
+            Logger = logger;
         }
 
         public string WebRoot { get; }
         public KasaPreviewController Controller { get; }
         public Mock<IBankaHesapKontrolService> Analysis { get; }
         public Mock<ICalculatedKasaSnapshotService> Snapshots { get; }
+        public Mock<ILogger<KasaPreviewController>> Logger { get; }
         public CalculatedKasaSnapshot? SavedSnapshot { get; set; }
 
         public void Dispose()

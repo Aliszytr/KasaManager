@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
 using KasaManager.Application.Abstractions;
@@ -27,6 +28,167 @@ namespace KasaManager.Tests.Controllers;
 public sealed class KasaPreviewImmutableAuditRestoreTests
 {
     private static readonly DateOnly SnapshotDate = new(2026, 7, 14);
+
+    [Theory]
+    [InlineData("98.738,00", 98738.00)]
+    [InlineData("98738.00", 98738.00)]
+    [InlineData("1.234,56", 1234.56)]
+    [InlineData("1,234.56", 1234.56)]
+    [InlineData(null, 0)]
+    public async Task BuildKasaRaporData_PostedAmount_ParsesTurkishAndInvariantFormats(
+        string? raw,
+        decimal expected)
+    {
+        using var fixture = CreateFixture(new KasaRaporData());
+        fixture.Controller.HttpContext.Request.Form = new FormCollection(
+            new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
+            {
+                ["RptGenelKasa"] = raw
+            });
+        var method = typeof(KasaPreviewController).GetMethod(
+            "BuildKasaRaporDataAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+
+        var invocation = Assert.IsType<Task<KasaRaporData>>(method!.Invoke(
+            fixture.Controller,
+            new object[] { new KasaPreviewViewModel(), false, CancellationToken.None }));
+        var data = await invocation;
+
+        Assert.Equal(expected, data.GenelKasa);
+    }
+
+    [Fact]
+    public void TryParseAmount_AmbiguousSingleSeparator_UsesInvariantAndLogsWarning()
+    {
+        using var fixture = CreateFixture(new KasaRaporData());
+        var method = typeof(KasaPreviewController).GetMethod(
+            "TryParseAmount",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        var arguments = new object?[] { "98.738", "test", 0m };
+
+        var parsed = Assert.IsType<bool>(method!.Invoke(fixture.Controller, arguments));
+
+        Assert.True(parsed);
+        Assert.Equal(98.738m, Assert.IsType<decimal>(arguments[2]));
+        fixture.Logger.Verify(logger => logger.Log(
+            LogLevel.Warning,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("AMOUNT-PARSE-AMBIGUOUS")),
+            It.IsAny<Exception?>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData("98738.00", 98738.00)]
+    [InlineData("0.5", 0.5)]
+    [InlineData("12.3456", 12.3456)]
+    public void TryParseAmount_InvariantDecimalPattern_DoesNotLogAmbiguousWarning(
+        string raw,
+        decimal expected)
+    {
+        using var fixture = CreateFixture(new KasaRaporData());
+        var method = typeof(KasaPreviewController).GetMethod(
+            "TryParseAmount",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        var arguments = new object?[] { raw, "test", 0m };
+
+        var parsed = Assert.IsType<bool>(method!.Invoke(fixture.Controller, arguments));
+
+        Assert.True(parsed);
+        Assert.Equal(expected, Assert.IsType<decimal>(arguments[2]));
+        fixture.Logger.Verify(logger => logger.Log(
+            LogLevel.Warning,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("AMOUNT-PARSE-AMBIGUOUS")),
+            It.IsAny<Exception?>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("98.738,00", 98738.00)]
+    [InlineData("1,234.56", 1234.56)]
+    public void TryParseAmount_SaveRestoreRoundTrip_DoesNotLogAmbiguousWarning(
+        string posted,
+        decimal expected)
+    {
+        using var fixture = CreateFixture(new KasaRaporData());
+        var method = typeof(KasaPreviewController).GetMethod(
+            "TryParseAmount",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var saveArguments = new object?[] { posted, "Save.Outputs[test]", 0m };
+        Assert.True(Assert.IsType<bool>(method.Invoke(fixture.Controller, saveArguments)));
+        var savedValue = Assert.IsType<decimal>(saveArguments[2]);
+        var invariantPersisted = savedValue.ToString(CultureInfo.InvariantCulture);
+        var restoreArguments = new object?[] { invariantPersisted, "Snapshot.Outputs[test]", 0m };
+
+        Assert.True(Assert.IsType<bool>(method.Invoke(fixture.Controller, restoreArguments)));
+        Assert.Equal(expected, Assert.IsType<decimal>(restoreArguments[2]));
+        fixture.Logger.Verify(logger => logger.Log(
+            LogLevel.Warning,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("AMOUNT-PARSE-AMBIGUOUS")),
+            It.IsAny<Exception?>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("1234.56", 1234.56)]
+    [InlineData(null, 0)]
+    public void DownloadBankaFisi_ParseContract_PreservesInvariantAndEmptyValues(
+        string? raw,
+        decimal expected)
+    {
+        using var fixture = CreateFixture(new KasaRaporData());
+        var method = typeof(KasaPreviewController).GetMethod(
+            "TryParseAmount",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var arguments = new object?[] { raw, "Request.Form[PdfStopaj]", 0m };
+
+        Assert.True(Assert.IsType<bool>(method.Invoke(fixture.Controller, arguments)));
+        Assert.Equal(expected, Assert.IsType<decimal>(arguments[2]));
+
+        var exportSource = File.ReadAllText(GetRepositoryPath(
+            "src", "KasaManager.Web", "Controllers", "KasaPreviewController.Export.cs"));
+        Assert.Contains("TryParseAmount(Request.Form[\"PdfStopaj\"].ToString()", exportSource);
+        Assert.DoesNotContain("decimal ParseForm", exportSource);
+        Assert.DoesNotContain("decimal.TryParse(Request.Form[name]", exportSource);
+    }
+
+    [Fact]
+    public void TryParseAmount_InvalidNonEmptyInput_ReturnsZeroAndLogsWarning()
+    {
+        using var fixture = CreateFixture(new KasaRaporData());
+        var method = typeof(KasaPreviewController).GetMethod(
+            "TryParseAmount",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        var arguments = new object?[] { "not-an-amount", "test", 99m };
+
+        var parsed = Assert.IsType<bool>(method!.Invoke(fixture.Controller, arguments));
+
+        Assert.False(parsed);
+        Assert.Equal(0m, Assert.IsType<decimal>(arguments[2]));
+        fixture.Logger.Verify(logger => logger.Log(
+            LogLevel.Warning,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("AMOUNT-PARSE-FAILED")),
+            It.IsAny<Exception?>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task LoadSnapshot_StringOutput_ParsesTurkishAmount()
+    {
+        using var fixture = CreateFixture(new KasaRaporData());
+        fixture.Snapshot.OutputsJson = "{\"genel_kasa\":\"98.738,00\"}";
+
+        var result = await fixture.Controller.LoadSnapshot(fixture.Snapshot.Id, CancellationToken.None);
+
+        var view = Assert.IsType<ViewResult>(result);
+        var model = Assert.IsType<KasaPreviewViewModel>(view.Model);
+        Assert.Equal(98_738m, model.FormulaRun!.Outputs["genel_kasa"]);
+    }
 
     [Fact]
     public async Task LoadSnapshot_LegacyPayload_RestoresNormalFieldsAndShowsLegacyNotice()
@@ -717,6 +879,7 @@ public sealed class KasaPreviewImmutableAuditRestoreTests
                 snapshot.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(snapshot);
 
+        var logger = new Mock<ILogger<KasaPreviewController>>();
         var controller = new KasaPreviewController(
             Mock.Of<IKasaOrchestrator>(),
             environment.Object,
@@ -738,7 +901,7 @@ public sealed class KasaPreviewImmutableAuditRestoreTests
             financialExceptions.Object,
             Mock.Of<IFinansalIstisnaAnomaliService>(),
             Mock.Of<IDistributedCache>(),
-            Mock.Of<ILogger<KasaPreviewController>>(),
+            logger.Object,
             Mock.Of<IKasaReadModelService>(),
             snapshots.Object,
             reportSnapshots.Object);
@@ -752,7 +915,7 @@ public sealed class KasaPreviewImmutableAuditRestoreTests
             httpContext, Mock.Of<ITempDataProvider>());
 
         return new TestFixture(
-            webRoot, controller, snapshot, analysis, snapshots, reportSnapshots);
+            webRoot, controller, snapshot, analysis, snapshots, reportSnapshots, logger);
     }
 
     public static IEnumerable<object[]> InvalidVersionTwoDetails()
@@ -956,7 +1119,8 @@ public sealed class KasaPreviewImmutableAuditRestoreTests
             CalculatedKasaSnapshot snapshot,
             Mock<IBankaHesapKontrolService> analysis,
             Mock<ICalculatedKasaSnapshotService> snapshots,
-            Mock<IKasaRaporSnapshotService> reportSnapshots)
+            Mock<IKasaRaporSnapshotService> reportSnapshots,
+            Mock<ILogger<KasaPreviewController>> logger)
         {
             WebRoot = webRoot;
             Controller = controller;
@@ -964,6 +1128,7 @@ public sealed class KasaPreviewImmutableAuditRestoreTests
             Analysis = analysis;
             Snapshots = snapshots;
             ReportSnapshots = reportSnapshots;
+            Logger = logger;
         }
 
         public string WebRoot { get; }
@@ -972,6 +1137,7 @@ public sealed class KasaPreviewImmutableAuditRestoreTests
         public Mock<IBankaHesapKontrolService> Analysis { get; }
         public Mock<ICalculatedKasaSnapshotService> Snapshots { get; }
         public Mock<IKasaRaporSnapshotService> ReportSnapshots { get; }
+        public Mock<ILogger<KasaPreviewController>> Logger { get; }
 
         public void Dispose()
         {
