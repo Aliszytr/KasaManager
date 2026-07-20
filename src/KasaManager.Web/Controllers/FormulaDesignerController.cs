@@ -102,9 +102,12 @@ public class FormulaDesignerController : Controller
         {
             // Create new template
             dto.DbFormulaSetId = null; // force create
-            await _orchestrator.CreateDbFormulaSetAsync(dto, ct);
-            model.SelectedTemplateId = dto.DbFormulaSetId;
-            model.Infos.Add($"'{model.TemplateName}' yeni şablon oluşturuldu.");
+            await _orchestrator.CreateDbFormulaSetAsync(dto, ResolveUploadFolderAbsolute(), ct);
+            if (dto.Errors.Count == 0)
+            {
+                model.SelectedTemplateId = dto.DbFormulaSetId;
+                model.Infos.Add($"'{model.TemplateName}' yeni şablon oluşturuldu.");
+            }
         }
         catch (Exception ex)
         {
@@ -142,8 +145,9 @@ public class FormulaDesignerController : Controller
 
         try
         {
-            await _orchestrator.SaveDbFormulaSetAsync(dto, isUpdate: true, ct);
-            model.Infos.Add($"'{model.TemplateName}' güncellendi.");
+            await _orchestrator.SaveDbFormulaSetAsync(dto, isUpdate: true, ResolveUploadFolderAbsolute(), ct);
+            if (dto.Errors.Count == 0)
+                model.Infos.Add($"'{model.TemplateName}' güncellendi.");
         }
         catch (Exception ex)
         {

@@ -735,16 +735,16 @@ public sealed partial class KasaPreviewController : Controller
             }
             else if (uiAction.Equals("dbCreate", StringComparison.OrdinalIgnoreCase))
             {
-                await _orchestrator.CreateDbFormulaSetAsync(dto, ct);
+                await _orchestrator.CreateDbFormulaSetAsync(dto, uploadPath, ct);
             }
             else if (uiAction.Equals("dbSaveNew", StringComparison.OrdinalIgnoreCase))
             {
                  dto.DbFormulaSetId = null; 
-                 await _orchestrator.CreateDbFormulaSetAsync(dto, ct);
+                 await _orchestrator.CreateDbFormulaSetAsync(dto, uploadPath, ct);
             }
             else if (uiAction.Equals("dbUpdate", StringComparison.OrdinalIgnoreCase))
             {
-                await _orchestrator.SaveDbFormulaSetAsync(dto, isUpdate: true, ct);
+                await _orchestrator.SaveDbFormulaSetAsync(dto, isUpdate: true, uploadPath, ct);
             }
             else if (uiAction.Equals("dbDelete", StringComparison.OrdinalIgnoreCase))
             {

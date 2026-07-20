@@ -250,15 +250,21 @@ public sealed class FormulaEngineService : IFormulaEngineService
 
         // 3. System-key guard + Dependency Ordering
         // System keys are derived from the actual UnifiedPool; no second key list is maintained.
-        var systemKeys = poolEntries
-            .Select(entry => entry.CanonicalKey)
-            .Where(key => !string.IsNullOrWhiteSpace(key))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var systemKeys = FormulaSystemKeySet.From(poolEntries);
         var runnableTemplates = new List<FormulaTemplate>(formulaSet.Templates.Count);
         foreach (var template in formulaSet.Templates)
         {
             if (systemKeys.Contains(template.TargetKey))
             {
+                if (FormulaAssignmentRules.IsIdentityAssignment(template.TargetKey, template.Expression))
+                {
+                    _log.LogDebug(
+                        "[FORMULA-SYSTEM-IDENTITY-SKIPPED] FormulaSetId={FormulaSetId} TargetKey={TargetKey} Source=UnifiedPool",
+                        formulaSet.Id,
+                        template.TargetKey);
+                    continue;
+                }
+
                 _log.LogWarning(
                     "[FORMULA-SYSTEM-KEY-SKIPPED] FormulaSetId={FormulaSetId} TargetKey={TargetKey} Reason=UnifiedPoolSystemKeyCollision",
                     formulaSet.Id,

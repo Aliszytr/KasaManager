@@ -220,6 +220,49 @@ public sealed class UnifiedPoolEntry
     public string? Notes { get; init; }
 }
 
+public static class FormulaSystemKeySet
+{
+    /// <summary>
+    /// A key is protected only when the same pool entry can actually participate
+    /// in formula evaluation. This keeps skip and fallback semantics symmetric.
+    /// </summary>
+    public static HashSet<string> From(IEnumerable<UnifiedPoolEntry>? entries) =>
+        (entries ?? Array.Empty<UnifiedPoolEntry>())
+            .Where(entry => entry.IncludeInCalculations && !string.IsNullOrWhiteSpace(entry.CanonicalKey))
+            .Select(entry => entry.CanonicalKey)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+}
+
+public static class FormulaAssignmentRules
+{
+    public static bool IsIdentityAssignment(string? targetKey, string? expression)
+    {
+        if (string.IsNullOrWhiteSpace(targetKey) || string.IsNullOrWhiteSpace(expression))
+            return false;
+
+        var normalized = expression.Trim();
+        while (HasSingleOuterParenthesisPair(normalized))
+            normalized = normalized[1..^1].Trim();
+
+        return normalized.Equals(targetKey.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasSingleOuterParenthesisPair(string value)
+    {
+        if (value.Length < 2 || value[0] != '(' || value[^1] != ')') return false;
+
+        var depth = 0;
+        for (var index = 0; index < value.Length; index++)
+        {
+            depth += value[index] switch { '(' => 1, ')' => -1, _ => 0 };
+            if (depth == 0 && index < value.Length - 1) return false;
+            if (depth < 0) return false;
+        }
+
+        return depth == 0;
+    }
+}
+
 public enum UnifiedPoolValueType
 {
     Raw = 0,

@@ -65,6 +65,101 @@ public sealed class KasaOrchestratorTests
             It.IsAny<PersistedFormulaSet>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Fact]
+    public async Task SaveDbFormulaSetAsync_SystemPoolKeyIdentityTarget_IsAllowed()
+    {
+        var dto = new KasaPreviewDto
+        {
+            DbFormulaSetName = "Identity allowed",
+            PoolEntries =
+            {
+                new UnifiedPoolEntry { CanonicalKey = "normal_tahsilat", Value = "100", IncludeInCalculations = true }
+            },
+            Mappings =
+            {
+                new KasaPreviewMappingRow { TargetKey = "normal_tahsilat", Mode = "Formula", Expression = " (( normal_tahsilat )) " }
+            }
+        };
+        _formulaStoreMock.Setup(store => store.CreateAsync(
+                It.IsAny<PersistedFormulaSet>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PersistedFormulaSet set, CancellationToken _) => set);
+
+        await CreateSut().SaveDbFormulaSetAsync(dto, isUpdate: false, CancellationToken.None);
+
+        Assert.Empty(dto.Errors);
+        _formulaStoreMock.Verify(store => store.CreateAsync(
+            It.IsAny<PersistedFormulaSet>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData("takip_kasa_etkisi_tahsilat", "x + takip_kasa_etkisi_tahsilat")]
+    [InlineData("normal_tahsilat", "normal_tahsilat + 1")]
+    public async Task SaveDbFormulaSetAsync_SystemPoolKeyNonIdentityTarget_RemainsRejected(
+        string target,
+        string expression)
+    {
+        var dto = new KasaPreviewDto
+        {
+            PoolEntries = { new UnifiedPoolEntry { CanonicalKey = target, Value = "1", IncludeInCalculations = true } },
+            Mappings = { new KasaPreviewMappingRow { TargetKey = target, Mode = "Formula", Expression = expression } }
+        };
+
+        await CreateSut().SaveDbFormulaSetAsync(dto, isUpdate: false, CancellationToken.None);
+
+        Assert.Contains(dto.Errors, error => error.Contains("sistem anahtarı", StringComparison.OrdinalIgnoreCase));
+        _formulaStoreMock.Verify(store => store.CreateAsync(
+            It.IsAny<PersistedFormulaSet>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateDbFormulaSetAsync_EmptyPoolHydratesFromPreviewBeforeGuarding()
+    {
+        var date = new DateOnly(2070, 9, 1);
+        _snapshotMock.Setup(service => service.GetAsync(
+                date, KasaRaporTuru.Genel, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new KasaRaporSnapshot
+            {
+                RaporTarihi = date,
+                Rows = { new KasaRaporSnapshotRow { Veznedar = "test", IsSelected = true } }
+            });
+        _globalDefaultsMock.Setup(service => service.GetAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new KasaGlobalDefaultsSettings { Id = 1 });
+        _draftsMock.Setup(service => service.BuildUnifiedPoolAsync(
+                date, It.IsAny<string>(), It.IsAny<KasaDraftFinalizeInputs>(),
+                It.IsAny<DateOnly?>(), It.IsAny<DateOnly?>(), It.IsAny<bool>(),
+                It.IsAny<string?>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<UnifiedPoolEntry>>.Success(new[]
+            {
+                new UnifiedPoolEntry
+                {
+                    CanonicalKey = "takip_kasa_etkisi_tahsilat", Value = "100", IncludeInCalculations = true
+                }
+            }));
+        _draftsMock.Setup(service => service.BuildAsync(
+                date, It.IsAny<string>(), It.IsAny<KasaDraftFinalizeInputs>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<KasaDraftBundle>.Success(new KasaDraftBundle()));
+        var dto = new KasaPreviewDto
+        {
+            SelectedDate = date,
+            KasaType = "Sabah",
+            DbScopeType = "Sabah",
+            Mappings =
+            {
+                new KasaPreviewMappingRow
+                {
+                    TargetKey = "takip_kasa_etkisi_tahsilat", Mode = "Formula", Expression = "1"
+                }
+            }
+        };
+
+        await CreateSut().CreateDbFormulaSetAsync(dto, @"C:\uploads", CancellationToken.None);
+
+        Assert.NotEmpty(dto.PoolEntries);
+        Assert.Contains(dto.Errors, error => error.Contains("sistem anahtarı", StringComparison.OrdinalIgnoreCase));
+        _formulaStoreMock.Verify(store => store.CreateAsync(
+            It.IsAny<PersistedFormulaSet>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     // ───────────────────────────────────────────
     // LoadPreviewAsync
     // ───────────────────────────────────────────

@@ -79,6 +79,15 @@ public partial class KasaOrchestrator
         } catch(Exception ex) { dto.Errors.Add($"Create failed: {ex.Message}"); }
         await HydrateDbFormulaSetsAsync(dto, ct);
     }
+
+    public async Task CreateDbFormulaSetAsync(
+        KasaPreviewDto dto,
+        string uploadBasePath,
+        CancellationToken ct)
+    {
+        if (!await EnsureFormulaSystemKeysAsync(dto, uploadBasePath, ct)) return;
+        await CreateDbFormulaSetAsync(dto, ct);
+    }
     
     public async Task SaveDbFormulaSetAsync(KasaPreviewDto dto, bool isUpdate, CancellationToken ct)
     {
@@ -131,6 +140,16 @@ public partial class KasaOrchestrator
         }
 
         await HydrateDbFormulaSetsAsync(dto, ct);
+    }
+
+    public async Task SaveDbFormulaSetAsync(
+        KasaPreviewDto dto,
+        bool isUpdate,
+        string uploadBasePath,
+        CancellationToken ct)
+    {
+        if (!await EnsureFormulaSystemKeysAsync(dto, uploadBasePath, ct)) return;
+        await SaveDbFormulaSetAsync(dto, isUpdate, ct);
     }
 
     public async Task DeleteDbFormulaSetAsync(KasaPreviewDto dto, CancellationToken ct)
@@ -201,13 +220,12 @@ public partial class KasaOrchestrator
 
     private static bool ValidateFormulaTargets(KasaPreviewDto dto)
     {
-        var systemKeys = (dto.PoolEntries ?? new List<UnifiedPoolEntry>())
-            .Select(entry => entry.CanonicalKey)
-            .Where(key => !string.IsNullOrWhiteSpace(key))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var systemKeys = FormulaSystemKeySet.From(dto.PoolEntries);
         var invalidTargets = (dto.Mappings ?? new List<KasaPreviewMappingRow>())
-            .Select(mapping => mapping.TargetKey?.Trim())
-            .Where(target => !string.IsNullOrWhiteSpace(target) && systemKeys.Contains(target!))
+            .Where(mapping => !string.IsNullOrWhiteSpace(mapping.TargetKey)
+                && systemKeys.Contains(mapping.TargetKey.Trim())
+                && !FormulaAssignmentRules.IsIdentityAssignment(mapping.TargetKey, mapping.Expression))
+            .Select(mapping => mapping.TargetKey!.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
@@ -215,6 +233,20 @@ public partial class KasaOrchestrator
 
         dto.Errors.Add(
             $"Sistem anahtarı formül hedefi olarak kullanılamaz: {string.Join(", ", invalidTargets)}. Bu anahtarlar UnifiedPool tarafından sağlanır.");
+        return false;
+    }
+
+    private async Task<bool> EnsureFormulaSystemKeysAsync(
+        KasaPreviewDto dto,
+        string uploadBasePath,
+        CancellationToken ct)
+    {
+        if (dto.PoolEntries.Count > 0) return true;
+
+        await LoadPreviewAsync(dto, uploadBasePath, ct);
+        if (dto.PoolEntries.Count > 0) return true;
+
+        dto.Errors.Add("Sistem anahtarları UnifiedPool kaynağından doğrulanamadığı için formül seti kaydedilmedi.");
         return false;
     }
 

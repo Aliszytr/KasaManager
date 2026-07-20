@@ -26,7 +26,9 @@ public interface IKasaOrchestrator
     Task HydrateDbFormulaSetsAsync(KasaPreviewDto dto, CancellationToken ct);
     Task LoadDbFormulaSetIntoModelAsync(KasaPreviewDto dto, CancellationToken ct);
     Task CreateDbFormulaSetAsync(KasaPreviewDto dto, CancellationToken ct);
+    Task CreateDbFormulaSetAsync(KasaPreviewDto dto, string uploadBasePath, CancellationToken ct);
     Task SaveDbFormulaSetAsync(KasaPreviewDto dto, bool isUpdate, CancellationToken ct);
+    Task SaveDbFormulaSetAsync(KasaPreviewDto dto, bool isUpdate, string uploadBasePath, CancellationToken ct);
     Task DeleteDbFormulaSetAsync(KasaPreviewDto dto, CancellationToken ct);
     Task CopyDbFormulaSetAsync(KasaPreviewDto dto, CancellationToken ct);
     Task ToggleActiveDbFormulaSetAsync(KasaPreviewDto dto, CancellationToken ct);

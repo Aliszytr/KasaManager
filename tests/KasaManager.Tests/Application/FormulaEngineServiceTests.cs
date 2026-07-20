@@ -81,6 +81,56 @@ public class FormulaEngineServiceTests
     }
 
     [Fact]
+    public void Run_SystemKeyIdentityLine_SkipsIdentityAndPreservesEquivalentPoolValue()
+    {
+        var set = new FormulaSet
+        {
+            Id = "identity", Name = "Identity",
+            Templates =
+            {
+                new() { Id = "identity", TargetKey = "normal_tahsilat", Expression = " ( ( normal_tahsilat ) ) ", Name = "Identity", Version = "1" },
+                new() { Id = "consumer", TargetKey = "consumer", Expression = "normal_tahsilat + 1", Name = "Consumer", Version = "1" }
+            }
+        };
+        var pool = new[]
+        {
+            new UnifiedPoolEntry { CanonicalKey = "normal_tahsilat", Value = "100", IncludeInCalculations = true }
+        };
+
+        var result = _engine.Run(new DateOnly(2070, 10, 1), set, pool);
+
+        Assert.True(result.Ok, result.Error);
+        Assert.DoesNotContain("normal_tahsilat", result.Value!.Outputs.Keys);
+        Assert.Equal(101m, result.Value.Outputs["consumer"]);
+    }
+
+    [Fact]
+    public void Run_ExcludedPoolKeyCollision_DoesNotSkipFormulaLine()
+    {
+        var set = new FormulaSet
+        {
+            Id = "excluded-pool-key", Name = "Excluded pool key",
+            Templates =
+            {
+                new() { Id = "formula", TargetKey = "x", Expression = "40 + 2", Name = "X", Version = "1" }
+            }
+        };
+        var pool = new[]
+        {
+            new UnifiedPoolEntry
+            {
+                CanonicalKey = "x", Value = "999", IncludeInCalculations = false
+            }
+        };
+
+        var result = _engine.Run(new DateOnly(2070, 8, 5), set, pool);
+
+        Assert.True(result.Ok, result.Error);
+        Assert.DoesNotContain("x", result.Value!.Inputs.Keys);
+        Assert.Equal(42m, result.Value.Outputs["x"]);
+    }
+
+    [Fact]
     public void Run_BuiltInSeedSets_PreserveLegacyStableOrdering()
     {
         static int LegacyWeight(string? key) => key switch
