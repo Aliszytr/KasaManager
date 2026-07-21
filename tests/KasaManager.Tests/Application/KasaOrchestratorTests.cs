@@ -92,21 +92,252 @@ public sealed class KasaOrchestratorTests
     }
 
     [Theory]
-    [InlineData("takip_kasa_etkisi_tahsilat", "x + takip_kasa_etkisi_tahsilat")]
-    [InlineData("normal_tahsilat", "normal_tahsilat + 1")]
+    [InlineData("takip_kasa_etkisi_tahsilat", "x + takip_kasa_etkisi_tahsilat", "Formula")]
+    [InlineData("normal_tahsilat", "normal_tahsilat + 1", "Formula")]
     public async Task SaveDbFormulaSetAsync_SystemPoolKeyNonIdentityTarget_RemainsRejected(
         string target,
-        string expression)
+        string expression,
+        string mode)
     {
         var dto = new KasaPreviewDto
         {
             PoolEntries = { new UnifiedPoolEntry { CanonicalKey = target, Value = "1", IncludeInCalculations = true } },
-            Mappings = { new KasaPreviewMappingRow { TargetKey = target, Mode = "Formula", Expression = expression } }
+            Mappings = { new KasaPreviewMappingRow { TargetKey = target, Mode = mode, Expression = expression } }
         };
 
         await CreateSut().SaveDbFormulaSetAsync(dto, isUpdate: false, CancellationToken.None);
 
         Assert.Contains(dto.Errors, error => error.Contains("sistem anahtarı", StringComparison.OrdinalIgnoreCase));
+        _formulaStoreMock.Verify(store => store.CreateAsync(
+            It.IsAny<PersistedFormulaSet>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SaveDbFormulaSetAsync_HiddenSystemMapFromDifferentSource_IsRejectedWithRowLabel()
+    {
+        var dto = new KasaPreviewDto
+        {
+            PoolEntries =
+            {
+                new UnifiedPoolEntry
+                {
+                    CanonicalKey = "normal_tahsilat",
+                    Value = "100",
+                    IncludeInCalculations = true
+                },
+                new UnifiedPoolEntry
+                {
+                    CanonicalKey = "farkli_pool_key",
+                    Value = "200",
+                    IncludeInCalculations = true
+                }
+            },
+            Mappings =
+            {
+                new KasaPreviewMappingRow
+                {
+                    TargetKey = "clean_output",
+                    Mode = "Formula",
+                    Expression = "0"
+                },
+                new KasaPreviewMappingRow
+                {
+                    TargetKey = "normal_tahsilat",
+                    Mode = "Map",
+                    SourceKey = "farkli_pool_key",
+                    Expression = string.Empty,
+                    IsHidden = true
+                }
+            }
+        };
+
+        await CreateSut().SaveDbFormulaSetAsync(dto, isUpdate: false, CancellationToken.None);
+
+        Assert.Equal(
+            "Satır 2 (normal_tahsilat) (gizli satır): sistem anahtarına yalnızca kimlik ataması yapılabilir (örn. x = x).",
+            Assert.Single(dto.Errors));
+        _formulaStoreMock.Verify(store => store.CreateAsync(
+            It.IsAny<PersistedFormulaSet>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("normal_tahsilat")]
+    public async Task SaveDbFormulaSetAsync_SystemMapIdentitySource_IsAllowed(string? sourceKey)
+    {
+        var dto = new KasaPreviewDto
+        {
+            DbFormulaSetName = "Map identity allowed",
+            PoolEntries =
+            {
+                new UnifiedPoolEntry
+                {
+                    CanonicalKey = "normal_tahsilat",
+                    Value = "100",
+                    IncludeInCalculations = true
+                }
+            },
+            Mappings =
+            {
+                new KasaPreviewMappingRow
+                {
+                    TargetKey = "normal_tahsilat",
+                    Mode = "Map",
+                    SourceKey = sourceKey,
+                    Expression = string.Empty
+                }
+            }
+        };
+        _formulaStoreMock.Setup(store => store.CreateAsync(
+                It.IsAny<PersistedFormulaSet>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PersistedFormulaSet set, CancellationToken _) => set);
+
+        await CreateSut().SaveDbFormulaSetAsync(dto, isUpdate: false, CancellationToken.None);
+
+        Assert.Empty(dto.Errors);
+        _formulaStoreMock.Verify(store => store.CreateAsync(
+            It.IsAny<PersistedFormulaSet>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public void ResolveEffectiveExpression_ExistingMappingSet_MatchesPreviousRuntimeResolution()
+    {
+        var mappings = new[]
+        {
+            new KasaPreviewMappingRow { TargetKey = "map_default", Mode = "Map", SourceKey = "", Expression = "posted-but-ignored" },
+            new KasaPreviewMappingRow { TargetKey = "map_source", Mode = "Map", SourceKey = "pool_source", Expression = "posted-but-ignored" },
+            new KasaPreviewMappingRow { TargetKey = "formula", Mode = "Formula", SourceKey = "ignored", Expression = "a + b" },
+            new KasaPreviewMappingRow { TargetKey = "formula_empty", Mode = "Formula", Expression = null }
+        };
+        var previousRuntimeExpressions = mappings
+            .Select(mapping => mapping.Mode == "Map"
+                ? !string.IsNullOrWhiteSpace(mapping.SourceKey)
+                    ? mapping.SourceKey!
+                    : mapping.TargetKey ?? string.Empty
+                : mapping.Expression ?? string.Empty)
+            .ToArray();
+
+        var sharedHelperExpressions = mappings
+            .Select(mapping => FormulaAssignmentRules.ResolveEffectiveExpression(
+                mapping.TargetKey,
+                mapping.Mode,
+                mapping.SourceKey,
+                mapping.Expression))
+            .ToArray();
+
+        Assert.Equal(previousRuntimeExpressions, sharedHelperExpressions);
+    }
+
+    [Fact]
+    public async Task SaveDbFormulaSetAsync_BuiltInSabah61RowPostWithEmptyMapExpressions_UpdatesDatabase()
+    {
+        var setId = Guid.NewGuid();
+        var systemKeysByRow = Enumerable.Range(5, 51)
+            .ToDictionary(
+                rowNumber => rowNumber,
+                rowNumber => rowNumber switch
+                {
+                    5 => "normal_tahsilat",
+                    6 => "takip_kasa_etkisi_tahsilat",
+                    _ => $"sabah_system_key_{rowNumber}"
+                });
+        var mappings = Enumerable.Range(1, 61)
+            .Select(rowNumber => systemKeysByRow.TryGetValue(rowNumber, out var systemKey)
+                ? new KasaPreviewMappingRow
+                {
+                    RowId = $"seed-{rowNumber}",
+                    TargetKey = systemKey,
+                    Mode = "Map",
+                    SourceKey = string.Empty,
+                    Expression = string.Empty
+                }
+                : new KasaPreviewMappingRow
+                {
+                    RowId = $"seed-{rowNumber}",
+                    TargetKey = $"clean_output_{rowNumber}",
+                    Mode = "Formula",
+                    Expression = "0"
+                })
+            .ToList();
+        var dto = new KasaPreviewDto
+        {
+            DbFormulaSetId = setId.ToString(),
+            DbFormulaSetName = "Sabah Kasa",
+            DbScopeType = "Sabah",
+            PoolEntries = systemKeysByRow.Values
+                .Select(key => new UnifiedPoolEntry
+                {
+                    CanonicalKey = key,
+                    Value = "1",
+                    IncludeInCalculations = true
+                })
+                .ToList(),
+            Mappings = mappings
+        };
+        _formulaStoreMock.Setup(store => store.GetAsync(setId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PersistedFormulaSet { Id = setId, IsActive = true });
+        _formulaStoreMock.Setup(store => store.UpdateAsync(
+                It.IsAny<PersistedFormulaSet>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PersistedFormulaSet set, CancellationToken _) => set);
+
+        await CreateSut().SaveDbFormulaSetAsync(dto, isUpdate: true, CancellationToken.None);
+
+        Assert.Empty(dto.Errors);
+        _formulaStoreMock.Verify(store => store.UpdateAsync(
+            It.Is<PersistedFormulaSet>(set => set.Lines.Count == 61),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SaveDbFormulaSetAsync_ThreeInvalidRows_ReportsOnlyThoseRowsSeparately()
+    {
+        var violations = new Dictionary<int, string>
+        {
+            [7] = "normal_tahsilat",
+            [60] = "dunden_eksik_fazla_gelen",
+            [61] = "takip_kasa_etkisi_tahsilat"
+        };
+        var mappings = Enumerable.Range(1, 61)
+            .Select(rowNumber => violations.TryGetValue(rowNumber, out var systemKey)
+                ? new KasaPreviewMappingRow
+                {
+                    TargetKey = systemKey,
+                    Mode = "Formula",
+                    Expression = $"{systemKey} + 1"
+                }
+                : new KasaPreviewMappingRow
+                {
+                    TargetKey = $"clean_output_{rowNumber}",
+                    Mode = "Formula",
+                    Expression = "0"
+                })
+            .ToList();
+        var dto = new KasaPreviewDto
+        {
+            PoolEntries = violations.Values
+                .Select(key => new UnifiedPoolEntry
+                {
+                    CanonicalKey = key,
+                    Value = "1",
+                    IncludeInCalculations = true
+                })
+                .ToList(),
+            Mappings = mappings
+        };
+
+        await CreateSut().SaveDbFormulaSetAsync(dto, isUpdate: false, CancellationToken.None);
+
+        Assert.Equal(3, dto.Errors.Count);
+        Assert.Equal(
+            "Satır 7 (normal_tahsilat): sistem anahtarına yalnızca kimlik ataması yapılabilir (örn. x = x).",
+            dto.Errors[0]);
+        Assert.Equal(
+            "Satır 60 (dunden_eksik_fazla_gelen): sistem anahtarına yalnızca kimlik ataması yapılabilir (örn. x = x).",
+            dto.Errors[1]);
+        Assert.Equal(
+            "Satır 61 (takip_kasa_etkisi_tahsilat): sistem anahtarına yalnızca kimlik ataması yapılabilir (örn. x = x).",
+            dto.Errors[2]);
+        Assert.DoesNotContain(dto.Errors, error => error.Contains(", ", StringComparison.Ordinal));
         _formulaStoreMock.Verify(store => store.CreateAsync(
             It.IsAny<PersistedFormulaSet>(), It.IsAny<CancellationToken>()), Times.Never);
     }

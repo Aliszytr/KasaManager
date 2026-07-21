@@ -235,12 +235,27 @@ public static class FormulaSystemKeySet
 
 public static class FormulaAssignmentRules
 {
-    public static bool IsIdentityAssignment(string? targetKey, string? expression)
+    public static string ResolveEffectiveExpression(
+        string? targetKey,
+        string? mode,
+        string? sourceKey,
+        string? expression)
     {
-        if (string.IsNullOrWhiteSpace(targetKey) || string.IsNullOrWhiteSpace(expression))
-            return false;
+        if (mode == "Map")
+            return !string.IsNullOrWhiteSpace(sourceKey)
+                ? sourceKey
+                : targetKey ?? string.Empty;
 
-        var normalized = expression.Trim();
+        return expression ?? string.Empty;
+    }
+
+    public static bool IsIdentityAssignment(string? targetKey, string? effectiveExpression)
+    {
+        if (string.IsNullOrWhiteSpace(targetKey)) return false;
+
+        if (string.IsNullOrWhiteSpace(effectiveExpression)) return false;
+
+        var normalized = effectiveExpression.Trim();
         while (HasSingleOuterParenthesisPair(normalized))
             normalized = normalized[1..^1].Trim();
 

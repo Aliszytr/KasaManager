@@ -84,8 +84,10 @@ public sealed class FormulaSystemKeyGuardControllerContractTests
             .Callback<KasaPreviewDto, bool, string, CancellationToken>((dto, _, _, _) =>
             {
                 Assert.Equal(61, dto.Mappings.Count);
-                Assert.Contains(dto.Mappings, row => row.TargetKey == "normal_tahsilat" && row.Expression == "normal_tahsilat");
-                Assert.Contains(dto.Mappings, row => row.TargetKey == "takip_kasa_etkisi_tahsilat" && row.Expression == "takip_kasa_etkisi_tahsilat");
+                Assert.Contains(dto.Mappings, row => row.TargetKey == "normal_tahsilat"
+                    && row.Mode == "Map" && row.Expression == string.Empty);
+                Assert.Contains(dto.Mappings, row => row.TargetKey == "takip_kasa_etkisi_tahsilat"
+                    && row.Mode == "Map" && row.Expression == string.Empty);
             })
             .Returns(Task.CompletedTask);
         var environment = new Mock<IWebHostEnvironment>();
@@ -98,11 +100,11 @@ public sealed class FormulaSystemKeyGuardControllerContractTests
             })
             .Prepend(new FormulaDesignerRow
             {
-                TargetKey = "takip_kasa_etkisi_tahsilat", Expression = "takip_kasa_etkisi_tahsilat", Mode = "Formula"
+                TargetKey = "takip_kasa_etkisi_tahsilat", Expression = string.Empty, Mode = "Map"
             })
             .Prepend(new FormulaDesignerRow
             {
-                TargetKey = "normal_tahsilat", Expression = "normal_tahsilat", Mode = "Formula"
+                TargetKey = "normal_tahsilat", Expression = string.Empty, Mode = "Map"
             })
             .ToList();
         var model = new FormulaDesignerViewModel

@@ -221,18 +221,34 @@ public partial class KasaOrchestrator
     private static bool ValidateFormulaTargets(KasaPreviewDto dto)
     {
         var systemKeys = FormulaSystemKeySet.From(dto.PoolEntries);
-        var invalidTargets = (dto.Mappings ?? new List<KasaPreviewMappingRow>())
-            .Where(mapping => !string.IsNullOrWhiteSpace(mapping.TargetKey)
-                && systemKeys.Contains(mapping.TargetKey.Trim())
-                && !FormulaAssignmentRules.IsIdentityAssignment(mapping.TargetKey, mapping.Expression))
-            .Select(mapping => mapping.TargetKey!.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+        var invalidRows = (dto.Mappings ?? new List<KasaPreviewMappingRow>())
+            .Select((mapping, index) => new
+            {
+                Mapping = mapping,
+                RowNumber = index + 1,
+                TargetKey = mapping.TargetKey?.Trim(),
+                EffectiveExpression = FormulaAssignmentRules.ResolveEffectiveExpression(
+                    mapping.TargetKey,
+                    mapping.Mode,
+                    mapping.SourceKey,
+                    mapping.Expression)
+            })
+            .Where(row => !string.IsNullOrWhiteSpace(row.TargetKey)
+                && systemKeys.Contains(row.TargetKey)
+                && !FormulaAssignmentRules.IsIdentityAssignment(
+                    row.Mapping.TargetKey,
+                    row.EffectiveExpression))
             .ToArray();
 
-        if (invalidTargets.Length == 0) return true;
+        if (invalidRows.Length == 0) return true;
 
-        dto.Errors.Add(
-            $"Sistem anahtarı formül hedefi olarak kullanılamaz: {string.Join(", ", invalidTargets)}. Bu anahtarlar UnifiedPool tarafından sağlanır.");
+        foreach (var row in invalidRows)
+        {
+            var hiddenLabel = row.Mapping.IsHidden ? " (gizli satır)" : string.Empty;
+            dto.Errors.Add(
+                $"Satır {row.RowNumber} ({row.TargetKey}){hiddenLabel}: sistem anahtarına yalnızca kimlik ataması yapılabilir (örn. x = x).");
+        }
+
         return false;
     }
 

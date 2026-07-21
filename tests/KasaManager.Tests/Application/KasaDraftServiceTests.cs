@@ -469,6 +469,43 @@ public sealed class BankadanCekilenFormulaEnginePoolTests
         Assert.Equal(0m, PoolDecimal(entry));
     }
 
+    [Fact]
+    public async Task RunFormulaEnginePreview_EmptyExpressionMapSystemRow_PreservesPoolValueForDependentFormula()
+    {
+        using var harness = CreateHarness();
+        var dto = new KasaPreviewDto
+        {
+            SelectedDate = TestDate,
+            KasaType = "Aksam",
+            DbScopeType = "Aksam",
+            BankadanCekilen = 100m,
+            Mappings =
+            {
+                new KasaPreviewMappingRow
+                {
+                    TargetKey = "bankadan_cekilen",
+                    Mode = "Map",
+                    SourceKey = string.Empty,
+                    Expression = string.Empty
+                },
+                new KasaPreviewMappingRow
+                {
+                    TargetKey = "map_identity_consumer",
+                    Mode = "Formula",
+                    Expression = "bankadan_cekilen + 1"
+                }
+            }
+        };
+
+        await harness.Orchestrator.RunFormulaEnginePreviewAsync(
+            dto, harness.UploadFolder, CancellationToken.None);
+
+        Assert.Empty(dto.Errors);
+        Assert.NotNull(dto.FormulaRun);
+        Assert.False(dto.FormulaRun.Outputs.ContainsKey("bankadan_cekilen"));
+        Assert.Equal(101m, dto.FormulaRun.Outputs["map_identity_consumer"]);
+    }
+
     private static async Task<KasaPreviewDto> RunFormulaEngineAsync(TestHarness harness, decimal withdrawal)
     {
         var dto = new KasaPreviewDto

@@ -389,19 +389,11 @@ public partial class KasaOrchestrator
                 .Where(x => !x.IsHidden)
                 .Select((x,i) => {
                     var targetKey = x.TargetKey ?? string.Empty;
-                    string expression;
-                    if (x.Mode == "Map")
-                    {
-                        // Map mode: SourceKey varsa onu kullan, yoksa TargetKey'i identity olarak kullan.
-                        // Bu, pool'daki değerin FormulaEngine output'una kopyalanmasını sağlar.
-                        // Örnek: online_reddiyat (Map, SourceKey=NULL) → expression = "online_reddiyat"
-                        // FormulaEngine bunu pool input'undan çözer ve output'a yazar.
-                        expression = !string.IsNullOrWhiteSpace(x.SourceKey) ? x.SourceKey : targetKey;
-                    }
-                    else
-                    {
-                        expression = x.Expression ?? string.Empty;
-                    }
+                    var expression = FormulaAssignmentRules.ResolveEffectiveExpression(
+                        targetKey,
+                        x.Mode,
+                        x.SourceKey,
+                        x.Expression);
                     return new { Id = $"ui.t{i}", TargetKey = targetKey, Expression = expression };
                 })
                 .Where(x => !string.IsNullOrWhiteSpace(x.Expression))
