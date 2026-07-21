@@ -753,6 +753,36 @@ public sealed class KasaPreviewImmutableAuditRestoreTests
         Assert.Equal(202.02m, model.DundenEksikFazlaHarc);
     }
 
+    [Theory]
+    [InlineData("gune_ait_eksik_fazla_harc", "GuneAitEksikFazlaHarc")]
+    [InlineData("gune_ait_eksik_fazla_tahsilat", "GuneAitEksikFazlaTahsilat")]
+    [InlineData("dunden_eksik_fazla_harc", "DundenEksikFazlaHarc")]
+    [InlineData("dunden_eksik_fazla_tahsilat", "DundenEksikFazlaTahsilat")]
+    [InlineData("dunden_eksik_fazla_gelen_harc", "DundenEksikFazlaGelenHarc")]
+    [InlineData("dunden_eksik_fazla_gelen_tahsilat", "DundenEksikFazlaGelenTahsilat")]
+    public void Razor_ResultValRaw_ImmutableAuditBranchPrecedesPoolInputOutput(
+        string key,
+        string modelProperty)
+    {
+        var source = File.ReadAllText(GetRepositoryPath(
+            "src", "KasaManager.Web", "Views", "KasaPreview", "Index.cshtml"));
+        var resultValRawStart = source.IndexOf(
+            "decimal ResultValRaw(string key)", StringComparison.Ordinal);
+        var poolPriorityStart = source.IndexOf(
+            "// PoolVal ile aynı kaynak önceliği: Pool > Input > Output.",
+            resultValRawStart,
+            StringComparison.Ordinal);
+        Assert.True(resultValRawStart >= 0 && poolPriorityStart > resultValRawStart);
+        var immutableBranch = source[resultValRawStart..poolPriorityStart];
+
+        Assert.Contains($"\"{key}\"", immutableBranch, StringComparison.Ordinal);
+        Assert.Contains($"=> Model.{modelProperty}", immutableBranch, StringComparison.Ordinal);
+        Assert.Contains(
+            "if (immutableAuditValue.HasValue) return immutableAuditValue.Value;",
+            immutableBranch,
+            StringComparison.Ordinal);
+    }
+
     [Fact]
     public void RazorAndInitialModel_DistinguishNoticeZeroAuditAndLiveState()
     {

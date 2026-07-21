@@ -1214,6 +1214,17 @@
 
         // ResultValRaw: ham decimal değer — Banka Fişi hidden input'ları için
         decimal ResultValRaw(string key) {
+            decimal? immutableAuditValue = key switch {
+                "gune_ait_eksik_fazla_harc"         => Model.GuneAitEksikFazlaHarc,
+                "gune_ait_eksik_fazla_tahsilat"     => Model.GuneAitEksikFazlaTahsilat,
+                "dunden_eksik_fazla_harc"           => Model.DundenEksikFazlaHarc,
+                "dunden_eksik_fazla_tahsilat"       => Model.DundenEksikFazlaTahsilat,
+                "dunden_eksik_fazla_gelen_harc"     => Model.DundenEksikFazlaGelenHarc,
+                "dunden_eksik_fazla_gelen_tahsilat" => Model.DundenEksikFazlaGelenTahsilat,
+                _                                   => null
+            };
+            if (immutableAuditValue.HasValue) return immutableAuditValue.Value;
+
             bool TryParseRawAmount(string raw, out decimal value) {
                 if (decimal.TryParse(
                     raw,
