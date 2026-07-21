@@ -424,8 +424,11 @@ public sealed class FormulaEngineService : IFormulaEngineService
             .ToDictionary(
                 group => group.Key,
                 group => group
-                    .SelectMany(template => Regex.Matches(template.Expression ?? string.Empty, @"[A-Za-z_][A-Za-z0-9_]*")
-                        .Select(match => match.Value))
+                    .SelectMany(template =>
+                        FormulaAssignmentRules.IsIdentityAssignment(template.TargetKey, template.Expression)
+                            ? Enumerable.Empty<string>()
+                            : Regex.Matches(template.Expression ?? string.Empty, @"[A-Za-z_][A-Za-z0-9_]*")
+                                .Select(match => match.Value))
                     .Where(targets.Contains)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToArray(),

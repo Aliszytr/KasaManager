@@ -31,6 +31,38 @@ public class FormulaEngineServiceTests
     }
 
     [Fact]
+    public void Run_BuiltInSabahIdentityOnlySet_DoesNotReportCycle()
+    {
+        var set = new FormulaSet
+        {
+            Id = "builtin-sabah-identity-only", Name = "SabahKasaSablonu",
+            Templates =
+            {
+                new()
+                {
+                    Id = "builtin-sabah-tahsilat",
+                    TargetKey = "takip_kasa_etkisi_tahsilat",
+                    Expression = "takip_kasa_etkisi_tahsilat",
+                    Name = "Built-in Sabah tahsilat identity",
+                    Version = "1"
+                },
+                new()
+                {
+                    Id = "builtin-sabah-harc",
+                    TargetKey = "takip_kasa_etkisi_harc",
+                    Expression = "takip_kasa_etkisi_harc",
+                    Name = "Built-in Sabah harc identity",
+                    Version = "1"
+                }
+            }
+        };
+
+        var result = _engine.Run(new DateOnly(2070, 8, 1), set, Array.Empty<UnifiedPoolEntry>());
+
+        Assert.True(result.Ok, result.Error);
+    }
+
+    [Fact]
     public void Run_CrossFormulaCycle_ReturnsCyclicFormulaError()
     {
         var set = new FormulaSet
