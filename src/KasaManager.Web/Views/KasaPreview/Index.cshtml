@@ -1214,29 +1214,46 @@
 
         // ResultValRaw: ham decimal değer — Banka Fişi hidden input'ları için
         decimal ResultValRaw(string key) {
-            decimal? immutableAuditValue = key switch {
-                "gune_ait_eksik_fazla_harc"         => Model.GuneAitEksikFazlaHarc,
-                "gune_ait_eksik_fazla_tahsilat"     => Model.GuneAitEksikFazlaTahsilat,
-                "dunden_eksik_fazla_harc"           => Model.DundenEksikFazlaHarc,
-                "dunden_eksik_fazla_tahsilat"       => Model.DundenEksikFazlaTahsilat,
-                "dunden_eksik_fazla_gelen_harc"     => Model.DundenEksikFazlaGelenHarc,
-                "dunden_eksik_fazla_gelen_tahsilat" => Model.DundenEksikFazlaGelenTahsilat,
-                _                                   => null
-            };
-            if (immutableAuditValue.HasValue) return immutableAuditValue.Value;
+            bool TryParseRawAmount(string raw, out decimal value) {
+                if (decimal.TryParse(
+                    raw,
+                    System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out value)) return true;
 
-            if (Model.FormulaRun?.Outputs != null && Model.FormulaRun.Outputs.TryGetValue(key, out var v)) return v;
+                return decimal.TryParse(
+                    raw,
+                    System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.GetCultureInfo("tr-TR"),
+                    out value);
+            }
+
+            // PoolVal ile aynı kaynak önceliği: Pool > Input > Output.
+            var p = Model.PoolEntries?.FirstOrDefault(x =>
+                string.Equals(x.CanonicalKey, key, StringComparison.OrdinalIgnoreCase));
+            if (p != null && TryParseRawAmount(p.Value, out var poolValue)) return poolValue;
+            if (inputFields.TryGetValue(key, out var inputValue)
+                && TryParseRawAmount(inputValue, out var parsedInputValue)) return parsedInputValue;
+            if (resultFields.TryGetValue(key, out var outputValue)
+                && TryParseRawAmount(outputValue, out var parsedOutputValue)) return parsedOutputValue;
+
             if (keyAliases.TryGetValue(key, out var aliases))
             {
                 foreach (var alt in aliases)
                 {
-                    if (Model.FormulaRun?.Outputs != null && Model.FormulaRun.Outputs.TryGetValue(alt, out var av)) return av;
+                    var aliasPool = Model.PoolEntries?.FirstOrDefault(x =>
+                        string.Equals(x.CanonicalKey, alt, StringComparison.OrdinalIgnoreCase));
+                    if (aliasPool != null && TryParseRawAmount(aliasPool.Value, out var aliasPoolValue)) return aliasPoolValue;
+                    if (inputFields.TryGetValue(alt, out var aliasInputValue)
+                        && TryParseRawAmount(aliasInputValue, out var parsedAliasInputValue)) return parsedAliasInputValue;
+                    if (resultFields.TryGetValue(alt, out var aliasOutputValue)
+                        && TryParseRawAmount(aliasOutputValue, out var parsedAliasOutputValue)) return parsedAliasOutputValue;
                 }
             }
-            var p = Model.PoolEntries?.FirstOrDefault(x => string.Equals(x.CanonicalKey, key, StringComparison.OrdinalIgnoreCase));
-            if (p != null && decimal.TryParse(p.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var pv)) return pv;
+
             // EF model-property fallback: LoadSnapshot akışında PoolEntries null,
             // model property KasaPreviewController.cs:1089 satırında restore edilmiş olabilir.
+            // Hidden/PDF alanları sayısal sözleşme kullandığı için gerçek yoklukta 0m korunur.
             return key switch {
                 "gune_ait_eksik_fazla_harc"         => Model.GuneAitEksikFazlaHarc ?? 0m,
                 "gune_ait_eksik_fazla_tahsilat"     => Model.GuneAitEksikFazlaTahsilat ?? 0m,

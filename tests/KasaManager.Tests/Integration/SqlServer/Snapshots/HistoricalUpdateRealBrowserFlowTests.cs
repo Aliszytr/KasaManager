@@ -139,6 +139,20 @@ public sealed partial class HistoricalUpdateRealBrowserFlowTests
             Assert.Contains("98.765,43", await genelKasaCard.InnerTextAsync(), StringComparison.Ordinal);
             Assert.Contains("4.567,89", await toplamStopajRow.InnerTextAsync(), StringComparison.Ordinal);
 
+            var historicalPdfForm = page.Locator("form[action*='DownloadGenelRapor']").First;
+            Assert.Equal(
+                "2345.67",
+                await historicalPdfForm.Locator("input[name='RptOnlineReddiyat']").InputValueAsync());
+            Assert.Equal(
+                "3456.78",
+                await historicalPdfForm.Locator("input[name='RptBankadanCikan']").InputValueAsync());
+            Assert.Equal(
+                "4567.89",
+                await historicalPdfForm.Locator("input[name='RptToplamStopaj']").InputValueAsync());
+            Assert.Equal(
+                "0",
+                await historicalPdfForm.Locator("input[name='RptEftIade']").InputValueAsync());
+
             var sourceCount = await page.Locator("#loadedSnapshotId").CountAsync();
             var formCount = await page.Locator("#saveReportForm input[name='LoadedSnapshotId']").CountAsync();
             var diagnosticFormValue = formCount == 1

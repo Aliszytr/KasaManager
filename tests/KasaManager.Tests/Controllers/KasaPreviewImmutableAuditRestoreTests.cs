@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Globalization;
 using System.Security.Claims;
+using System.Text;
 using System.Text.Json;
 using KasaManager.Application.Abstractions;
 using KasaManager.Application.Orchestration;
@@ -56,6 +57,44 @@ public sealed class KasaPreviewImmutableAuditRestoreTests
         var data = await invocation;
 
         Assert.Equal(expected, data.GenelKasa);
+    }
+
+    [Fact]
+    public async Task DownloadGenelRapor_HistoricalInputFields_ProducesPdfWithPostedAmounts()
+    {
+        using var fixture = CreateFixture(new KasaRaporData());
+        fixture.Controller.HttpContext.Request.Form = new FormCollection(
+            new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
+            {
+                ["RptOnlineReddiyat"] = "2345.67",
+                ["RptBankadanCikan"] = "3456.78",
+                ["RptToplamStopaj"] = "4567.89"
+            });
+        var model = new KasaPreviewViewModel
+        {
+            SelectedDate = SnapshotDate,
+            KasaType = "Aksam",
+            KasayiYapan = "historical-user"
+        };
+        var buildMethod = typeof(KasaPreviewController).GetMethod(
+            "BuildKasaRaporDataAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(buildMethod);
+        var invocation = Assert.IsType<Task<KasaRaporData>>(buildMethod!.Invoke(
+            fixture.Controller,
+            new object[] { model, false, CancellationToken.None }));
+
+        var data = await invocation;
+        Assert.Equal(2345.67m, data.OnlineReddiyat);
+        Assert.Equal(3456.78m, data.BankadanCikan);
+        Assert.Equal(4567.89m, data.ToplamStopaj);
+
+        QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
+        var result = await fixture.Controller.DownloadGenelRapor(model, CancellationToken.None);
+        var pdf = Assert.IsType<FileContentResult>(result);
+        Assert.Equal("application/pdf", pdf.ContentType);
+        Assert.True(pdf.FileContents.Length > 1_000);
+        Assert.Equal("%PDF", Encoding.ASCII.GetString(pdf.FileContents, 0, 4));
     }
 
     [Fact]
