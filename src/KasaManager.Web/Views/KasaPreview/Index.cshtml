@@ -1075,6 +1075,8 @@
             // Aksam Kasa aliases
             ["bankaya_yatirilacak_toplam"] = new[] { "bankaya_yatirilacak_toplam_miktar", "bankaya_goturulecek_toplam" },
             ["normal_stopaj"]              = new[] { "bankaya_yatirilacak_stopaj", "toplam_stopaj_net" },
+            // Historical output fallback: toplam_stopaj persist edilmemişse Virman çıkışı kart değerini taşır.
+            ["toplam_stopaj"]              = new[] { "banka_virman_tahsilat" },
             ["bankaya_yatirilacak_harc"]   = new[] { "bankaya_yatirilacak_harç", "banka_goturulecek_harc" },
             ["bankaya_yatirilacak_tahsilat"] = new[] { "banka_goturulecek_tahsilat" },
 
@@ -1159,8 +1161,7 @@
             return efCanonicalKeys.Contains(key) ? "0,00" : "—";
         }
 
-        // ResultVal: Formül çıktıları > Pool
-        // Önce formül sonuçlarında (direkt + alias) ara, sonra pool'da ara
+        // ResultVal: audit kilidi > PoolVal SSOT (Pool > Input > Output > alias fallback).
         string ResultVal(string key) {
             decimal? immutableAuditValue = key switch {
                 "gune_ait_eksik_fazla_harc"         => Model.GuneAitEksikFazlaHarc,
@@ -1173,43 +1174,7 @@
             };
             if (immutableAuditValue.HasValue)
                 return immutableAuditValue.Value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
-
-            // 1. Direkt formül çıktısı
-            if (resultFields.TryGetValue(key, out var v)) return v;
-            // 2. Alias üzerinden formül çıktısı (ÖNCELİKLİ — formül sonuçları pool'dan üstün)
-            if (keyAliases.TryGetValue(key, out var aliases))
-            {
-                foreach (var alt in aliases)
-                {
-                    if (resultFields.TryGetValue(alt, out var av)) return av;
-                }
-            }
-            // 3. Direkt pool araması
-            var p = Model.PoolEntries?.FirstOrDefault(x =>
-                string.Equals(x.CanonicalKey, key, StringComparison.OrdinalIgnoreCase));
-            if (p != null) return p.Value;
-            // 4. Alias üzerinden pool araması
-            if (keyAliases.TryGetValue(key, out var aliases2))
-            {
-                foreach (var alt in aliases2)
-                {
-                    var ap = Model.PoolEntries?.FirstOrDefault(x =>
-                        string.Equals(x.CanonicalKey, alt, StringComparison.OrdinalIgnoreCase));
-                    if (ap != null) return ap.Value;
-                }
-            }
-            // EF model-property fallback: LoadSnapshot akışında PoolEntries null olabilir.
-            decimal? efMv = key switch {
-                "gune_ait_eksik_fazla_harc"         => Model.GuneAitEksikFazlaHarc,
-                "gune_ait_eksik_fazla_tahsilat"     => Model.GuneAitEksikFazlaTahsilat,
-                "dunden_eksik_fazla_harc"           => Model.DundenEksikFazlaHarc,
-                "dunden_eksik_fazla_tahsilat"       => Model.DundenEksikFazlaTahsilat,
-                "dunden_eksik_fazla_gelen_harc"     => Model.DundenEksikFazlaGelenHarc,
-                "dunden_eksik_fazla_gelen_tahsilat" => Model.DundenEksikFazlaGelenTahsilat,
-                _                                   => null
-            };
-            if (efMv.HasValue) return efMv.Value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
-            return efCanonicalKeys.Contains(key) ? "0,00" : "—";
+            return PoolVal(key);
         }
 
         // ResultValRaw: ham decimal değer — Banka Fişi hidden input'ları için

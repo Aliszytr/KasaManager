@@ -133,11 +133,15 @@ public sealed partial class HistoricalUpdateRealBrowserFlowTests
             var toplamStopajRow = page.Locator("tr")
                 .Filter(new LocatorFilterOptions { HasText = "Toplam Stopaj" })
                 .First;
+            var bankayaGoturulecekCard = page.Locator(".kasa-card")
+                .Filter(new LocatorFilterOptions { HasText = "Bankaya Götürülecek" })
+                .First;
             Assert.Contains("1.234,56", await carryoverCard.InnerTextAsync(), StringComparison.Ordinal);
             Assert.Contains("2.345,67", await onlineReddiyatCard.InnerTextAsync(), StringComparison.Ordinal);
             Assert.Contains("3.456,78", await bankadanCikanCard.InnerTextAsync(), StringComparison.Ordinal);
             Assert.Contains("98.765,43", await genelKasaCard.InnerTextAsync(), StringComparison.Ordinal);
-            Assert.Contains("4.567,89", await toplamStopajRow.InnerTextAsync(), StringComparison.Ordinal);
+            Assert.Contains("38.445,43", await toplamStopajRow.InnerTextAsync(), StringComparison.Ordinal);
+            Assert.Contains("38.445,43", await bankayaGoturulecekCard.InnerTextAsync(), StringComparison.Ordinal);
 
             var historicalPdfForm = page.Locator("form[action*='DownloadGenelRapor']").First;
             Assert.Equal(
@@ -147,7 +151,7 @@ public sealed partial class HistoricalUpdateRealBrowserFlowTests
                 "3456.78",
                 await historicalPdfForm.Locator("input[name='RptBankadanCikan']").InputValueAsync());
             Assert.Equal(
-                "4567.89",
+                "38445.43",
                 await historicalPdfForm.Locator("input[name='RptToplamStopaj']").InputValueAsync());
             Assert.Equal(
                 "0",
@@ -391,7 +395,7 @@ public sealed partial class HistoricalUpdateRealBrowserFlowTests
         Version = version,
         IsActive = isActive,
         InputsJson = "{\"dunden_devreden_kasa_nakit\":1234.56,\"online_reddiyat\":2345.67,\"bankadan_cikan_tahsilat\":3456.78}",
-        OutputsJson = "{\"genel_kasa\":98765.43,\"bankadan_cikan_tahsilat\":999999.99,\"toplam_stopaj\":4567.89,\"gune_ait_eksik_fazla_tahsilat\":0,\"gune_ait_eksik_fazla_harc\":0}",
+        OutputsJson = "{\"genel_kasa\":98765.43,\"bankadan_cikan_tahsilat\":999999.99,\"banka_virman_tahsilat\":\"38445.43\",\"gune_ait_eksik_fazla_tahsilat\":0,\"gune_ait_eksik_fazla_harc\":0}",
         Name = $"E2E Historical v{version}",
         KasaRaporDataJson = JsonSerializer.Serialize(payload)
     };
