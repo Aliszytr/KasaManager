@@ -117,6 +117,28 @@ public sealed partial class HistoricalUpdateRealBrowserFlowTests
             _output.WriteLine($"LOAD URL={page.Url} STATUS={loadResponse?.Status} TITLE={await page.TitleAsync()}");
             _output.WriteLine($"LOAD RAW loadedSnapshotId={loadHtml.Contains("id=\"loadedSnapshotId\"", StringComparison.Ordinal)} loadedReportBar={loadHtml.Contains("id=\"loadedReportBar\"", StringComparison.Ordinal)}");
             _output.WriteLine($"LOAD BODY={Regex.Replace((await page.Locator("body").InnerTextAsync()), "\\s+", " ")[..Math.Min(500, Regex.Replace((await page.Locator("body").InnerTextAsync()), "\\s+", " ").Length)]}");
+
+            var carryoverCard = page.Locator(".result-card")
+                .Filter(new LocatorFilterOptions { HasText = "Dünden Devreden Kasa" })
+                .First;
+            var onlineReddiyatCard = page.Locator(".result-card")
+                .Filter(new LocatorFilterOptions { HasText = "Online Reddiyat" })
+                .First;
+            var bankadanCikanCard = page.Locator(".result-card")
+                .Filter(new LocatorFilterOptions { HasText = "Bankadan Çıkan" })
+                .First;
+            var genelKasaCard = page.Locator(".result-card")
+                .Filter(new LocatorFilterOptions { HasText = "Güne Ait Genel Kasa" })
+                .First;
+            var toplamStopajRow = page.Locator("tr")
+                .Filter(new LocatorFilterOptions { HasText = "Toplam Stopaj" })
+                .First;
+            Assert.Contains("1.234,56", await carryoverCard.InnerTextAsync(), StringComparison.Ordinal);
+            Assert.Contains("2.345,67", await onlineReddiyatCard.InnerTextAsync(), StringComparison.Ordinal);
+            Assert.Contains("3.456,78", await bankadanCikanCard.InnerTextAsync(), StringComparison.Ordinal);
+            Assert.Contains("98.765,43", await genelKasaCard.InnerTextAsync(), StringComparison.Ordinal);
+            Assert.Contains("4.567,89", await toplamStopajRow.InnerTextAsync(), StringComparison.Ordinal);
+
             var sourceCount = await page.Locator("#loadedSnapshotId").CountAsync();
             var formCount = await page.Locator("#saveReportForm input[name='LoadedSnapshotId']").CountAsync();
             var diagnosticFormValue = formCount == 1
@@ -354,8 +376,8 @@ public sealed partial class HistoricalUpdateRealBrowserFlowTests
         CalculatedByUserId = userId,
         Version = version,
         IsActive = isActive,
-        InputsJson = "{}",
-        OutputsJson = "{\"genel_kasa\":0,\"gune_ait_eksik_fazla_tahsilat\":0,\"gune_ait_eksik_fazla_harc\":0}",
+        InputsJson = "{\"dunden_devreden_kasa_nakit\":1234.56,\"online_reddiyat\":2345.67,\"bankadan_cikan_tahsilat\":3456.78}",
+        OutputsJson = "{\"genel_kasa\":98765.43,\"bankadan_cikan_tahsilat\":999999.99,\"toplam_stopaj\":4567.89,\"gune_ait_eksik_fazla_tahsilat\":0,\"gune_ait_eksik_fazla_harc\":0}",
         Name = $"E2E Historical v{version}",
         KasaRaporDataJson = JsonSerializer.Serialize(payload)
     };

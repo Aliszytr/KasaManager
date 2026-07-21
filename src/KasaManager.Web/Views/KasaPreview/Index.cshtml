@@ -1030,6 +1030,16 @@
     }
 
     @{
+        // FormulaRun.Inputs: LoadSnapshot yeniden hesaplama yapmadan snapshot input'larını burada taşır.
+        var inputFields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (Model.FormulaRun?.Inputs?.Count > 0)
+        {
+            foreach (var kv in Model.FormulaRun.Inputs)
+            {
+                inputFields[kv.Key] = kv.Value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("tr-TR"));
+            }
+        }
+
         // FormulaRun.Outputs (Intent-First) veya Drafts.Fields (legacy) kaynağını birleştir
         var resultFields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
@@ -1124,11 +1134,14 @@
             "dunden_eksik_fazla_gelen_harc"
         };
 
-        // Pool'dan ham değerleri oku (FormulaRun çıktısında olmayanlar için)
+        // Canlı akış önceliğini koru: Pool > FormulaRun Inputs > FormulaRun Outputs.
+        // Restore akışında Pool boş olduğu için snapshot Inputs en düşük katman fallback'idir.
         string PoolVal(string key) {
             var p = Model.PoolEntries?.FirstOrDefault(x =>
                 string.Equals(x.CanonicalKey, key, StringComparison.OrdinalIgnoreCase));
             if (p != null) return p.Value; // Value zaten string formatlı
+            // Snapshot/formül input'larından bak
+            if (inputFields.TryGetValue(key, out var inputValue)) return inputValue;
             // FormulaRun çıktısından bak
             if (resultFields.TryGetValue(key, out var v)) return v;
             // Alias'larda ara
@@ -1139,6 +1152,7 @@
                     var ap = Model.PoolEntries?.FirstOrDefault(x =>
                         string.Equals(x.CanonicalKey, alt, StringComparison.OrdinalIgnoreCase));
                     if (ap != null) return ap.Value;
+                    if (inputFields.TryGetValue(alt, out var aliasInputValue)) return aliasInputValue;
                     if (resultFields.TryGetValue(alt, out var av)) return av;
                 }
             }
