@@ -26,7 +26,8 @@ public sealed class ReportDataBuilder : IReportDataBuilder
         CalculationRun run,
         string kasaTuru,
         ImportedTable? ustRaporTable,
-        CancellationToken ct)
+        CancellationToken ct,
+        decimal? vergideBirikenKasa = null)
     {
         var defaults = await _defaults.GetAsync(ct);
         var isSabah = kasaTuru.Equals("Sabah", StringComparison.OrdinalIgnoreCase);
@@ -67,7 +68,10 @@ public sealed class ReportDataBuilder : IReportDataBuilder
             // Vergi
             VergidenGelen = Get(run, KasaCanonicalKeys.VergiGelenKasa),
             VergiKasa = Get(run, KasaCanonicalKeys.VergiKasa),
-            VergideBirikenKasa = 0, // Hesaplanacak aşağıda
+            // SSOT: Vergide Biriken yalnız IVergideBirikenLedgerService'ten üretilir.
+            // Builder burada BAĞIMSIZ kümülatif/seed hesabı YAPMAZ; caller'ın verdiği
+            // canonical değeri taşır, verilmezse güvenli default 0 kalır.
+            VergideBirikenKasa = vergideBirikenKasa ?? 0m,
 
             // Beklenen Girişler
             EftOtomatikIade = Get(run, KasaCanonicalKeys.EftOtomatikIade),
@@ -92,10 +96,8 @@ public sealed class ReportDataBuilder : IReportDataBuilder
         // BankayaToplam = Stopaj + Tahsilat + Harç
         data.BankayaToplam = data.BankayaStopaj + data.BankayaTahsilat + data.BankayaHarc;
 
-        // VergideBirikenKasa = Seed + VergiKasa − VergidenGelen
-        // Seed: Genel Kasa'dan aktarılır, rapor kaydedildiğinde carry-forward yapılır
-        var vergideBirikenSeed = defaults.VergideBirikenSeed ?? 0m;
-        data.VergideBirikenKasa = vergideBirikenSeed + data.VergiKasa - data.VergidenGelen;
+        // NOT: Vergide Biriken burada HESAPLANMAZ (SSOT = IVergideBirikenLedgerService).
+        // Değer initializer'da caller'ın verdiği canonical parametreden set edildi.
 
         // KasaÜstRapor tablosu
         if (ustRaporTable != null)
