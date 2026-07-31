@@ -4,8 +4,11 @@ using KasaManager.Application.Abstractions;
 using KasaManager.Application.Orchestration;
 using KasaManager.Application.Services;
 using KasaManager.Application.Services.ReadAdapter;
+using KasaManager.Domain.Abstractions;
 using KasaManager.Domain.Calculation.Data;
 using KasaManager.Domain.FinancialExceptions;
+using KasaManager.Domain.FormulaEngine;
+using KasaManager.Domain.Projection;
 using KasaManager.Domain.Reports;
 using KasaManager.Domain.Reports.HesapKontrol;
 using KasaManager.Domain.Reports.Snapshots;
@@ -25,6 +28,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using Moq;
 
@@ -44,6 +48,7 @@ public sealed class SnapshotPayloadSqlServerIntegrationTests
     private static readonly DateOnly HistoricalResaveDate = new(2026, 7, 14);
     private static readonly DateOnly LegacyCompatibilityDate = new(2026, 7, 15);
     private static readonly DateOnly LivePoolAlignmentDate = new(2072, 7, 19);
+    private static readonly DateOnly CrossDayCompensationDate = new(2072, 7, 20);
     private readonly SqlServerIntegrationFixture _fixture;
 
     public SnapshotPayloadSqlServerIntegrationTests(SqlServerIntegrationFixture fixture)
@@ -1204,6 +1209,236 @@ public sealed class SnapshotPayloadSqlServerIntegrationTests
         finally
         {
             await CleanupDateAsync(LivePoolAlignmentDate);
+            Directory.Delete(webRoot, recursive: true);
+        }
+    }
+
+    [SqlServerFact]
+    public async Task CrossDayResolution_PoolFormulaSqlSnapshotAndReload_AppliesCompensationOnlyOnResolutionDay()
+    {
+        var day1 = CrossDayCompensationDate.AddDays(-1);
+        var day2 = CrossDayCompensationDate;
+        var day3 = CrossDayCompensationDate.AddDays(1);
+        var webRoot = CreateWebRoot();
+        var uploadFolder = Path.Combine(webRoot, "Data", "Raporlar");
+        await File.WriteAllBytesAsync(
+            Path.Combine(uploadFolder, "KasaUstRapor.xlsx"),
+            Array.Empty<byte>());
+        await using var hkScope = new SqlServerHesapKontrolScope(_fixture);
+        var hkContext = hkScope.Context;
+        var tracked = NewHistoricalRecord(
+            day1,
+            BankaHesapTuru.Tahsilat,
+            KayitYonu.Eksik,
+            29_500m,
+            KayitDurumu.Takipte,
+            trackingDate: day1);
+        hkScope.AddRange(tracked);
+
+        try
+        {
+            await hkContext.SaveChangesAsync();
+            var analysis = new BankaHesapKontrolService(
+                hkContext,
+                Mock.Of<IComparisonService>(),
+                Mock.Of<IImportOrchestrator>(),
+                Mock.Of<IHesapKontrolSourceResolver>(),
+                NullLogger<BankaHesapKontrolService>.Instance);
+            var import = new Mock<IImportOrchestrator>();
+            import.Setup(service => service.Import(
+                    It.IsAny<string>(), ImportFileKind.KasaUstRapor))
+                .Returns(Result<ImportedTable>.Success(new ImportedTable
+                {
+                    SourceFileName = "KasaUstRapor.xlsx",
+                    Kind = ImportFileKind.KasaUstRapor,
+                    Rows =
+                    {
+                        new Dictionary<string, string?>
+                        {
+                            ["satir"] = "TOPLAMLAR",
+                            ["tahsilat"] = "0",
+                            ["reddiyat"] = "0",
+                            ["harc"] = "0",
+                            ["stopaj"] = "0"
+                        }
+                    }
+                }));
+            import.Setup(service => service.ImportTrueSource(
+                    It.IsAny<string>(), It.IsAny<ImportFileKind>()))
+                .Returns(Result<ImportedTable>.Fail("Not required by this regression."));
+            var defaults = new Mock<IKasaGlobalDefaultsService>();
+            defaults.Setup(service => service.GetOrCreateAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new KasaGlobalDefaultsSettings { Id = 1 });
+            var carryover = new Mock<ICarryoverResolver>();
+            carryover.Setup(service => service.ResolveAsync(
+                    It.IsAny<DateOnly>(), It.IsAny<CarryoverScope>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((DateOnly date, CarryoverScope _, CancellationToken _) =>
+                    new CarryoverResolutionResult(0m, "test", date, null, "Test", "Test", true));
+            var projection = new Mock<IEksikFazlaProjectionEngine>();
+            projection.Setup(service => service.ProjectAsync(
+                    It.IsAny<ProjectionRequest>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((ProjectionRequest request, CancellationToken _) =>
+                    new ProjectionResult(
+                        request.TargetDate, true, 0m, 0m, 0m, 0m, 0m, 0m,
+                        false, new List<ProjectionDayNode>()));
+            var drafts = new KasaDraftService(
+                import.Object,
+                defaults.Object,
+                analysis,
+                NullLogger<KasaDraftService>.Instance,
+                carryover.Object,
+                Options.Create(new UstRaporSourceOptions()),
+                projection.Object);
+
+            async Task<IReadOnlyList<UnifiedPoolEntry>> BuildPoolAsync(DateOnly date)
+            {
+                var result = await drafts.BuildUnifiedPoolAsync(
+                    date,
+                    uploadFolder,
+                    kasaScope: "Sabah",
+                    skipSlimPoolFilter: true);
+                Assert.True(result.Ok, result.Error);
+                return result.Value!;
+            }
+
+            static decimal PoolValue(
+                IReadOnlyList<UnifiedPoolEntry> pool,
+                string key) => decimal.Parse(
+                    Assert.Single(pool, entry => entry.CanonicalKey == key).Value,
+                    System.Globalization.CultureInfo.InvariantCulture);
+
+            static decimal RunGeneralCash(
+                DateOnly date,
+                IReadOnlyList<UnifiedPoolEntry> pool)
+            {
+                var formulaPool = pool.ToList();
+                void Set(string key, decimal value)
+                {
+                    formulaPool.RemoveAll(entry =>
+                        entry.CanonicalKey.Equals(key, StringComparison.OrdinalIgnoreCase));
+                    formulaPool.Add(new UnifiedPoolEntry
+                    {
+                        CanonicalKey = key,
+                        Value = value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        IncludeInCalculations = true
+                    });
+                }
+
+                Set("dunden_devreden_kasa_nakit", -19_500m);
+                Set("bankadan_cekilen", 0m);
+                Set("vergiden_gelen", 0m);
+                Set("toplam_tahsilat", 0m);
+                Set("normal_stopaj", 0m);
+                Set("cesitli_nedenlerle_bankadan_cikamayan_tahsilat", 0m);
+                Set("normal_reddiyat", 0m);
+                Set("bankaya_yatirilacak_tahsilat", 0m);
+                Set("kayden_tahsilat", 0m);
+                var formula = new FormulaSet
+                {
+                    Id = "sql-cross-day-compensation",
+                    Name = "SQL cross-day compensation",
+                    Templates =
+                    {
+                        new FormulaTemplate
+                        {
+                            Id = "genel-kasa",
+                            Name = "Gune Ait Genel Kasa",
+                            TargetKey = "genel_kasa",
+                            Expression = "dunden_devreden_kasa_nakit + bankadan_cekilen + vergiden_gelen + toplam_tahsilat + normal_stopaj + cesitli_nedenlerle_bankadan_cikamayan_tahsilat - normal_reddiyat - bankaya_yatirilacak_tahsilat - kayden_tahsilat + takip_kasa_etkisi_tahsilat",
+                            Version = "1"
+                        }
+                    }
+                };
+                var result = new FormulaEngineService().Run(date, formula, formulaPool);
+                Assert.True(result.Ok, result.Error);
+                return result.Value!.Outputs["genel_kasa"];
+            }
+
+            async Task<Guid> SaveSnapshotAsync(
+                DateOnly date,
+                decimal followImpact,
+                decimal generalCash)
+            {
+                await using var context = _fixture.CreateContext();
+                var controller = CreateController(
+                    webRoot,
+                    new CalculatedKasaSnapshotService(
+                        context, NullLogger<CalculatedKasaSnapshotService>.Instance),
+                    date,
+                    71,
+                    "cross-day-compensation-actor",
+                    analysisService: analysis);
+                SetSaveForm(
+                    controller,
+                    JsonSerializer.Serialize(new Dictionary<string, decimal>
+                    {
+                        ["takip_kasa_etkisi_tahsilat"] = followImpact
+                    }),
+                    JsonSerializer.Serialize(new Dictionary<string, decimal>
+                    {
+                        ["genel_kasa"] = generalCash
+                    }),
+                    "0",
+                    "0");
+                var model = NewSaveModel(date, "client-ignored");
+                model.KasaType = "Sabah";
+                AssertSuccessful(await controller.SaveReport(model, CancellationToken.None));
+                return await context.CalculatedKasaSnapshots
+                    .Where(snapshot => snapshot.RaporTarihi == date
+                                    && snapshot.KasaTuru == KasaRaporTuru.Sabah)
+                    .Select(snapshot => snapshot.Id)
+                    .SingleAsync();
+            }
+
+            var day1Pool = await BuildPoolAsync(day1);
+            Assert.Equal(-29_500m, PoolValue(
+                day1Pool, "takip_kasa_etkisi_tahsilat"));
+            var day1SnapshotId = await SaveSnapshotAsync(
+                day1, -29_500m, RunGeneralCash(day1, day1Pool));
+
+            tracked.Durum = KayitDurumu.Cozuldu;
+            tracked.CozulmeTarihi = day2;
+            await hkContext.SaveChangesAsync();
+
+            var day2Pool = await BuildPoolAsync(day2);
+            Assert.Equal(29_500m, PoolValue(
+                day2Pool, "takip_kasa_etkisi_tahsilat"));
+            var day2GeneralCash = RunGeneralCash(day2, day2Pool);
+            Assert.Equal(10_000m, day2GeneralCash);
+            var day2SnapshotId = await SaveSnapshotAsync(
+                day2, 29_500m, day2GeneralCash);
+
+            var day3Pool = await BuildPoolAsync(day3);
+            Assert.Equal(0m, PoolValue(
+                day3Pool, "takip_kasa_etkisi_tahsilat"));
+
+            await using var loadContext = _fixture.CreateContext();
+            var loadController = CreateController(
+                webRoot,
+                new CalculatedKasaSnapshotService(
+                    loadContext, NullLogger<CalculatedKasaSnapshotService>.Instance),
+                day3,
+                72,
+                "cross-day-load-actor",
+                analysisService: new Mock<IBankaHesapKontrolService>(MockBehavior.Strict).Object);
+            var loadedDay1 = Assert.IsType<KasaPreviewViewModel>(
+                Assert.IsType<ViewResult>(
+                    await loadController.LoadSnapshot(day1SnapshotId, CancellationToken.None)).Model);
+            var loadedDay2 = Assert.IsType<KasaPreviewViewModel>(
+                Assert.IsType<ViewResult>(
+                    await loadController.LoadSnapshot(day2SnapshotId, CancellationToken.None)).Model);
+
+            Assert.Equal(-29_500m,
+                loadedDay1.FormulaRun!.Inputs["takip_kasa_etkisi_tahsilat"]);
+            Assert.Equal(29_500m,
+                loadedDay2.FormulaRun!.Inputs["takip_kasa_etkisi_tahsilat"]);
+            Assert.Equal(10_000m, loadedDay2.FormulaRun.Outputs["genel_kasa"]);
+        }
+        finally
+        {
+            await CleanupDateAsync(day1);
+            await CleanupDateAsync(day2);
+            await CleanupDateAsync(day3);
             Directory.Delete(webRoot, recursive: true);
         }
     }

@@ -151,9 +151,31 @@ public sealed partial class BankaHesapKontrolService
         var eksik = await _db.HesapKontrolKayitlari.FindAsync(new object[] { eksikKayitId }, ct);
         var fazla = await _db.HesapKontrolKayitlari.FindAsync(new object[] { fazlaKayitId }, ct);
         if (eksik == null || fazla == null) return false;
-        if (eksik.Durum != KayitDurumu.Takipte && eksik.Durum != KayitDurumu.Acik) return false;
+        if ((eksik.Durum != KayitDurumu.Takipte && eksik.Durum != KayitDurumu.Acik)
+            || (fazla.Durum != KayitDurumu.Takipte && fazla.Durum != KayitDurumu.Acik))
+            return false;
+        if (eksik.Yon != KayitYonu.Eksik
+            || fazla.Yon != KayitYonu.Fazla
+            || eksik.HesapTuru != fazla.HesapTuru
+            || eksik.HesapTuru == BankaHesapTuru.Stopaj
+            || eksik.Tutar <= 0m
+            || fazla.Tutar <= 0m)
+            return false;
 
-        var bugun = DateOnly.FromDateTime(DateTime.Now);
+        const decimal tutarTolerans = 0.01m;
+        if (Math.Abs(eksik.Tutar - fazla.Tutar) > tutarTolerans)
+        {
+            _logger.LogWarning(
+                "[HK-PARTIAL-MATCH-BLOCKED] EksikId={EksikId} FazlaId={FazlaId} EksikTutar={EksikTutar} FazlaTutar={FazlaTutar} Reason=AuditSafeRemainderModelRequired",
+                eksikKayitId,
+                fazlaKayitId,
+                eksik.Tutar,
+                fazla.Tutar);
+            return false;
+        }
+
+        var now = DateTime.UtcNow;
+        var bugun = DateOnly.FromDateTime(now);
         var bildirim = $"✅ Kısmi eşleşme kullanıcı tarafından onaylandı ({eksik.DosyaNo ?? "N/A"} {eksik.Tutar:N2} ₺)";
 
         eksik.Durum = KayitDurumu.Cozuldu;
@@ -162,7 +184,7 @@ public sealed partial class BankaHesapKontrolService
         eksik.KullaniciOnay = true;
         eksik.OnaylayanKullanici = actorUsername;
         eksik.ApprovedByUserId = actorUserId;
-        eksik.OnayTarihi = DateTime.UtcNow;
+        eksik.OnayTarihi = now;
         eksik.Notlar = (eksik.Notlar ?? "") +
             $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] {bildirim} — Onaylayan: {actorUsername}";
 
@@ -172,6 +194,7 @@ public sealed partial class BankaHesapKontrolService
         fazla.KullaniciOnay = true;
         fazla.OnaylayanKullanici = actorUsername;
         fazla.ApprovedByUserId = actorUserId;
+        fazla.OnayTarihi = now;
         fazla.Notlar = (fazla.Notlar ?? "") +
             $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] {bildirim} — Eşleşen eksik: {eksikKayitId:N}";
 

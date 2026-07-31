@@ -18,7 +18,7 @@ public sealed class HesapKontrolImmutableAuditSnapshotTests
     private static readonly DateOnly AuditDate = new(2026, 7, 18);
 
     [Fact]
-    public async Task DailyFollowTotals_TwoTrackedDays_ReturnOnlyReportDayForTahsilatAndHarc()
+    public async Task DailyFollowTotals_ActiveCrossDayRecordsRemainAppliedForTahsilatAndHarc()
     {
         var day1 = new DateOnly(2070, 3, 11);
         var day2 = day1.AddDays(1);
@@ -40,9 +40,82 @@ public sealed class HesapKontrolImmutableAuditSnapshotTests
 
         Assert.Equal(-32_000m, cumulative.TahsilatNet);
         Assert.Equal(-11_000m, cumulative.HarcNet);
-        Assert.Equal(-29_000m, daily.TahsilatNet);
-        Assert.Equal(-7_000m, daily.HarcNet);
-        Assert.Equal(2, daily.KayitSayisi);
+        Assert.Equal(-32_000m, daily.TahsilatNet);
+        Assert.Equal(-11_000m, daily.HarcNet);
+        Assert.Equal(4, daily.KayitSayisi);
+    }
+
+    [Fact]
+    public async Task DailyFollowTotals_CrossDayResolution_AppliesCompensationOnce()
+    {
+        var day1 = new DateOnly(2026, 7, 29);
+        var day2 = day1.AddDays(1);
+        var day3 = day2.AddDays(1);
+        await using var db = CreateDb();
+        var tracked = NewRecord(
+            day1, BankaHesapTuru.Tahsilat, KayitYonu.Eksik, 29_500m,
+            KayitDurumu.Takipte, FarkSinifi.Bilinmeyen, trackingDate: day1);
+        db.Add(tracked);
+        await db.SaveChangesAsync();
+        var service = CreateService(db);
+
+        var stillActive = await service.GetDailyFollowTotalsAsync(day2);
+        Assert.Equal(-29_500m, stillActive.TahsilatNet);
+
+        tracked.Durum = KayitDurumu.Cozuldu;
+        tracked.CozulmeTarihi = day2;
+        await db.SaveChangesAsync();
+
+        var resolutionDay = await service.GetDailyFollowTotalsAsync(day2);
+        var resolutionDayRefresh = await service.GetDailyFollowTotalsAsync(day2);
+        var followingDay = await service.GetDailyFollowTotalsAsync(day3);
+
+        Assert.Equal(29_500m, resolutionDay.TahsilatNet);
+        Assert.Equal(resolutionDay, resolutionDayRefresh);
+        Assert.Equal(0m, followingDay.TahsilatNet);
+        Assert.Equal(0, followingDay.KayitSayisi);
+    }
+
+    [Fact]
+    public async Task DailyFollowTotals_SameDayTrackedAndResolved_DoesNotCompensate()
+    {
+        var day = new DateOnly(2026, 7, 30);
+        await using var db = CreateDb();
+        db.Add(NewRecord(
+            day, BankaHesapTuru.Tahsilat, KayitYonu.Eksik, 29_500m,
+            KayitDurumu.Cozuldu, FarkSinifi.Bilinmeyen,
+            trackingDate: day, resolutionDate: day));
+        await db.SaveChangesAsync();
+
+        var daily = await CreateService(db).GetDailyFollowTotalsAsync(day);
+
+        Assert.Equal(0m, daily.TahsilatNet);
+        Assert.Equal(0, daily.KayitSayisi);
+    }
+
+    [Theory]
+    [InlineData(BankaHesapTuru.Tahsilat, KayitYonu.Eksik, 100, 0)]
+    [InlineData(BankaHesapTuru.Tahsilat, KayitYonu.Fazla, -100, 0)]
+    [InlineData(BankaHesapTuru.Harc, KayitYonu.Eksik, 0, 100)]
+    [InlineData(BankaHesapTuru.Harc, KayitYonu.Fazla, 0, -100)]
+    public async Task DailyFollowTotals_ResolutionCompensation_IsMathematicalInverse(
+        BankaHesapTuru account,
+        KayitYonu direction,
+        decimal expectedTahsilat,
+        decimal expectedHarc)
+    {
+        var day = new DateOnly(2026, 7, 30);
+        await using var db = CreateDb();
+        db.Add(NewRecord(
+            day.AddDays(-1), account, direction, 100m,
+            KayitDurumu.Onaylandi, FarkSinifi.Bilinmeyen,
+            trackingDate: day.AddDays(-1), resolutionDate: day));
+        await db.SaveChangesAsync();
+
+        var daily = await CreateService(db).GetDailyFollowTotalsAsync(day);
+
+        Assert.Equal(expectedTahsilat, daily.TahsilatNet);
+        Assert.Equal(expectedHarc, daily.HarcNet);
     }
 
     [Fact]

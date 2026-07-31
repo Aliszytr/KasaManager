@@ -219,7 +219,7 @@ public sealed class KasaDraftServiceTests
     }
 
     [Fact]
-    public async Task BuildUnifiedPoolAsync_SabahFollowGateway_UsesOnlyReportDayTotals()
+    public async Task BuildUnifiedPoolAsync_SabahFollowGateway_UsesResolutionDayCompensation()
     {
         var day2 = new DateOnly(2070, 3, 12);
         var defaults = new KasaGlobalDefaultsSettings { Id = 1 };
@@ -247,7 +247,7 @@ public sealed class KasaDraftServiceTests
         _hesapKontrolMock.Setup(x => x.GetActiveFollowTotalsAsync(day2, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ActiveFollowTotals(day2, -32_000m, -11_000m, 32_000m, 11_000m, 0m, 0m, 4));
         _hesapKontrolMock.Setup(x => x.GetDailyFollowTotalsAsync(day2, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ActiveFollowTotals(day2, -29_000m, -7_000m, 29_000m, 7_000m, 0m, 0m, 2));
+            .ReturnsAsync(new ActiveFollowTotals(day2, 29_500m, 7_000m, -29_500m, -7_000m, 0m, 0m, 2));
 
         var sut = CreateSut();
         var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
@@ -264,8 +264,50 @@ public sealed class KasaDraftServiceTests
                 Assert.Single(result.Value!, x => x.CanonicalKey == key).Value,
                 CultureInfo.InvariantCulture);
 
-            Assert.Equal(-29_000m, Value("takip_kasa_etkisi_tahsilat"));
-            Assert.Equal(-7_000m, Value("takip_kasa_etkisi_harc"));
+            Assert.Equal(29_500m, Value("takip_kasa_etkisi_tahsilat"));
+            Assert.Equal(7_000m, Value("takip_kasa_etkisi_harc"));
+
+            var formulaPool = result.Value!.ToList();
+            void SetFormulaInput(string key, decimal value)
+            {
+                formulaPool.RemoveAll(x => x.CanonicalKey.Equals(key, StringComparison.OrdinalIgnoreCase));
+                formulaPool.Add(new UnifiedPoolEntry
+                {
+                    CanonicalKey = key,
+                    Value = value.ToString(CultureInfo.InvariantCulture),
+                    IncludeInCalculations = true
+                });
+            }
+
+            SetFormulaInput("dunden_devreden_kasa_nakit", -19_500m);
+            SetFormulaInput("bankadan_cekilen", 0m);
+            SetFormulaInput("vergiden_gelen", 0m);
+            SetFormulaInput("toplam_tahsilat", 0m);
+            SetFormulaInput("normal_stopaj", 0m);
+            SetFormulaInput("cesitli_nedenlerle_bankadan_cikamayan_tahsilat", 0m);
+            SetFormulaInput("normal_reddiyat", 0m);
+            SetFormulaInput("bankaya_yatirilacak_tahsilat", 0m);
+            SetFormulaInput("kayden_tahsilat", 0m);
+            var formula = new FormulaSet
+            {
+                Id = "sabah-cross-day-compensation",
+                Name = "Sabah cross-day compensation",
+                Templates =
+                {
+                    new FormulaTemplate
+                    {
+                        Id = "genel-kasa",
+                        Name = "Gune Ait Genel Kasa",
+                        TargetKey = "genel_kasa",
+                        Expression = "dunden_devreden_kasa_nakit + bankadan_cekilen + vergiden_gelen + toplam_tahsilat + normal_stopaj + cesitli_nedenlerle_bankadan_cikamayan_tahsilat - normal_reddiyat - bankaya_yatirilacak_tahsilat - kayden_tahsilat + takip_kasa_etkisi_tahsilat",
+                        Version = "1"
+                    }
+                }
+            };
+
+            var formulaResult = new FormulaEngineService().Run(day2, formula, formulaPool);
+            Assert.True(formulaResult.Ok, formulaResult.Error);
+            Assert.Equal(10_000m, formulaResult.Value!.Outputs["genel_kasa"]);
         }
         finally
         {

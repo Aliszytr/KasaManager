@@ -405,11 +405,45 @@ public sealed partial class BankaHesapKontrolService
         DateOnly analizTarihi,
         CancellationToken ct = default)
     {
-        var gunlukKayitlar = await ActiveFollowRecordsQuery()
-            .Where(x => x.AnalizTarihi == analizTarihi)
+        var aktifTakipKayitlari = await ActiveFollowRecordsQuery()
+            .Where(x => x.AnalizTarihi <= analizTarihi
+                     && (!x.TakipBaslangicTarihi.HasValue
+                         || x.TakipBaslangicTarihi.Value <= analizTarihi))
             .ToListAsync(ct);
 
-        return BuildActiveFollowTotals(analizTarihi, gunlukKayitlar);
+        var cozumGunuTelafiKayitlari = await _db.HesapKontrolKayitlari
+            .Where(x => x.HesapTuru != BankaHesapTuru.Stopaj
+                     && (x.Durum == KayitDurumu.Cozuldu || x.Durum == KayitDurumu.Onaylandi)
+                     && x.CozulmeTarihi == analizTarihi
+                     && x.TakipBaslangicTarihi.HasValue
+                     && x.TakipBaslangicTarihi.Value < analizTarihi)
+            .ToListAsync(ct);
+
+        var aktifTakipEtkisi = BuildActiveFollowTotals(analizTarihi, aktifTakipKayitlari);
+        var cozumGunuOncekiEtkisi = BuildActiveFollowTotals(analizTarihi, cozumGunuTelafiKayitlari);
+        var gunlukKasaEtkisi = new ActiveFollowTotals(
+            analizTarihi,
+            TahsilatNet: aktifTakipEtkisi.TahsilatNet - cozumGunuOncekiEtkisi.TahsilatNet,
+            HarcNet: aktifTakipEtkisi.HarcNet - cozumGunuOncekiEtkisi.HarcNet,
+            TahsilatEksik: aktifTakipEtkisi.TahsilatEksik - cozumGunuOncekiEtkisi.TahsilatEksik,
+            HarcEksik: aktifTakipEtkisi.HarcEksik - cozumGunuOncekiEtkisi.HarcEksik,
+            TahsilatFazla: aktifTakipEtkisi.TahsilatFazla - cozumGunuOncekiEtkisi.TahsilatFazla,
+            HarcFazla: aktifTakipEtkisi.HarcFazla - cozumGunuOncekiEtkisi.HarcFazla,
+            KayitSayisi: aktifTakipEtkisi.KayitSayisi + cozumGunuOncekiEtkisi.KayitSayisi);
+
+        _logger.LogInformation(
+            "[HK-DAILY-CASH-IMPACT] Date={Date} ActiveCount={ActiveCount} CompensationCount={CompensationCount} ActiveTahsilat={ActiveTahsilat} CompensationTahsilat={CompensationTahsilat} NetTahsilat={NetTahsilat} ActiveHarc={ActiveHarc} CompensationHarc={CompensationHarc} NetHarc={NetHarc}",
+            analizTarihi,
+            aktifTakipEtkisi.KayitSayisi,
+            cozumGunuOncekiEtkisi.KayitSayisi,
+            aktifTakipEtkisi.TahsilatNet,
+            -cozumGunuOncekiEtkisi.TahsilatNet,
+            gunlukKasaEtkisi.TahsilatNet,
+            aktifTakipEtkisi.HarcNet,
+            -cozumGunuOncekiEtkisi.HarcNet,
+            gunlukKasaEtkisi.HarcNet);
+
+        return gunlukKasaEtkisi;
     }
 
     private Task<List<HesapKontrolKaydi>> LoadActiveFollowRecordsAsync(

@@ -188,6 +188,59 @@ public sealed class HesapKontrolActorSqlServerIntegrationTests(SqlServerIntegrat
     }
 
     [SqlServerFact]
+    public async Task PotentialMatch_UnequalAmountsRemainActive_WhileEqualAmountsResolveAtomicallyAndIdempotently()
+    {
+        var date = new DateOnly(2081, 4, 16);
+        await using var context = fixture.CreateContext();
+        var largerMissing = NewRecord(date.AddDays(-1), KayitYonu.Eksik);
+        largerMissing.Durum = KayitDurumu.Takipte;
+        largerMissing.TakipBaslangicTarihi = date.AddDays(-1);
+        largerMissing.Tutar = 100m;
+        var smallerSurplus = NewRecord(date, KayitYonu.Fazla);
+        smallerSurplus.Tutar = 80m;
+        var equalMissing = NewRecord(date.AddDays(-1), KayitYonu.Eksik);
+        equalMissing.Durum = KayitDurumu.Takipte;
+        equalMissing.TakipBaslangicTarihi = date.AddDays(-1);
+        equalMissing.Tutar = 125m;
+        var equalSurplus = NewRecord(date, KayitYonu.Fazla);
+        equalSurplus.Tutar = 125m;
+        context.AddRange(
+            largerMissing, smallerSurplus, equalMissing, equalSurplus);
+        await context.SaveChangesAsync();
+        var service = CreateService(context);
+
+        Assert.False(await service.ApprovePotentialMatchAsync(
+            largerMissing.Id, smallerSurplus.Id, 61, "partial-matcher"));
+        Assert.True(await service.ApprovePotentialMatchAsync(
+            equalMissing.Id, equalSurplus.Id, 62, "equal-matcher"));
+        Assert.False(await service.ApprovePotentialMatchAsync(
+            equalMissing.Id, equalSurplus.Id, 63, "replay-matcher"));
+        context.ChangeTracker.Clear();
+
+        largerMissing = await context.HesapKontrolKayitlari
+            .SingleAsync(record => record.Id == largerMissing.Id);
+        smallerSurplus = await context.HesapKontrolKayitlari
+            .SingleAsync(record => record.Id == smallerSurplus.Id);
+        equalMissing = await context.HesapKontrolKayitlari
+            .SingleAsync(record => record.Id == equalMissing.Id);
+        equalSurplus = await context.HesapKontrolKayitlari
+            .SingleAsync(record => record.Id == equalSurplus.Id);
+
+        Assert.Equal(KayitDurumu.Takipte, largerMissing.Durum);
+        Assert.Equal(100m, largerMissing.Tutar);
+        Assert.Null(largerMissing.CozulmeTarihi);
+        Assert.Equal(KayitDurumu.Acik, smallerSurplus.Durum);
+        Assert.Equal(80m, smallerSurplus.Tutar);
+        Assert.Null(smallerSurplus.CozulmeTarihi);
+        Assert.Equal(KayitDurumu.Cozuldu, equalMissing.Durum);
+        Assert.Equal(KayitDurumu.Cozuldu, equalSurplus.Durum);
+        Assert.Equal(62, equalMissing.ApprovedByUserId);
+        Assert.Equal(62, equalSurplus.ApprovedByUserId);
+        Assert.NotNull(equalMissing.CozulmeTarihi);
+        Assert.Equal(equalMissing.CozulmeTarihi, equalSurplus.CozulmeTarihi);
+    }
+
+    [SqlServerFact]
     public async Task ReconciliationAndLegacyReads_DoNotInventOwnersOrOverwriteActorAudit()
     {
         var date = new DateOnly(2081, 5, 16);

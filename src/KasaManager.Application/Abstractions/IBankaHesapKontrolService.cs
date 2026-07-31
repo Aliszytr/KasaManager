@@ -196,8 +196,9 @@ public interface IBankaHesapKontrolService
         CancellationToken ct = default);
 
     /// <summary>
-    /// Yalnizca secili analiz gununde Takipte olan HesapKontrol kayitlarinin toplamlarini dondurur.
-    /// Kasa gateway'i icin gun-bazli etki kaynagidir.
+    /// Secili rapor gununde aktif olan Takipte kayitlarin etkisi ile o gun
+    /// cozulmus cross-day takip kayitlarinin ters telafisini tek canonical
+    /// kasa gateway degeri olarak dondurur.
     /// </summary>
     Task<ActiveFollowTotals> GetDailyFollowTotalsAsync(
         DateOnly analizTarihi,

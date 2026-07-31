@@ -369,13 +369,13 @@ public sealed partial class KasaDraftService
         AddOverride("dunden_eksik_fazla_gelen_harc", ov(null, finalizeInputs.DundenEksikFazlaGelenHarc), "Kullanıcı girişi (0 ise etkisiz).");
 
         ActiveFollowTotals? activeFollowTotals = null;
-        ActiveFollowTotals? dailyFollowTotals = null;
+        ActiveFollowTotals? dailyFollowCashImpact = null;
         if (kasaScope?.StartsWith("Sabah", StringComparison.OrdinalIgnoreCase) == true)
         {
             try
             {
                 activeFollowTotals = await _hesapKontrol.GetActiveFollowTotalsAsync(raporTarihi, ct);
-                dailyFollowTotals = await _hesapKontrol.GetDailyFollowTotalsAsync(raporTarihi, ct);
+                dailyFollowCashImpact = await _hesapKontrol.GetDailyFollowTotalsAsync(raporTarihi, ct);
                 _log.LogInformation(
                     "[HK-ACTIVE-TOTAL-APPLIED] Date={Date} Scope={Scope} Source=HesapKontrol ActiveTahsilatNet={ActiveTahsilatNet} ActiveHarcNet={ActiveHarcNet} ActiveCount={ActiveCount} DailyTahsilatNet={DailyTahsilatNet} DailyHarcNet={DailyHarcNet} DailyCount={DailyCount}",
                     raporTarihi,
@@ -383,9 +383,9 @@ public sealed partial class KasaDraftService
                     activeFollowTotals.TahsilatNet,
                     activeFollowTotals.HarcNet,
                     activeFollowTotals.KayitSayisi,
-                    dailyFollowTotals.TahsilatNet,
-                    dailyFollowTotals.HarcNet,
-                    dailyFollowTotals.KayitSayisi);
+                    dailyFollowCashImpact.TahsilatNet,
+                    dailyFollowCashImpact.HarcNet,
+                    dailyFollowCashImpact.KayitSayisi);
             }
             catch (Exception ex)
             {
@@ -401,13 +401,12 @@ public sealed partial class KasaDraftService
             AddDerived(KasaCanonicalKeys.GuneAitEksikFazlaTahsilat, activeFollowTotals.TahsilatNet, "HK active follow SSOT: Acik/Takipte tahsilat net.");
             AddDerived(KasaCanonicalKeys.GuneAitEksikFazlaHarc, activeFollowTotals.HarcNet, "HK active follow SSOT: Acik/Takipte harc net.");
         }
-        // Faz 2 TODO: Takipte kaydin cozuldugu gun icin ters yonlu telafi kalemi bu gun-bazli kapsama dahil degildir.
-        var takipKasaEtkisiTahsilat = dailyFollowTotals?.TahsilatNet ?? ov(null, finalizeInputs.TakipKasaEtkisiTahsilat);
-        var takipKasaEtkisiHarc = dailyFollowTotals?.HarcNet ?? ov(null, finalizeInputs.TakipKasaEtkisiHarc);
-        var takipKasaEtkisiNet = dailyFollowTotals is not null
+        var takipKasaEtkisiTahsilat = dailyFollowCashImpact?.TahsilatNet ?? ov(null, finalizeInputs.TakipKasaEtkisiTahsilat);
+        var takipKasaEtkisiHarc = dailyFollowCashImpact?.HarcNet ?? ov(null, finalizeInputs.TakipKasaEtkisiHarc);
+        var takipKasaEtkisiNet = dailyFollowCashImpact is not null
             ? takipKasaEtkisiTahsilat - takipKasaEtkisiHarc
             : finalizeInputs.TakipKasaEtkisiNet ?? (takipKasaEtkisiTahsilat - takipKasaEtkisiHarc);
-        AddDerived("takip_kasa_etkisi_tahsilat", takipKasaEtkisiTahsilat, "HK reconciliation gateway: tahsilat etkisi.");
+        AddDerived("takip_kasa_etkisi_tahsilat", takipKasaEtkisiTahsilat, "HK reconciliation gateway: aktif takip + cozum gunu ters telafi tahsilat etkisi.");
         AddDerived("takip_kasa_etkisi_harc", takipKasaEtkisiHarc, "HK reconciliation gateway: harç etkisi.");
         AddDerived("takip_kasa_etkisi_net", takipKasaEtkisiNet, "HK reconciliation gateway: tahsilat - harç.");
         _log.LogInformation(

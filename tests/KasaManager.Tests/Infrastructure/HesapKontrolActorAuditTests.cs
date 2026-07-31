@@ -105,6 +105,59 @@ public sealed class HesapKontrolActorAuditTests
         Assert.Equal("first-user", record.OnaylayanKullanici);
     }
 
+    [Theory]
+    [InlineData(100, 80)]
+    [InlineData(80, 100)]
+    public async Task ApprovePotentialMatch_UnequalAmounts_PreservesBothActiveRecords(
+        decimal missingAmount,
+        decimal surplusAmount)
+    {
+        await using var db = CreateDb();
+        var service = CreateService(db);
+        var missing = NewRecord(KayitYonu.Eksik);
+        missing.Durum = KayitDurumu.Takipte;
+        missing.TakipBaslangicTarihi = TestDate.AddDays(-1);
+        missing.Tutar = missingAmount;
+        var surplus = NewRecord(KayitYonu.Fazla);
+        surplus.Tutar = surplusAmount;
+        db.AddRange(missing, surplus);
+        await db.SaveChangesAsync();
+
+        var approved = await service.ApprovePotentialMatchAsync(
+            missing.Id, surplus.Id, 51, "matcher");
+
+        Assert.False(approved);
+        Assert.Equal(KayitDurumu.Takipte, missing.Durum);
+        Assert.Equal(missingAmount, missing.Tutar);
+        Assert.Null(missing.CozulmeTarihi);
+        Assert.Null(missing.CozulmeKaynakId);
+        Assert.Equal(KayitDurumu.Acik, surplus.Durum);
+        Assert.Equal(surplusAmount, surplus.Tutar);
+        Assert.Null(surplus.CozulmeTarihi);
+        Assert.Null(surplus.CozulmeKaynakId);
+        Assert.Equal(2, await db.HesapKontrolKayitlari.CountAsync());
+    }
+
+    [Fact]
+    public async Task ApprovePotentialMatch_SecondApproval_IsIdempotent()
+    {
+        await using var db = CreateDb();
+        var service = CreateService(db);
+        var missing = NewRecord(KayitYonu.Eksik);
+        var surplus = NewRecord(KayitYonu.Fazla);
+        db.AddRange(missing, surplus);
+        await db.SaveChangesAsync();
+
+        Assert.True(await service.ApprovePotentialMatchAsync(
+            missing.Id, surplus.Id, 51, "matcher"));
+        Assert.False(await service.ApprovePotentialMatchAsync(
+            missing.Id, surplus.Id, 52, "second-matcher"));
+
+        Assert.Equal(2, await db.HesapKontrolKayitlari.CountAsync());
+        Assert.Equal(51, missing.ApprovedByUserId);
+        Assert.Equal(51, surplus.ApprovedByUserId);
+    }
+
     [Fact]
     public async Task Revert_ClearsOnlyRevertedTransitionActorsAndPreservesCreationActor()
     {
