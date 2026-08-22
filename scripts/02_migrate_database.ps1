@@ -11,6 +11,23 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Migration Wrapper Safety Closure: $ErrorActionPreference only converts PowerShell/cmdlet
+# terminating errors — it does NOT turn a nonzero native-command ($LASTEXITCODE) exit into a
+# script failure. Every safety-critical native invocation below is routed through this tiny
+# helper so a failed `dotnet ef ...`/`dotnet restore` always throws (stopping before any later
+# command) and the wrapper process exits non-zero, while still going through the outer
+# environment-restoration `finally`.
+function Invoke-CheckedNativeCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$Description,
+        [Parameter(Mandatory = $true)][scriptblock]$Command
+    )
+    & $Command
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Description failed (exit code $LASTEXITCODE)."
+    }
+}
+
 # Save prior ambient values so they can be restored once this script finishes — prevents a
 # leftover pinned value from silently steering a later, unrelated command in the same session.
 $previousDotnetEnvironment = $env:DOTNET_ENVIRONMENT
@@ -31,7 +48,7 @@ try {
     Write-Host "Restoring..."
     Push-Location $web
     try {
-        dotnet restore
+        Invoke-CheckedNativeCommand -Description "dotnet restore" -Command { dotnet restore }
 
         # KasaManager dotnet-ef Tool Discovery Fix: "dotnet tool list --global" only sees globally
         # installed tools, but this repository resolves dotnet-ef through a LOCAL tool manifest
@@ -41,36 +58,51 @@ try {
         # prerequisite now probes the SAME command/working directory this script actually invokes
         # below, instead of guessing at install scope (global/local/PATH/manifest).
         Write-Host "Ensuring dotnet-ef is available (probing the exact command this script invokes)..."
-        $efProbeOutput = dotnet ef --version 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "dotnet-ef is not available in this repository context. Run scripts\01_install_dotnet_ef.ps1, or restore the repository's local tool manifest, then retry." -ForegroundColor Yellow
-            throw "dotnet-ef command is not available here (dotnet ef --version exited with code $LASTEXITCODE)."
-        }
+        $efProbeOutput = Invoke-CheckedNativeCommand -Description "dotnet-ef availability probe (dotnet ef --version)" -Command { dotnet ef --version 2>&1 }
         Write-Host "dotnet-ef available: $efProbeOutput" -ForegroundColor Green
 
-        $infra = Join-Path $web "..\KasaManager.Infrastructure"
-        $migrationsPath = Join-Path $infra "Migrations"
+        # Migration Wrapper Safety Closure — explicit DbContext: the repository contains more
+        # than one DbContext (KasaManagerDbContext, LegacyKasaDbContext), so every EF migration
+        # command below must name its target explicitly rather than relying on EF's single-context
+        # auto-detection, which fails with "More than one DbContext was found." once ambiguous.
+        $targetContext = "KasaManagerDbContext"
 
-        $migrationName = "InitialCreate_SqlServer_Clean"
+        # Migration Wrapper Safety Closure — Production never generates migrations: this branch
+        # is the ONLY place "dotnet ef migrations add" appears anywhere in this script, and it is
+        # lexically unreachable when $Environment -eq "Production" — not merely gated by
+        # $hasMigration/directory state. Production may only apply already-committed migrations
+        # via "dotnet ef database update" below; it can never author new ones.
+        if ($Environment -eq "Production") {
+            Write-Host "Production: migration generation is disabled by design - only already-committed migrations are applied." -ForegroundColor Cyan
+        }
+        else {
+            $infra = Join-Path $web "..\KasaManager.Infrastructure"
+            $migrationsPath = Join-Path $infra "Migrations"
+            $migrationName = "InitialCreate_SqlServer_Clean"
 
-        Write-Host "Creating migration ($migrationName) if none exists..."
+            Write-Host "Creating migration ($migrationName) if none exists..."
 
-        $hasMigration = $false
-        if (Test-Path $migrationsPath) {
-            $count = (Get-ChildItem -Path $migrationsPath -Filter "*.cs" -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -notlike "*Designer.cs" -and $_.Name -notlike "*Snapshot.cs" } |
-                Measure-Object).Count
-            if ($count -gt 0) { $hasMigration = $true }
+            $hasMigration = $false
+            if (Test-Path $migrationsPath) {
+                $count = (Get-ChildItem -Path $migrationsPath -Filter "*.cs" -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -notlike "*Designer.cs" -and $_.Name -notlike "*Snapshot.cs" } |
+                    Measure-Object).Count
+                if ($count -gt 0) { $hasMigration = $true }
+            }
+
+            if (-not $hasMigration) {
+                Invoke-CheckedNativeCommand -Description "dotnet ef migrations add" -Command {
+                    dotnet ef migrations add $migrationName --context $targetContext -p ..\KasaManager.Infrastructure -s .
+                }
+            } else {
+                Write-Host "Migrations already exist. Skipping migrations add." -ForegroundColor Cyan
+            }
         }
 
-        if (-not $hasMigration) {
-            dotnet ef migrations add $migrationName -p ..\KasaManager.Infrastructure -s .
-        } else {
-            Write-Host "Migrations already exist. Skipping migrations add." -ForegroundColor Cyan
+        Write-Host "Updating database (Environment=$Environment, Context=$targetContext)..."
+        Invoke-CheckedNativeCommand -Description "dotnet ef database update" -Command {
+            dotnet ef database update --context $targetContext -p ..\KasaManager.Infrastructure -s .
         }
-
-        Write-Host "Updating database (Environment=$Environment)..."
-        dotnet ef database update -p ..\KasaManager.Infrastructure -s .
 
         Write-Host "Done."
     }
