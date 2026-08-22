@@ -33,12 +33,20 @@ try {
     try {
         dotnet restore
 
-        Write-Host "Ensuring dotnet-ef is available..."
-        $existing = dotnet tool list --global | Select-String -Pattern "dotnet-ef" -Quiet
-        if (-not $existing) {
-            Write-Host "dotnet-ef not found. Run scripts\01_install_dotnet_ef.ps1 first." -ForegroundColor Yellow
-            throw "dotnet-ef global tool is not installed."
+        # KasaManager dotnet-ef Tool Discovery Fix: "dotnet tool list --global" only sees globally
+        # installed tools, but this repository resolves dotnet-ef through a LOCAL tool manifest
+        # (dotnet-tools.json here in src/KasaManager.Web, discovered via directory walk-up) — so
+        # the old --global-only check produced a false negative and aborted before ever reaching
+        # the database, even though "dotnet ef ..." genuinely works in this exact context. The
+        # prerequisite now probes the SAME command/working directory this script actually invokes
+        # below, instead of guessing at install scope (global/local/PATH/manifest).
+        Write-Host "Ensuring dotnet-ef is available (probing the exact command this script invokes)..."
+        $efProbeOutput = dotnet ef --version 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "dotnet-ef is not available in this repository context. Run scripts\01_install_dotnet_ef.ps1, or restore the repository's local tool manifest, then retry." -ForegroundColor Yellow
+            throw "dotnet-ef command is not available here (dotnet ef --version exited with code $LASTEXITCODE)."
         }
+        Write-Host "dotnet-ef available: $efProbeOutput" -ForegroundColor Green
 
         $infra = Join-Path $web "..\KasaManager.Infrastructure"
         $migrationsPath = Join-Path $infra "Migrations"
