@@ -415,7 +415,8 @@ public sealed class KasaContextHesapKontrolTransitionTests
             Mock.Of<ILogger<KasaPreviewController>>(),
             Mock.Of<IKasaReadModelService>(),
             Mock.Of<ICalculatedKasaSnapshotService>(),
-            Mock.Of<IKasaRaporSnapshotService>());
+            Mock.Of<IKasaRaporSnapshotService>(),
+            Mock.Of<IEffectiveAnalysisDateResolver>());
 
         var httpContext = new DefaultHttpContext
         {

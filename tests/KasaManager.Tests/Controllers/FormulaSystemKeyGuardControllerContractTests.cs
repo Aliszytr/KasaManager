@@ -183,7 +183,8 @@ public sealed class FormulaSystemKeyGuardControllerContractTests
             Mock.Of<IDocumentTemplateService>(), Mock.Of<IFinansalIstisnaService>(),
             Mock.Of<IFinansalIstisnaAnomaliService>(), Mock.Of<IDistributedCache>(),
             Mock.Of<ILogger<KasaPreviewController>>(), Mock.Of<IKasaReadModelService>(),
-            Mock.Of<ICalculatedKasaSnapshotService>(), Mock.Of<IKasaRaporSnapshotService>());
+            Mock.Of<ICalculatedKasaSnapshotService>(), Mock.Of<IKasaRaporSnapshotService>(),
+            Mock.Of<IEffectiveAnalysisDateResolver>());
         controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() };
         return controller;
     }

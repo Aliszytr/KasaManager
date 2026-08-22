@@ -319,7 +319,8 @@ public sealed class SavedSnapshotHesapKontrolTransitionTests
             Mock.Of<IDocumentTemplateService>(), Mock.Of<IFinansalIstisnaService>(),
             Mock.Of<IFinansalIstisnaAnomaliService>(), Mock.Of<IDistributedCache>(),
             Mock.Of<ILogger<KasaPreviewController>>(), Mock.Of<IKasaReadModelService>(),
-            snapshots.Object, Mock.Of<IKasaRaporSnapshotService>());
+            snapshots.Object, Mock.Of<IKasaRaporSnapshotService>(),
+            Mock.Of<IEffectiveAnalysisDateResolver>());
 
         var identity = authenticated
             ? new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, "saved-user") }, "TestAuth")

@@ -105,6 +105,10 @@ builder.Services.AddScoped<KasaManager.Application.Services.DataFirst.ISwitchGat
 builder.Services.AddScoped<KasaManager.Application.Services.DataFirst.IManualSwitchOrchestrator, KasaManager.Infrastructure.Services.ManualSwitchOrchestrator>();
 
 builder.Services.AddScoped<IKasaReportDateRulesService, KasaReportDateRulesService>();
+// Revision 3 (KASAMANAGER-2026-08-21-FINAL-PLAN-CLOSURE): EffectiveAnalysisDate resolver — GET-safe.
+builder.Services.AddScoped<KasaManager.Application.Abstractions.IEffectiveAnalysisDateResolver, KasaManager.Infrastructure.Services.EffectiveAnalysisDateResolver>();
+// Revision 3 Manual Resolve Write-BusinessDate Surgical Closure: WRITE-tarafı resolver — HesapKontrol kayıtlarını sorgulamaz.
+builder.Services.AddScoped<KasaManager.Application.Abstractions.IManualResolveWriteBusinessDateResolver, KasaManager.Infrastructure.Services.ManualResolveWriteBusinessDateResolver>();
 // P1(C): Typed config — env-var yerine IOptions pattern
 builder.Services.Configure<KasaManager.Domain.Settings.UstRaporSourceOptions>(
     builder.Configuration.GetSection(KasaManager.Domain.Settings.UstRaporSourceOptions.SectionName));

@@ -203,4 +203,62 @@ public sealed class HesapKontrolKaydi
         TakipBaslangicTarihi.HasValue && Durum == KayitDurumu.Takipte
             ? DateOnly.FromDateTime(DateTime.Now).DayNumber - TakipBaslangicTarihi.Value.DayNumber
             : null;
+
+    // ─── Finansal Kasa Etkisi (Ayrık İki Olaylı Zamansal Model) ───
+    // KASAMANAGER-2026-08-21-FINAL-PLAN-CLOSURE Revision 3, Section 5.
+    // Bu 3 alan yalnızca DB-seviyesi CAS (ExecuteUpdateAsync) veya aşağıdaki
+    // guard'lı metotlar üzerinden yazılmalıdır — doğrudan property set edilmemelidir.
+
+    /// <summary>
+    /// Bu kaydın GenelKasa'ya verdiği imzalı nakit etkisi (origin gününde bir kez uygulanır).
+    /// NULL = legacy/henüz materialize edilmemiş. Sıfırdan farklı her değer authoritative'dir.
+    /// </summary>
+    public decimal? KasaEtkisiTutari { get; private set; }
+
+    /// <summary>Etkinin uygulandığı iş günü (origin business date).</summary>
+    public DateOnly? KasaEtkisiIsTarihi { get; private set; }
+
+    /// <summary>Etkinin tam olarak tersine döndüğü iş günü (reversal business date, her zaman &gt;= KasaEtkisiIsTarihi).</summary>
+    public DateOnly? KasaEtkisiTersDonusIsTarihi { get; private set; }
+
+    /// <summary>
+    /// KasaEtkisiTutari/KasaEtkisiIsTarihi'ni set-once semantiği ile ayarlar.
+    /// NULL→X: izinli. X→aynı X: idempotent no-op. X→farklı Y: fail-closed (exception).
+    /// </summary>
+    public void SetKasaEtkisi(decimal tutar, DateOnly isTarihi)
+    {
+        if (KasaEtkisiTutari.HasValue || KasaEtkisiIsTarihi.HasValue)
+        {
+            if (KasaEtkisiTutari == tutar && KasaEtkisiIsTarihi == isTarihi)
+                return;
+            throw new InvalidOperationException(
+                $"KasaEtkisi zaten Tutar={KasaEtkisiTutari} IsTarihi={KasaEtkisiIsTarihi} olarak ayarlanmış; " +
+                $"farklı değerle (Tutar={tutar} IsTarihi={isTarihi}) üzerine yazılamaz.");
+        }
+        KasaEtkisiTutari = tutar;
+        KasaEtkisiIsTarihi = isTarihi;
+    }
+
+    /// <summary>
+    /// KasaEtkisiTersDonusIsTarihi'ni set-once semantiği ile ayarlar.
+    /// KasaEtkisiIsTarihi henüz set edilmemişse veya tersDonusIsTarihi ondan önceyse fail-closed.
+    /// </summary>
+    public void SetKasaEtkisiTersDonus(DateOnly tersDonusIsTarihi)
+    {
+        if (!KasaEtkisiIsTarihi.HasValue)
+            throw new InvalidOperationException(
+                "KasaEtkisi henüz ayarlanmamış bir kayıt için ters dönüş tarihi ayarlanamaz.");
+        if (tersDonusIsTarihi < KasaEtkisiIsTarihi.Value)
+            throw new InvalidOperationException(
+                $"Ters dönüş tarihi ({tersDonusIsTarihi}) orijinal etki tarihinden ({KasaEtkisiIsTarihi.Value}) önce olamaz.");
+        if (KasaEtkisiTersDonusIsTarihi.HasValue)
+        {
+            if (KasaEtkisiTersDonusIsTarihi == tersDonusIsTarihi)
+                return;
+            throw new InvalidOperationException(
+                $"KasaEtkisiTersDonus zaten {KasaEtkisiTersDonusIsTarihi} olarak ayarlanmış; " +
+                $"farklı değerle ({tersDonusIsTarihi}) üzerine yazılamaz.");
+        }
+        KasaEtkisiTersDonusIsTarihi = tersDonusIsTarihi;
+    }
 }

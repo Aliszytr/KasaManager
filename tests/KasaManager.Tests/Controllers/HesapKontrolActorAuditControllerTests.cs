@@ -154,7 +154,8 @@ public sealed class HesapKontrolActorAuditControllerTests
             (financialExceptions ?? new Mock<IFinansalIstisnaService>()).Object,
             source.Object,
             NullLogger<HesapKontrolController>.Instance,
-            environment.Object);
+            environment.Object,
+            Mock.Of<IManualResolveWriteBusinessDateResolver>());
         controller.TempData = new TempDataDictionary(
             new DefaultHttpContext(), Mock.Of<ITempDataProvider>());
         return controller;

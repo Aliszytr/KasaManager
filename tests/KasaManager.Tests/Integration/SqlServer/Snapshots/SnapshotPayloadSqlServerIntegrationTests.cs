@@ -1226,14 +1226,27 @@ public sealed class SnapshotPayloadSqlServerIntegrationTests
             Array.Empty<byte>());
         await using var hkScope = new SqlServerHesapKontrolScope(_fixture);
         var hkContext = hkScope.Context;
+        // Revision 3 ORIGIN MATERIALIZATION: origin artık StartTrackingAsync'in kendisinde, kayıt
+        // authoritative olarak Takipte'ye geçtiği anda yazılır — bu yüzden kaydı DOĞRUDAN Takipte
+        // olarak seed etmek yerine Acik olarak seed edip aşağıda gerçek StartTrackingAsync'i
+        // çağırıyoruz (production write path'i bypass etmemek için).
         var tracked = NewHistoricalRecord(
             day1,
             BankaHesapTuru.Tahsilat,
             KayitYonu.Eksik,
             29_500m,
-            KayitDurumu.Takipte,
-            trackingDate: day1);
-        hkScope.AddRange(tracked);
+            KayitDurumu.Acik);
+        // Reversal/lifecycle-çözüm tarafı için: day2'de gelen eşleşen Fazla kaydı ekleyip gerçek
+        // production reconcile'ı (CrossDayReconcileAsync -> ExecutePairResolutionAsync) çağırıyoruz,
+        // Durum/CozulmeTarihi'ni elle yazıp CAS transition'ı bypass etmek yerine.
+        var counterpart = NewHistoricalRecord(
+            day2,
+            BankaHesapTuru.Tahsilat,
+            KayitYonu.Fazla,
+            29_500m,
+            KayitDurumu.Acik);
+        counterpart.Aciklama = $"Payment matching {tracked.DosyaNo}";
+        hkScope.AddRange(tracked, counterpart);
 
         try
         {
@@ -1244,6 +1257,13 @@ public sealed class SnapshotPayloadSqlServerIntegrationTests
                 Mock.Of<IImportOrchestrator>(),
                 Mock.Of<IHesapKontrolSourceResolver>(),
                 NullLogger<BankaHesapKontrolService>.Instance);
+
+            // Origin (KasaEtkisiTutari=-29500, KasaEtkisiIsTarihi=day1) burada, gerçek
+            // StartTrackingAsync çağrısıyla materialize edilir — bu, Stage 2 blocker'ının kapandığını
+            // ispatlayan asıl adımdır (önceden origin yalnızca pair resolution'da yazılıyordu).
+            Assert.True(await analysis.StartTrackingAsync(tracked.Id, 70, "cross-day-tracking-actor", null));
+            hkContext.ChangeTracker.Clear();
+
             var import = new Mock<IImportOrchestrator>();
             import.Setup(service => service.Import(
                     It.IsAny<string>(), ImportFileKind.KasaUstRapor))
@@ -1396,9 +1416,9 @@ public sealed class SnapshotPayloadSqlServerIntegrationTests
             var day1SnapshotId = await SaveSnapshotAsync(
                 day1, -29_500m, RunGeneralCash(day1, day1Pool));
 
-            tracked.Durum = KayitDurumu.Cozuldu;
-            tracked.CozulmeTarihi = day2;
-            await hkContext.SaveChangesAsync();
+            var reconciliation = await analysis.CrossDayReconcileAsync(day2);
+            Assert.Single(reconciliation.KesirEslesmeler);
+            hkContext.ChangeTracker.Clear();
 
             var day2Pool = await BuildPoolAsync(day2);
             Assert.Equal(29_500m, PoolValue(
@@ -1674,7 +1694,8 @@ public sealed class SnapshotPayloadSqlServerIntegrationTests
             Mock.Of<ILogger<KasaPreviewController>>(),
             Mock.Of<IKasaReadModelService>(),
             snapshotService,
-            Mock.Of<IKasaRaporSnapshotService>());
+            Mock.Of<IKasaRaporSnapshotService>(),
+            Mock.Of<IEffectiveAnalysisDateResolver>());
 
         var httpContext = new DefaultHttpContext
         {

@@ -117,16 +117,81 @@ public sealed partial class BankaHesapKontrolService
             $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] Takibe alan: {actorUsername}" +
             (not != null ? $" — {not}" : "");
 
-        await _db.SaveChangesAsync(ct);
+        if (kayit.HesapTuru == BankaHesapTuru.Stopaj)
+        {
+            // Stopaj KasaEtkisi mekanizmasının tamamen dışında — yalnızca lifecycle transition.
+            await _db.SaveChangesAsync(ct);
+            _logger.LogInformation("HesapKontrol takibe alındı: {Id} by {User}", kayitId, actorUsername);
+            return true;
+        }
+
+        // Revision 3 ORIGIN MATERIALIZATION (Stage 2 blocker kapanışı): bir kayıt authoritative olarak
+        // Takipte'ye geçtiği ANDA origin (KasaEtkisiTutari/KasaEtkisiIsTarihi) burada, lifecycle
+        // transition'la AYNI transaction içinde materialize edilir. Daha önce origin yalnızca
+        // ExecutePairResolutionAsync sırasında (yani karşı taraf bulununca) yazılıyordu — bu, henüz
+        // eşleşme oluşmadan hesaplanan immutable day-1 snapshot'ların origin etkisini hiç görmemesine
+        // sebep oluyordu. İmza kuralı (Eksik→-Tutar, Fazla→+Tutar) ve origin tarihi (kayit.AnalizTarihi)
+        // ExecutePairResolutionAsync'in aynı kayıt için hesaplayacağı değerlerle BİREBİR aynıdır — bu
+        // yüzden daha sonra bir pair resolution çalıştığında CAS bunu "exact-match idempotent success"
+        // olarak görür (Cas.cs'teki mevcut kontrat hiç değişmedi).
+        //
+        // EnableRetryOnFailure ile yapılandırılmış SqlServerRetryingExecutionStrategy, kullanıcı-başlatımlı
+        // transaction'ları yalnızca CreateExecutionStrategy().ExecuteAsync(...) delege'i İÇİNDE kabul
+        // eder (bkz. ExecutePairResolutionAsync/MaterializeLegacyKasaEtkisiAsync'teki aynı düzeltme).
+        // CasSetKasaEtkisiAsync ExecuteUpdateAsync ile yazar — tracked `kayit` örneğinin
+        // KasaEtkisiTutari/IsTarihi alanlarına HİÇ dokunmaz (private set, yalnızca SetKasaEtkisi ile
+        // yazılır) — bu yüzden aşağıdaki SaveChangesAsync'in ürettiği UPDATE yalnızca gerçekten
+        // değiştirilen (Durum/OnaylayanKullanici/...) kolonları içerir; KasaEtkisi* kolonlarının stale
+        // in-memory değerle ezilme riski yoktur (ApprovePotentialMatchAsync'teki aynı ispatlanmış desen).
+        var originImpact = kayit.Yon == KayitYonu.Fazla ? kayit.Tutar : -kayit.Tutar;
+        var originStrategy = _db.Database.CreateExecutionStrategy();
+        var originResult = await originStrategy.ExecuteAsync(async () =>
+        {
+            await using var tx = await _db.Database.BeginTransactionAsync(ct);
+            try
+            {
+                var originCas = await CasSetKasaEtkisiAsync(kayitId, originImpact, kayit.AnalizTarihi, ct);
+                if (!originCas.Success)
+                {
+                    await tx.RollbackAsync(ct);
+                    return originCas;
+                }
+
+                await _db.SaveChangesAsync(ct);
+                await tx.CommitAsync(ct);
+                return originCas;
+            }
+            catch
+            {
+                await tx.RollbackAsync(ct);
+                throw;
+            }
+        });
+
+        if (!originResult.Success)
+        {
+            _logger.LogWarning(
+                "[HK-ORIGIN-CAS-CONFLICT] Action=StartTracking KayitId={KayitId} Reason={Reason}",
+                kayitId, originResult.Conflict);
+            return false;
+        }
+
         _logger.LogInformation("HesapKontrol takibe alındı: {Id} by {User}", kayitId, actorUsername);
         return true;
     }
 
-    public async Task<bool> ResolveTrackedAsync(Guid kayitId, int actorUserId, string? actorUsername, string? not, CancellationToken ct = default)
+    /// <summary>
+    /// Revision 3 Manual Resolve Write-BusinessDate Surgical Closure: eski tek ResolveTrackedAsync
+    /// iki tip-güvenli komuta bölündü (ResolveTrackedStopajAsync/ResolveTrackedFinancialAsync).
+    /// Stopaj KasaEtkisi finansal mekanizmasının tamamen dışındadır — date-free kalır, hiçbir
+    /// zaman KasaEtkisiTersDonusIsTarihi almaz. Yanlış tür/duruma yönlendirilirse fail-closed (false).
+    /// </summary>
+    public async Task<bool> ResolveTrackedStopajAsync(Guid kayitId, int actorUserId, string? actorUsername, string? not, CancellationToken ct = default)
     {
         ValidateActorUserId(actorUserId);
         var kayit = await _db.HesapKontrolKayitlari.FindAsync(new object[] { kayitId }, ct);
-        if (kayit == null || kayit.Durum != KayitDurumu.Takipte) return false;
+        if (kayit == null || kayit.Durum != KayitDurumu.Takipte || kayit.HesapTuru != BankaHesapTuru.Stopaj)
+            return false;
 
         kayit.Durum = KayitDurumu.Onaylandi;
         kayit.KullaniciOnay = true;
@@ -137,7 +202,69 @@ public sealed partial class BankaHesapKontrolService
             (not != null ? $" — {not}" : "");
 
         await _db.SaveChangesAsync(ct);
-        _logger.LogInformation("HesapKontrol takipte kayit çözüldü: {Id} by {User}", kayitId, actorUsername);
+        _logger.LogInformation("HesapKontrol takipte kayit çözüldü (Stopaj): {Id} by {User}", kayitId, actorUsername);
+        return true;
+    }
+
+    /// <summary>
+    /// Revision 3: reversalBusinessDate artık çağıranın (Manuel Resolve orkestrasyonu, bkz.
+    /// IManualResolveWriteBusinessDateResolver) sağlamak ZORUNDA olduğu required, sistem saatinden
+    /// türetilmemiş bir parametredir — burada hiçbir zaman DateTime.Now/UtcNow/Today veya
+    /// CozulmeTarihi'nden hesaplanmaz. CozulmeTarihi (lifecycle/audit) ayrı ve bağımsız hesaplanmaya
+    /// devam eder — ikisi kasıtlı olarak farklı semantiklere sahiptir ve farklı değerler taşıyabilir.
+    /// Origin StartTrackingAsync sırasında zaten yazıldığı için burada yalnızca reversal'ı
+    /// (KasaEtkisiTersDonusIsTarihi) AYNI transaction içinde CAS ile yazarız.
+    /// </summary>
+    public async Task<bool> ResolveTrackedFinancialAsync(Guid kayitId, DateOnly reversalBusinessDate, int actorUserId, string? actorUsername, string? not, CancellationToken ct = default)
+    {
+        ValidateActorUserId(actorUserId);
+        var kayit = await _db.HesapKontrolKayitlari.FindAsync(new object[] { kayitId }, ct);
+        if (kayit == null || kayit.Durum != KayitDurumu.Takipte || kayit.HesapTuru == BankaHesapTuru.Stopaj)
+            return false;
+
+        kayit.Durum = KayitDurumu.Onaylandi;
+        kayit.KullaniciOnay = true;
+        kayit.ResolvedByUserId = actorUserId;
+        kayit.CozulmeTarihi = DateOnly.FromDateTime(DateTime.UtcNow);
+        kayit.Notlar = (kayit.Notlar ?? "") +
+            $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] Çözüldü: {actorUsername}" +
+            (not != null ? $" — {not}" : "");
+
+        var reversalStrategy = _db.Database.CreateExecutionStrategy();
+        var reversalResult = await reversalStrategy.ExecuteAsync(async () =>
+        {
+            await using var tx = await _db.Database.BeginTransactionAsync(ct);
+            try
+            {
+                var reversalCas = await CasSetTersDonusAsync(kayitId, reversalBusinessDate, ct);
+                if (!reversalCas.Success)
+                {
+                    await tx.RollbackAsync(ct);
+                    return reversalCas;
+                }
+
+                await _db.SaveChangesAsync(ct);
+                await tx.CommitAsync(ct);
+                return reversalCas;
+            }
+            catch
+            {
+                await tx.RollbackAsync(ct);
+                throw;
+            }
+        });
+
+        if (!reversalResult.Success)
+        {
+            _logger.LogWarning(
+                "[HK-REVERSAL-CAS-CONFLICT] Action=ResolveTrackedFinancial KayitId={KayitId} Reason={Reason}",
+                kayitId, reversalResult.Conflict);
+            return false;
+        }
+
+        _logger.LogInformation(
+            "HesapKontrol takipte kayit çözüldü (Financial): {Id} by {User} ReversalBusinessDate={ReversalBusinessDate}",
+            kayitId, actorUsername, reversalBusinessDate);
         return true;
     }
 
@@ -176,11 +303,35 @@ public sealed partial class BankaHesapKontrolService
 
         var now = DateTime.UtcNow;
         var bugun = DateOnly.FromDateTime(now);
+
+        // Revision 3: older/later date-comparison seçimi (Eksik/Fazla etiketine göre DEĞİL).
+        // Eksik her zaman -Tutar, Fazla her zaman +Tutar imzalı katkı taşır (mevcut Net() işaret
+        // kuralı ile aynı: BuildActiveFollowTotals'taki Yon==Fazla?+Tutar:-Tutar).
+        var (olderId, olderDate, olderImpact, laterId, laterDate, laterImpact) =
+            eksik.AnalizTarihi <= fazla.AnalizTarihi
+                ? (eksik.Id, eksik.AnalizTarihi, -eksik.Tutar, fazla.Id, fazla.AnalizTarihi, fazla.Tutar)
+                : (fazla.Id, fazla.AnalizTarihi, fazla.Tutar, eksik.Id, eksik.AnalizTarihi, -eksik.Tutar);
+
+        var pairResult = await ExecutePairResolutionAsync(
+            olderId, olderDate, olderImpact,
+            laterId, laterDate, laterImpact,
+            bugun, ct);
+
+        if (!pairResult.Success)
+        {
+            _logger.LogWarning(
+                "[HK-PAIR-CAS-CONFLICT] Action=ApprovePotentialMatch EksikId={EksikId} FazlaId={FazlaId} Reason={Reason}",
+                eksikKayitId, fazlaKayitId, pairResult.ConflictReason);
+            return false;
+        }
+
         var bildirim = $"✅ Kısmi eşleşme kullanıcı tarafından onaylandı ({eksik.DosyaNo ?? "N/A"} {eksik.Tutar:N2} ₺)";
 
-        eksik.Durum = KayitDurumu.Cozuldu;
-        eksik.CozulmeTarihi = bugun;
-        eksik.CozulmeKaynakId = fazlaKayitId;
+        // Audit-only alanlar: finansal/yaşam döngüsü (Durum/CozulmeTarihi/CozulmeKaynakId/KasaEtkisi*)
+        // ExecutePairResolutionAsync içinde CAS ile zaten commit edildi. Bu tracked-entity update'ler
+        // yalnızca audit alanlarını değiştirir — Durum/CozulmeTarihi/CozulmeKaynakId/KasaEtkisi* bu
+        // instance'larda hiç set edilmediği için EF change tracker onları UPDATE'e dahil etmez
+        // (stale tracked değer geri yazılmaz).
         eksik.KullaniciOnay = true;
         eksik.OnaylayanKullanici = actorUsername;
         eksik.ApprovedByUserId = actorUserId;
@@ -188,9 +339,6 @@ public sealed partial class BankaHesapKontrolService
         eksik.Notlar = (eksik.Notlar ?? "") +
             $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] {bildirim} — Onaylayan: {actorUsername}";
 
-        fazla.Durum = KayitDurumu.Cozuldu;
-        fazla.CozulmeTarihi = bugun;
-        fazla.CozulmeKaynakId = eksikKayitId;
         fazla.KullaniciOnay = true;
         fazla.OnaylayanKullanici = actorUsername;
         fazla.ApprovedByUserId = actorUserId;

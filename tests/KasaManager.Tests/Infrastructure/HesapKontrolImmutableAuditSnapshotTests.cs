@@ -20,34 +20,50 @@ public sealed class HesapKontrolImmutableAuditSnapshotTests
     [Fact]
     public async Task DailyFollowTotals_ActiveCrossDayRecordsRemainAppliedForTahsilatAndHarc()
     {
+        // Revision 3 ayrık iki olaylı model: GetDailyFollowTotalsAsync ARTIK yalnızca o günün
+        // KasaEtkisiIsTarihi/KasaEtkisiTersDonusIsTarihi'ne sahip kayıtlarını okur (Durum/Takipte
+        // "standing balance" semantiği kaldırıldı) — bu yüzden authoritative alanlar doğrudan
+        // seed edilir (Helpy: "helper/fixture'da authoritative persisted alanları doğrudan seed et").
+        // GetActiveFollowTotalsAsync (cumulative) hâlâ eski Durum/Takipte tabanlı "aktif havuz"
+        // semantiğini kullanıyor — o kısım DEĞİŞMEDİ.
         var day1 = new DateOnly(2070, 3, 11);
         var day2 = day1.AddDays(1);
         await using var db = CreateDb();
-        db.AddRange(
-            NewRecord(day1, BankaHesapTuru.Tahsilat, KayitYonu.Eksik, 3_000m,
-                KayitDurumu.Takipte, FarkSinifi.Bilinmeyen, trackingDate: day1),
-            NewRecord(day2, BankaHesapTuru.Tahsilat, KayitYonu.Eksik, 29_000m,
-                KayitDurumu.Takipte, FarkSinifi.Bilinmeyen, trackingDate: day2),
-            NewRecord(day1, BankaHesapTuru.Harc, KayitYonu.Eksik, 4_000m,
-                KayitDurumu.Takipte, FarkSinifi.Bilinmeyen, trackingDate: day1),
-            NewRecord(day2, BankaHesapTuru.Harc, KayitYonu.Eksik, 7_000m,
-                KayitDurumu.Takipte, FarkSinifi.Bilinmeyen, trackingDate: day2));
+        var day1Tahsilat = NewRecord(day1, BankaHesapTuru.Tahsilat, KayitYonu.Eksik, 3_000m,
+            KayitDurumu.Takipte, FarkSinifi.Bilinmeyen, trackingDate: day1);
+        day1Tahsilat.SetKasaEtkisi(-3_000m, day1);
+        var day2Tahsilat = NewRecord(day2, BankaHesapTuru.Tahsilat, KayitYonu.Eksik, 29_000m,
+            KayitDurumu.Takipte, FarkSinifi.Bilinmeyen, trackingDate: day2);
+        day2Tahsilat.SetKasaEtkisi(-29_000m, day2);
+        var day1Harc = NewRecord(day1, BankaHesapTuru.Harc, KayitYonu.Eksik, 4_000m,
+            KayitDurumu.Takipte, FarkSinifi.Bilinmeyen, trackingDate: day1);
+        day1Harc.SetKasaEtkisi(-4_000m, day1);
+        var day2Harc = NewRecord(day2, BankaHesapTuru.Harc, KayitYonu.Eksik, 7_000m,
+            KayitDurumu.Takipte, FarkSinifi.Bilinmeyen, trackingDate: day2);
+        day2Harc.SetKasaEtkisi(-7_000m, day2);
+        db.AddRange(day1Tahsilat, day2Tahsilat, day1Harc, day2Harc);
         await db.SaveChangesAsync();
 
         var service = CreateService(db);
         var cumulative = await service.GetActiveFollowTotalsAsync(day2);
         var daily = await service.GetDailyFollowTotalsAsync(day2);
 
+        // Cumulative/active pool: her iki günün de hâlâ açık (Takipte) kayıtlarının toplamı — değişmedi.
         Assert.Equal(-32_000m, cumulative.TahsilatNet);
         Assert.Equal(-11_000m, cumulative.HarcNet);
-        Assert.Equal(-32_000m, daily.TahsilatNet);
-        Assert.Equal(-11_000m, daily.HarcNet);
-        Assert.Equal(4, daily.KayitSayisi);
+        // Daily: yalnızca day2'nin KENDİ origin günü olan kayıtları (day1'inkiler day1'de kalır).
+        Assert.Equal(-29_000m, daily.TahsilatNet);
+        Assert.Equal(-7_000m, daily.HarcNet);
+        Assert.Equal(2, daily.KayitSayisi);
     }
 
     [Fact]
     public async Task DailyFollowTotals_CrossDayResolution_AppliesCompensationOnce()
     {
+        // Revision 3 ayrık iki olaylı model: authoritative alanlar doğrudan seed edilir (production
+        // command üzerinden değil — bu InMemory fixture zaten ExecuteUpdateAsync'i desteklemiyor).
+        // Origin (day1) etkiyi bir kez uygular; reversal (day2) tam tersini uygular; sonrasında (day3)
+        // katkı sıfırdır — "compensation exactly once" canonical kontratı budur.
         var day1 = new DateOnly(2026, 7, 29);
         var day2 = day1.AddDays(1);
         var day3 = day2.AddDays(1);
@@ -55,15 +71,20 @@ public sealed class HesapKontrolImmutableAuditSnapshotTests
         var tracked = NewRecord(
             day1, BankaHesapTuru.Tahsilat, KayitYonu.Eksik, 29_500m,
             KayitDurumu.Takipte, FarkSinifi.Bilinmeyen, trackingDate: day1);
+        tracked.SetKasaEtkisi(-29_500m, day1);
         db.Add(tracked);
         await db.SaveChangesAsync();
         var service = CreateService(db);
 
-        var stillActive = await service.GetDailyFollowTotalsAsync(day2);
-        Assert.Equal(-29_500m, stillActive.TahsilatNet);
+        // Origin günü: etki tam olarak bir kez, kendi gününde görünür.
+        var originDayTotals = await service.GetDailyFollowTotalsAsync(day1);
+        Assert.Equal(-29_500m, originDayTotals.TahsilatNet);
 
-        tracked.Durum = KayitDurumu.Cozuldu;
-        tracked.CozulmeTarihi = day2;
+        // Reversal henüz set edilmedi: ara gün (day2) hiçbir katkı vermez.
+        var beforeReversal = await service.GetDailyFollowTotalsAsync(day2);
+        Assert.Equal(0m, beforeReversal.TahsilatNet);
+
+        tracked.SetKasaEtkisiTersDonus(day2);
         await db.SaveChangesAsync();
 
         var resolutionDay = await service.GetDailyFollowTotalsAsync(day2);
@@ -106,10 +127,15 @@ public sealed class HesapKontrolImmutableAuditSnapshotTests
     {
         var day = new DateOnly(2026, 7, 30);
         await using var db = CreateDb();
-        db.Add(NewRecord(
+        var record = NewRecord(
             day.AddDays(-1), account, direction, 100m,
             KayitDurumu.Onaylandi, FarkSinifi.Bilinmeyen,
-            trackingDate: day.AddDays(-1), resolutionDate: day));
+            trackingDate: day.AddDays(-1), resolutionDate: day);
+        // KasaEtkisiTutari zaten imzalı (Fazla:+Tutar, Eksik:-Tutar) — canonical two-event model.
+        var originImpact = direction == KayitYonu.Fazla ? 100m : -100m;
+        record.SetKasaEtkisi(originImpact, day.AddDays(-1));
+        record.SetKasaEtkisiTersDonus(day);
+        db.Add(record);
         await db.SaveChangesAsync();
 
         var daily = await CreateService(db).GetDailyFollowTotalsAsync(day);

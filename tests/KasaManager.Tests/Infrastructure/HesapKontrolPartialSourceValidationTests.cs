@@ -194,7 +194,8 @@ public sealed class HesapKontrolPartialSourceValidationTests
             Mock.Of<IFinansalIstisnaService>(),
             resolver.Object,
             NullLogger<HesapKontrolController>.Instance,
-            env.Object);
+            env.Object,
+            Mock.Of<IManualResolveWriteBusinessDateResolver>());
         controller.TempData = new TempDataDictionary(
             new DefaultHttpContext(), Mock.Of<ITempDataProvider>());
 

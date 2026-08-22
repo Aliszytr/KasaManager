@@ -46,6 +46,7 @@ public sealed partial class KasaPreviewController : Controller
     private readonly KasaManager.Application.Services.ReadAdapter.IKasaReadModelService _readModelService;
     private readonly ICalculatedKasaSnapshotService _calcSnapshots;
     private readonly IKasaRaporSnapshotService _raporSnapshots;
+    private readonly IEffectiveAnalysisDateResolver _effectiveDateResolver;
     private static readonly string[] DiagnosticTargetKeys =
     [
         "genel_kasa",
@@ -83,7 +84,8 @@ public sealed partial class KasaPreviewController : Controller
         // FAZ 4: Adapter Injection
         KasaManager.Application.Services.ReadAdapter.IKasaReadModelService readModelService,
         ICalculatedKasaSnapshotService calcSnapshots,
-        IKasaRaporSnapshotService raporSnapshots)
+        IKasaRaporSnapshotService raporSnapshots,
+        IEffectiveAnalysisDateResolver effectiveDateResolver)
     {
         _orchestrator = orchestrator;
         _env = env;
@@ -107,6 +109,7 @@ public sealed partial class KasaPreviewController : Controller
         _readModelService = readModelService;
         _calcSnapshots = calcSnapshots;
         _raporSnapshots = raporSnapshots;
+        _effectiveDateResolver = effectiveDateResolver;
     }
 
     private bool TryResolveSnapshotActor(
@@ -143,26 +146,83 @@ public sealed partial class KasaPreviewController : Controller
 
         try
         {
-            // 1. Tarih default: Yüklü Excel dosyalarından tespit edilen tarih (yoksa bugün)
-            var defaultDate = DateOnly.FromDateTime(DateTime.Today);
-            model.SelectedDate = defaultDate;
-
-            // 1b. Dosya tarihi tespiti: Excel dosyaları yüklüyse, dosyanın tarihini kullan
+            // 1. EffectiveAnalysisDate: Revision 3 Section 6 kesin sıra —
+            //    0) explicit/context (GET'te henüz yok) → 1) son hesaplanmış persisted Kasa →
+            //    2) sunucu tarafında analiz edilebilir Excel tarihi → 3) NoAnalyzableSource.
+            //    GET-safe: yalnızca okuma yapar, DB'ye yazmaz.
+            var defaultDate = DateOnly.FromDateTime(DateTime.Today); // UI-continuity fallback — finansal karar DEĞİL
+            var uploadFolder = ResolveUploadFolderAbsolute();
+            EffectiveAnalysisDateResult effectiveDateResult;
             try
             {
-                var uploadFolder = ResolveUploadFolderAbsolute();
-                var dateEval = await _dateRules.EvaluateAsync(uploadFolder, ct);
-                if (dateEval.ProposedDate.HasValue)
-                {
-                    model.SelectedDate = dateEval.ProposedDate.Value;
-                    _log.LogInformation(
-                        "KasaPreview: Dosya tarihinden otomatik tarih ayarlandı: {ProposedDate} (bugün: {Today})",
-                        dateEval.ProposedDate.Value, defaultDate);
-                }
+                effectiveDateResult = await _effectiveDateResolver.ResolveAsync(
+                    explicitContextDate: null, kasaScope: kasaType ?? "", uploadFolder, ct);
             }
             catch (Exception ex)
             {
-                _log.LogDebug(ex, "Dosya tarih tespiti başarısız, bugünkü tarih kullanılacak");
+                _log.LogDebug(ex, "EffectiveAnalysisDate resolver başarısız, bugünkü tarih UI fallback olarak kullanılacak");
+                effectiveDateResult = new EffectiveAnalysisDateResult(null, AnalysisDateSourceTier.NoAnalyzableSource, ex.Message);
+            }
+
+            model.EffectiveAnalysisDate = effectiveDateResult.Date;
+            // Revision 3 PERSISTED SOURCE FRESHNESS CLOSURE (üzerine inşa edildiği önceki tur):
+            // IsStaleAnalysis, Tier != SuccessfulPersistedKasa iken (explicit/context, yalnızca-Excel
+            // veya hiç kaynak yok) hâlâ tier-tabanlı "persisted, hesaplanmış bir Kasa YOK" sinyalidir —
+            // bu durumlar için içerik-seviyesinde bir "freshness" kavramı zaten anlamsızdır (karşılaştırılacak
+            // persisted kaynak yok). Tier == SuccessfulPersistedKasa olduğunda ise artık tier'ı KÖRÜ
+            // KÖRÜNE "güncel" saymıyoruz: persisted snapshot'ın SourceEvidenceJson'ını, o anda analiz
+            // edilebilir kaynakla (KasaSourceFingerprintHelper) KARŞILAŞTIRIP açık bir Current/Stale/
+            // Unknown sonucu üretiyoruz (bkz. model.SourceFreshness). IsStaleAnalysis bu durumda YALNIZCA
+            // Stale ise true olur — Current VE Unknown ikisi de "otomatik yazma tetikleme" anlamında
+            // stale SAYILMAZ (Unknown != Stale invariant'ı — kanıtlanamayan bir şey asla "eski" ilan
+            // edilmez, fail-closed: CanAutoPost aşağıda bu bayrağa bağlı olduğu için otomatik POST
+            // tetiklenmez).
+            model.IsStaleAnalysis = effectiveDateResult.Tier != AnalysisDateSourceTier.SuccessfulPersistedKasa;
+            model.SourceFreshness = KasaSourceFreshness.Unknown; // yalnızca Tier1'de anlamlı; diğerlerinde N/A
+
+            if (effectiveDateResult.Tier == AnalysisDateSourceTier.SuccessfulPersistedKasa
+                && effectiveDateResult.PersistedSnapshot != null)
+            {
+                try
+                {
+                    model.SourceFreshness = await KasaSourceFingerprintHelper.CheckFreshnessAsync(
+                        effectiveDateResult.PersistedSnapshot.SourceEvidenceJson,
+                        uploadFolder,
+                        effectiveDateResult.PersistedSnapshot.RaporTarihi,
+                        kasaType ?? "",
+                        _log,
+                        ct);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogWarning(ex, "Freshness check basarisiz (GET), Unknown olarak ele alinacak (fail-closed).");
+                    model.SourceFreshness = KasaSourceFreshness.Unknown;
+                }
+
+                model.IsStaleAnalysis = model.SourceFreshness == KasaSourceFreshness.Stale;
+            }
+
+            model.SelectedDate = effectiveDateResult.Date ?? defaultDate; // UI takvimi asla boş kalmasın
+
+            _log.LogInformation(
+                "KasaPreview: EffectiveAnalysisDate={Date} Tier={Tier} IsStale={IsStale} Detail={Detail}",
+                effectiveDateResult.Date, effectiveDateResult.Tier, model.IsStaleAnalysis, effectiveDateResult.SourceDetail);
+
+            // Revision 3 Section 7: tek seferlik stale-auto-POST TempData guard.
+            // TempData bu response'ta yazılırsa yalnızca BİR SONRAKİ request'te okunabilir (ASP.NET Core
+            // varsayılanı) — PRG sonrası GET'e dönüldüğünde guard zaten set olduğu için CanAutoPost=false
+            // olur ve tekrar tetiklenmez (başarılı ya da başarısız fark etmez → loop imkansız).
+            // Client-side auto-submit tetikleyicisi AutoRunStaleAnalysis'e eklendi (bkz. o action'ın
+            // XML doc'u ve Index.cshtml'deki hkAutoRunStaleAnalysisForm bloğu).
+            const string autoPostGuardKey = "HK_AutoPostAttempted";
+            var autoPostAlreadyAttempted = TempData.ContainsKey(autoPostGuardKey);
+            model.CanAutoPost = model.IsStaleAnalysis
+                && !string.IsNullOrEmpty(kasaType)
+                && effectiveDateResult.Date.HasValue
+                && !autoPostAlreadyAttempted;
+            if (model.CanAutoPost)
+            {
+                TempData[autoPostGuardKey] = true;
             }
 
             // 2. Intent-First: Dashboard'dan kasaType geliyorsa pipeline
@@ -188,9 +248,10 @@ public sealed partial class KasaPreviewController : Controller
                 // VergiKasaBakiyeToplam değeri formüle input olarak gerekli
                 await HydrateVergideBirikenSeedAsync(model, ct);
 
-                // 2d-pre. Otomatik Genel Snapshot oluşturma: Dosya varsa ama snapshot yoksa otomatik oluştur
-                // Bu sayede kullanıcı KasaÜstRapor sayfasına gitmek zorunda kalmaz.
-                await TryAutoProvisionGenelSnapshotAsync(model.SelectedDate ?? defaultDate, ct);
+                // Revision 3 (Section 4/7): TryAutoProvisionGenelSnapshotAsync BURADAN KALDIRILDI —
+                // GET zero-write mandate. Confirmed write (_raporSnapshots.SaveAsync) via
+                // KasaPreviewController.Helpers.cs:28-140. Hâlâ POST LoadAndCalculate içinde çağrılıyor
+                // (uygun yer — kullanıcı orada aktif olarak "Hesapla" tetikliyor).
 
                 // 2d. Auto-Load: Stateless - her zaman güncel veriyi yükle (veya cache'ten oku)
                 await SafeAutoLoadPreviewAsync(model, normalizedType, ct);
@@ -609,6 +670,130 @@ public sealed partial class KasaPreviewController : Controller
             model.SelectedFormulaSetId ?? "(yok)");
 
         return View("Index", model);
+    }
+
+    /// <summary>
+    /// Revision 3 Section 7 kapanış: Index GET'te CanAutoPost=true olduğunda view'in tek seferlik
+    /// otomatik gönderdiği POST hedefi. Client'tan gelen kasaType yalnızca SCOPE belirler.
+    /// Helpy final closure task 1: <paramref name="contextDate"/>, GET'in ekranda gösterdiği
+    /// EffectiveAnalysisDate'i taşır (hidden form input, "yyyy-MM-dd") — GET ile bu POST arasında
+    /// Tier 1/2 kaynakları değişmiş olsa bile, POST'un GET'in gösterdiğinden FARKLI bir tarihe
+    /// sessizce kaymasını engeller. Bu değer asla otoriter/güvenilir kabul edilmez: yalnızca
+    /// resolver'ın ZATEN VAR OLAN Tier 0 (explicit/context) sözdizimsel doğrulamasından geçer
+    /// (bkz. EffectiveAnalysisDateResolver.ResolveAsync — default(DateOnly)/parse edilemeyen değer
+    /// otomatik olarak null'a düşer ve Tier 1/2/3'e devreder). Parse edilemezse ya da eksikse
+    /// explicitContextDate=null geçilir — yeni bir client-authoritative fingerprint İCAT EDİLMEDİ,
+    /// mevcut resolver kontratı aynen kullanıldı.
+    /// Her koşulda Index'e RedirectToAction eder (PRG) — bu, TempData guard'ının "bir sonraki GET'te
+    /// tüketilir" garantisinin dayandığı temel kural. Başarısız denemede guard TEKRAR set edilir
+    /// (bir sonraki GET'in tekrar otomatik denememesi için); başarılıysa tekrar set edilmez.
+    /// </summary>
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> AutoRunStaleAnalysis(string? kasaType, string? contextDate, CancellationToken ct)
+    {
+        const string autoPostGuardKey = "HK_AutoPostAttempted";
+
+        IActionResult RedirectBackFailed(Exception? ex, string reason)
+        {
+            if (ex != null) _log.LogError(ex, "AutoRunStaleAnalysis başarısız: {Reason}", reason);
+            else _log.LogWarning("AutoRunStaleAnalysis başarısız: {Reason}", reason);
+            TempData[autoPostGuardKey] = true; // failed attempt — guard bir sonraki GET için korunur
+            return RedirectToAction(nameof(Index), new { kasaType });
+        }
+
+        if (string.IsNullOrEmpty(kasaType))
+            return RedirectBackFailed(null, "kasaType boş");
+
+        // Yalnızca sözdizimsel doğrulama — resolver'ın Tier 0 guard'ıyla birebir aynı kural
+        // (default(DateOnly) kabul edilmez). Yeni bir iş kuralı burada İCAT EDİLMEZ.
+        DateOnly? validatedContextDate = DateOnly.TryParseExact(
+            contextDate, "yyyy-MM-dd",
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None,
+            out var parsedContextDate)
+                ? parsedContextDate
+                : null;
+
+        var uploadFolder = ResolveUploadFolderAbsolute();
+        EffectiveAnalysisDateResult effectiveDateResult;
+        try
+        {
+            effectiveDateResult = await _effectiveDateResolver.ResolveAsync(
+                explicitContextDate: validatedContextDate, kasaScope: kasaType, uploadFolder, ct);
+        }
+        catch (Exception ex)
+        {
+            return RedirectBackFailed(ex, "resolver hata verdi");
+        }
+
+        if (effectiveDateResult.Tier == AnalysisDateSourceTier.SuccessfulPersistedKasa)
+        {
+            // Revision 3 PERSISTED SOURCE FRESHNESS CLOSURE, Step 5: GET'teki ile AYNI server-side
+            // freshness kontrolü burada TEKRAR yapılıyor (client'tan gelen hiçbir fingerprint/currentness
+            // bayrağına güvenilmiyor — hiç gönderilmiyor zaten). Current → no-op (aşağıda). Stale →
+            // LoadAndCalculate'e devam (Tier 2/3 ile aynı akışa düşer). Unknown → Current ile AYNI
+            // şekilde no-op: kanıtlanamayan bir kaynağın üzerine OTOMATİK yazma yapılmaz (Unknown !=
+            // Stale invariant'ı — bkz. KasaSourceFingerprintHelper).
+            var freshness = KasaSourceFreshness.Unknown;
+            if (effectiveDateResult.PersistedSnapshot != null)
+            {
+                try
+                {
+                    freshness = await KasaSourceFingerprintHelper.CheckFreshnessAsync(
+                        effectiveDateResult.PersistedSnapshot.SourceEvidenceJson,
+                        uploadFolder,
+                        effectiveDateResult.PersistedSnapshot.RaporTarihi,
+                        kasaType,
+                        _log,
+                        ct);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogWarning(ex, "Freshness check basarisiz (POST), Unknown olarak ele alinacak (fail-closed).");
+                    freshness = KasaSourceFreshness.Unknown;
+                }
+            }
+
+            if (freshness != KasaSourceFreshness.Stale)
+            {
+                // Current: gerçekten güncel, yazacak bir şey yok. Unknown: kanıtlanamıyor, otomatik
+                // YAZMA yapılmaz. İkisinde de guard tekrar set edilmiyor — sıradan bir GET'e dönülür.
+                return RedirectToAction(nameof(Index), new { kasaType });
+            }
+            // Stale: aşağıdaki LoadAndCalculate akışına (Tier 2/3 ile aynı) devam eder.
+        }
+        else if (!effectiveDateResult.Date.HasValue)
+        {
+            // Tier 3 (NoAnalyzableSource): analiz edilebilir hiçbir kaynak yok, otomatik POST'un
+            // anlamı kalmıyor. Guard'ı tekrar set ETMİYORUZ; sıradan bir GET'e dönülür.
+            return RedirectToAction(nameof(Index), new { kasaType });
+        }
+
+        var autoModel = new KasaPreviewViewModel
+        {
+            KasaType = NormalizeKasaType(kasaType),
+            SelectedDate = effectiveDateResult.Date
+        };
+
+        IActionResult loadResult;
+        try
+        {
+            loadResult = await LoadAndCalculate(autoModel, ct);
+        }
+        catch (Exception ex)
+        {
+            return RedirectBackFailed(ex, "LoadAndCalculate exception fırlattı");
+        }
+
+        var resultModel = (loadResult as ViewResult)?.ViewData.Model as KasaPreviewViewModel;
+        var succeeded = resultModel != null && resultModel.HasResults && resultModel.Errors.Count == 0;
+
+        if (!succeeded)
+            return RedirectBackFailed(null, "LoadAndCalculate sonucu HasResults=false ya da hata içeriyor");
+
+        // Başarılı — guard'ı tekrar set etmiyoruz, bir sonraki GET zaten IsStaleAnalysis=false görecek.
+        return RedirectToAction(nameof(Index), new { kasaType });
     }
 
     [HttpPost]

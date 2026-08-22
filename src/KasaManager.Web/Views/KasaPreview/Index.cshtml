@@ -133,6 +133,29 @@
     </div>
 </div>
 
+@* Revision 3 Section 7 kapanış: stale/eksik analiz için TEK SEFERLİK otomatik POST tetikleyici.
+   Model.HasResults'a bağımlı DEĞİL (bilerek) — otomatik POST tam olarak sonuç yokken/eskiyken gerekir.
+   Sunucu (KasaPreviewController.Index GET) CanAutoPost'u TempData guard ile bir sonraki GET'te
+   tekrar true olmayacak şekilde zaten hesaplıyor; burada yalnızca formu bir kez submit ediyoruz. *@
+@if (Model.CanAutoPost)
+{
+    <form id="hkAutoRunStaleAnalysisForm" asp-controller="KasaPreview" asp-action="AutoRunStaleAnalysis" method="post" class="d-none">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="kasaType" value="@Model.KasaType" />
+        @* Helpy final closure task 1: GET'in gösterdiği EffectiveAnalysisDate, POST'a bağlam (context)
+           olarak taşınır — otoriter DEĞİL, sunucu tarafında yalnızca resolver'ın zaten var olan
+           Tier 0 sözdizimsel doğrulamasından geçer (bkz. AutoRunStaleAnalysis XML doc). CanAutoPost
+           true olduğunda EffectiveAnalysisDate her zaman doludur. *@
+        <input type="hidden" name="contextDate" value="@Model.EffectiveAnalysisDate!.Value.ToString("yyyy-MM-dd")" />
+    </form>
+    <script>
+        (function () {
+            var f = document.getElementById('hkAutoRunStaleAnalysisForm');
+            if (f) { f.submit(); }
+        })();
+    </script>
+}
+
 @if (Model.IsAdminMode && Model.HasResults)
 {
     <div class="alert mt-2 mb-3 py-2 px-3 d-flex align-items-center justify-content-between flex-wrap gap-3" 

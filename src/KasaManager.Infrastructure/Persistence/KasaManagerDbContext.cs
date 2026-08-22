@@ -312,10 +312,22 @@ b.Property(x => x.ColumnsJson)
             b.Property(x => x.TakipBaslangicTarihi).HasConversion(dateOnlyConverter);
             b.Ignore(x => x.TakipteGunSayisi); // Computed — DB'ye yazılmaz
 
+            // Revision 3: Finansal Kasa Etkisi (ayrık iki olaylı zamansal model)
+            b.Property(x => x.KasaEtkisiTutari).HasPrecision(18, 2);
+            b.Property(x => x.KasaEtkisiIsTarihi).HasConversion(dateOnlyConverter);
+            b.Property(x => x.KasaEtkisiTersDonusIsTarihi).HasConversion(dateOnlyConverter);
+
             b.HasIndex(x => new { x.AnalizTarihi, x.HesapTuru, x.Durum })
                 .HasDatabaseName("IX_HesapKontrol_Tarih_Hesap_Durum");
             b.HasIndex(x => x.Durum)
                 .HasDatabaseName("IX_HesapKontrol_Durum");
+            // Helpy closure task 1: GetDailyFollowTotalsAsync bu iki tarihi BAĞIMSIZ eşitlik
+            // predikatlarıyla sorgular (origin ayrı, reversal ayrı) — composite değil, 2 ayrı
+            // tek-kolonlu index doğru olan.
+            b.HasIndex(x => x.KasaEtkisiIsTarihi)
+                .HasDatabaseName("IX_HesapKontrol_KasaEtkisiIsTarihi");
+            b.HasIndex(x => x.KasaEtkisiTersDonusIsTarihi)
+                .HasDatabaseName("IX_HesapKontrol_KasaEtkisiTersDonusIsTarihi");
         });
 
         // ===== Validation: DismissedValidation =====

@@ -355,7 +355,8 @@ public sealed class HesapKontrolDateRangeNormalizationTests
             financialException?.Object ?? Mock.Of<IFinansalIstisnaService>(),
             sourceResolver?.Object ?? Mock.Of<IHesapKontrolSourceResolver>(),
             NullLogger<HesapKontrolController>.Instance,
-            env.Object);
+            env.Object,
+            Mock.Of<IManualResolveWriteBusinessDateResolver>());
         var httpContext = new DefaultHttpContext();
         controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
         controller.TempData = new TempDataDictionary(httpContext, Mock.Of<ITempDataProvider>());

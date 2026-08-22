@@ -181,7 +181,8 @@ public sealed class HesapKontrolHistoricalDateContextControllerTests
             Mock.Of<IFinansalIstisnaService>(),
             Mock.Of<IHesapKontrolSourceResolver>(),
             NullLogger<HesapKontrolController>.Instance,
-            env.Object);
+            env.Object,
+            Mock.Of<IManualResolveWriteBusinessDateResolver>());
         var httpContext = new DefaultHttpContext();
         controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
         controller.TempData = new TempDataDictionary(httpContext, Mock.Of<ITempDataProvider>());

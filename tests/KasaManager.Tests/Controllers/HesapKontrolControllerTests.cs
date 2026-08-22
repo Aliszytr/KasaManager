@@ -36,7 +36,8 @@ public sealed class HesapKontrolControllerTests
         Mock<IWebHostEnvironment>? mockEnv = null,
         Mock<IHesapKontrolSourceResolver>? mockSourceResolver = null,
         Mock<ILogger<HesapKontrolController>>? mockLogger = null,
-        ICurrentUser? currentUser = null)
+        ICurrentUser? currentUser = null,
+        Mock<IManualResolveWriteBusinessDateResolver>? mockWriteBusinessDateResolver = null)
     {
         var service = mockService ?? new Mock<IBankaHesapKontrolService>();
         var env = mockEnv ?? new Mock<IWebHostEnvironment>();
@@ -59,7 +60,8 @@ public sealed class HesapKontrolControllerTests
             Mock.Of<IFinansalIstisnaService>(),
             sourceResolver.Object,
             (mockLogger ?? new Mock<ILogger<HesapKontrolController>>()).Object,
-            env.Object
+            env.Object,
+            (mockWriteBusinessDateResolver ?? new Mock<IManualResolveWriteBusinessDateResolver>()).Object
         );
 
         controller.TempData = new TempDataDictionary(
@@ -507,7 +509,8 @@ public sealed class KasaPreviewHesapKontrolGateTests
             Mock.Of<ILogger<KasaPreviewController>>(),
             Mock.Of<IKasaReadModelService>(),
             Mock.Of<ICalculatedKasaSnapshotService>(),
-            Mock.Of<IKasaRaporSnapshotService>());
+            Mock.Of<IKasaRaporSnapshotService>(),
+            Mock.Of<IEffectiveAnalysisDateResolver>());
     }
 
     private static async Task InvokeAnalysisGateAsync(

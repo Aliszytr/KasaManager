@@ -25,6 +25,7 @@ public sealed class HesapKontrolController : Controller
     private readonly IHesapKontrolSourceResolver _sourceResolver;
     private readonly ILogger<HesapKontrolController> _log;
     private readonly IWebHostEnvironment _env;
+    private readonly IManualResolveWriteBusinessDateResolver _writeBusinessDateResolver;
 
     public HesapKontrolController(
         IBankaHesapKontrolService service,
@@ -33,7 +34,8 @@ public sealed class HesapKontrolController : Controller
         IFinansalIstisnaService finansalIstisna,
         IHesapKontrolSourceResolver sourceResolver,
         ILogger<HesapKontrolController> log,
-        IWebHostEnvironment env)
+        IWebHostEnvironment env,
+        IManualResolveWriteBusinessDateResolver writeBusinessDateResolver)
     {
         _service = service;
         _currentUser = currentUser;
@@ -42,6 +44,7 @@ public sealed class HesapKontrolController : Controller
         _sourceResolver = sourceResolver;
         _log = log;
         _env = env;
+        _writeBusinessDateResolver = writeBusinessDateResolver;
     }
 
     private bool TryResolveInteractiveActor(out int actorUserId, out string? actorUsername)
@@ -340,7 +343,36 @@ public sealed class HesapKontrolController : Controller
         if (!TryResolveInteractiveActor(out var actorUserId, out var actorUsername))
             return Unauthorized();
 
-        var result = await _service.ResolveTrackedAsync(id, actorUserId, actorUsername, not);
+        var targetKind = await _service.GetResolveTargetKindAsync(id);
+
+        bool result;
+        switch (targetKind)
+        {
+            case HesapKontrolResolveTargetKind.Stopaj:
+                result = await _service.ResolveTrackedStopajAsync(id, actorUserId, actorUsername, not);
+                break;
+
+            case HesapKontrolResolveTargetKind.Financial:
+                var baseFolder = Path.Combine(_env.WebRootPath, "Data", "Raporlar");
+                var writeDate = await _writeBusinessDateResolver.ResolveAsync(baseFolder);
+                if (!writeDate.Success)
+                {
+                    _log.LogWarning(
+                        "[HK-RESOLVE-WRITE-DATE-FAIL-CLOSED] KayitId={KayitId} Reason={Reason} Detail={Detail}",
+                        id, writeDate.FailureReason, writeDate.Detail);
+                    TempData["Error"] = $"❌ Kayıt çözülemedi. Finansal işlem günü doğrulanamadı: {writeDate.Detail}";
+                    if (!string.IsNullOrEmpty(tarih)) return RedirectToAction("Index", new { tab = "takipte", analizTarihiStr = tarih });
+                    return RedirectToAction("Index", new { tab = "takipte" });
+                }
+
+                result = await _service.ResolveTrackedFinancialAsync(
+                    id, writeDate.BusinessDate!.Value, actorUserId, actorUsername, not);
+                break;
+
+            default:
+                result = false;
+                break;
+        }
 
         if (result)
             TempData["Info"] = "✅ Takipteki kayıt çözüldü olarak işaretlendi.";

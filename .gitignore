@@ -82,3 +82,16 @@ tests/KasaManager.Tests/**/obj/
 # U3 snapshot actor-audit migration sources
 !src/KasaManager.Infrastructure/Persistence/Migrations/20260718152130_AddCalculatedKasaSnapshotActorAudit.cs
 !src/KasaManager.Infrastructure/Persistence/Migrations/20260718152130_AddCalculatedKasaSnapshotActorAudit.Designer.cs
+
+# Revision 3 (KASAMANAGER-2026-08-21-FINAL-PLAN-CLOSURE) KasaEtkisi + source-freshness sources
+!src/KasaManager.Application/Abstractions/IEffectiveAnalysisDateResolver.cs
+!src/KasaManager.Infrastructure/Services/
+!src/KasaManager.Infrastructure/Services/BankaHesapKontrolService.Cas.cs
+!src/KasaManager.Infrastructure/Services/BankaHesapKontrolService.Legacy.cs
+!src/KasaManager.Infrastructure/Services/EffectiveAnalysisDateResolver.cs
+!src/KasaManager.Application/Abstractions/IManualResolveWriteBusinessDateResolver.cs
+!src/KasaManager.Infrastructure/Services/ManualResolveWriteBusinessDateResolver.cs
+!src/KasaManager.Web/Helpers/
+!src/KasaManager.Web/Helpers/KasaSourceFingerprintHelper.cs
+!src/KasaManager.Infrastructure/Persistence/Migrations/20260822074223_AddHesapKontrolKasaEtkisi.cs
+!src/KasaManager.Infrastructure/Persistence/Migrations/20260822074223_AddHesapKontrolKasaEtkisi.Designer.cs

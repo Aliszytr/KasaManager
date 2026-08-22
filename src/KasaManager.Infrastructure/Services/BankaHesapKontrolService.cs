@@ -607,20 +607,50 @@ public sealed partial class BankaHesapKontrolService : IBankaHesapKontrolService
                     ? $"✅ Dünkü eksik kayıt ({eksik.DosyaNo ?? ""} {eksik.Tutar:N2} ₺) bugün geldi — DosyaNo doğrulandı ✓"
                     : $"✅ {gun} gün önceki eksik kayıt ({eksik.DosyaNo ?? ""} {eksik.Tutar:N2} ₺) bugün geldi — DosyaNo doğrulandı ✓";
 
-                eksik.Durum = KayitDurumu.Cozuldu;
-                eksik.CozulmeTarihi = bugunTarihi;
-                eksik.CozulmeKaynakId = eslesenFazla.Id;
-                eksik.Notlar = (eksik.Notlar ?? "") +
-                    $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] {bildirimNotu} — Eşleşen fazla: {eslesenFazla.Id:N}";
+                // Revision 3: Durum/CozulmeTarihi/CozulmeKaynakId ve KasaEtkisi* artık tek transaction'lı
+                // CAS ile yazılır (ExecutePairResolutionAsync). older/later date-comparison ile seçilir
+                // (Eksik/Fazla etiketine göre DEĞİL) — Eksik her zaman -Tutar, Fazla her zaman +Tutar.
+                var (olderId, olderDate, olderImpact, laterId, laterDate, laterImpact) =
+                    eksik.AnalizTarihi <= eslesenFazla.AnalizTarihi
+                        ? (eksik.Id, eksik.AnalizTarihi, -eksik.Tutar, eslesenFazla.Id, eslesenFazla.AnalizTarihi, eslesenFazla.Tutar)
+                        : (eslesenFazla.Id, eslesenFazla.AnalizTarihi, eslesenFazla.Tutar, eksik.Id, eksik.AnalizTarihi, -eksik.Tutar);
 
-                eslesenFazla.Durum = KayitDurumu.Cozuldu;
-                eslesenFazla.CozulmeTarihi = bugunTarihi;
-                eslesenFazla.CozulmeKaynakId = eksik.Id;
-                eslesenFazla.Notlar = (eslesenFazla.Notlar ?? "") +
-                    $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] {bildirimNotu} — Eşleşen eksik: {eksik.Id:N}";
+                var pairResult = await ExecutePairResolutionAsync(
+                    olderId, olderDate, olderImpact,
+                    laterId, laterDate, laterImpact,
+                    bugunTarihi, ct);
 
-                bugunFazlalar.Remove(eslesenFazla);
-                kesinEslesmeler.Add(match);
+                if (!pairResult.Success)
+                {
+                    _logger.LogWarning(
+                        "[HK-PAIR-CAS-CONFLICT] Action=CrossDayReconcile EksikId={EksikId} FazlaId={FazlaId} Reason={Reason}",
+                        eksik.Id, eslesenFazla.Id, pairResult.ConflictReason);
+                    // Helpy closure task 3: Tam-güven eşleşme için CAS reddi bir persistence/concurrency
+                    // çakışmasıdır — business-confidence (potansiyel) sonucu DEĞİLDİR.
+                    // ExecutePairResolutionAsync zaten aynı-değerle exact retry'i kendi içinde idempotent
+                    // success sayıyor; buraya Success=false ile düşen her durum GERÇEK bir uyuşmazlıktır
+                    // (transaction tamamen rollback edildi — hiçbir alan yazılmadı). Yanlışlıkla düşük
+                    // güvenli bir eşleşme gibi raporlanmasın diye ne kesinEslesmeler ne de
+                    // potansiyelEslesmeler'e eklenmiyor ve fazla listeden çıkarılmıyor: eksik/fazla
+                    // "Açık" durumda kalır, bu run'da raporlanmaz (sessizce kaybolmaz — log zaten yazıldı)
+                    // ve bir SONRAKİ CrossDayReconcileAsync çalıştırmasında yeniden değerlendirilir.
+                    // Mevcut method kontratı yalnızca 2 liste döndürdüğü için (kesin/potansiyel) üçüncü
+                    // bir kategori eklemek yerine bu, kontratla uyumlu en küçük davranış.
+                    continue;
+                }
+                else
+                {
+                    // Audit-only: Durum/CozulmeTarihi/CozulmeKaynakId/KasaEtkisi* CAS ile commit edildi.
+                    // Notlar burada tracked-entity olarak set edilir, aşağıdaki toplu SaveChangesAsync'e biner
+                    // (Durum/CozulmeTarihi/CozulmeKaynakId bu instance'larda hiç set edilmedi — stale geri yazılmaz).
+                    eksik.Notlar = (eksik.Notlar ?? "") +
+                        $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] {bildirimNotu} — Eşleşen fazla: {eslesenFazla.Id:N}";
+                    eslesenFazla.Notlar = (eslesenFazla.Notlar ?? "") +
+                        $"\n[{DateTime.UtcNow:dd.MM.yyyy HH:mm}] {bildirimNotu} — Eşleşen eksik: {eksik.Id:N}";
+
+                    bugunFazlalar.Remove(eslesenFazla);
+                    kesinEslesmeler.Add(match);
+                }
             }
             else
             {

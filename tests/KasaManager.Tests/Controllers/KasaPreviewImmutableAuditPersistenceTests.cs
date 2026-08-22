@@ -944,7 +944,8 @@ public sealed class KasaPreviewImmutableAuditPersistenceTests
             logger.Object,
             Mock.Of<IKasaReadModelService>(),
             snapshots.Object,
-            Mock.Of<IKasaRaporSnapshotService>());
+            Mock.Of<IKasaRaporSnapshotService>(),
+            Mock.Of<IEffectiveAnalysisDateResolver>());
 
         var httpContext = new DefaultHttpContext
         {

@@ -215,6 +215,96 @@ public sealed class BankaHesapKontrolServiceCrossDayIdempotencyTests
             await cleanDb.Database.EnsureDeletedAsync();
         }
     }
+    [Fact]
+    public async Task CrossDayReconcileAsync_ParallelServices_LoserDoesNotReportAsPotentialMatch_SqlServer()
+    {
+        // Helpy closure task 3 regresyon kanıtı: Tam-güven eşleşmede CAS reddi (gerçek concurrency
+        // çakışması) artık business-confidence (potansiyel) sonucu olarak YANLIŞ raporlanmıyor.
+        // Kaybeden concurrent çağrı ne KesirEslesmeler'de ne de PotansiyelEslesmeler'de görünmeli —
+        // yalnızca log'lanır, kayıt "Açık" kalır ve bir sonraki run'da yeniden değerlendirilir.
+        if (!System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+            return;
+
+        var testDbName = $"CrossDayCasLoser_{Guid.NewGuid():N}";
+        var connStr = $"Server=(localdb)\\mssqllocaldb;Database={testDbName};Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true";
+        var options = new DbContextOptionsBuilder<KasaManagerDbContext>()
+            .UseSqlServer(connStr, sql => sql.EnableRetryOnFailure(3))
+            .Options;
+
+        bool localDbAvailable;
+        await using (var setupDb = new KasaManagerDbContext(options))
+        {
+            try
+            {
+                await setupDb.Database.EnsureCreatedAsync();
+                localDbAvailable = true;
+            }
+            catch (Exception)
+            {
+                localDbAvailable = false;
+            }
+        }
+
+        if (!localDbAvailable)
+            return;
+
+        try
+        {
+            var bugun = new DateOnly(2026, 5, 13);
+            var eksikId = Guid.NewGuid();
+            var fazlaId = Guid.NewGuid();
+
+            await using (var seedDb = new KasaManagerDbContext(options))
+            {
+                seedDb.HesapKontrolKayitlari.AddRange(
+                    new HesapKontrolKaydi
+                    {
+                        Id = eksikId,
+                        AnalizTarihi = bugun.AddDays(-1),
+                        HesapTuru = BankaHesapTuru.Tahsilat,
+                        Yon = KayitYonu.Eksik,
+                        Tutar = 3300m,
+                        DosyaNo = "2026/99",
+                        BirimAdi = "Bursa 3",
+                        Sinif = FarkSinifi.Askida,
+                        Durum = KayitDurumu.Acik
+                    },
+                    new HesapKontrolKaydi
+                    {
+                        Id = fazlaId,
+                        AnalizTarihi = bugun,
+                        HesapTuru = BankaHesapTuru.Tahsilat,
+                        Yon = KayitYonu.Fazla,
+                        Tutar = 3300m,
+                        Aciklama = "Banka iade 2026/99 Bursa 3",
+                        Sinif = FarkSinifi.Askida,
+                        Durum = KayitDurumu.Acik
+                    });
+
+                await seedDb.SaveChangesAsync();
+            }
+
+            async Task<CrossDayResult> RunAsync()
+            {
+                await using var db = new KasaManagerDbContext(options);
+                return await CreateService(db).CrossDayReconcileAsync(bugun);
+            }
+
+            var results = await Task.WhenAll(Task.Run(RunAsync), Task.Run(RunAsync));
+
+            Assert.Equal(1, results.Count(r => r.KesirEslesmeler.Count == 1));
+            var loser = Assert.Single(results, r => r.KesirEslesmeler.Count == 0);
+
+            // Asıl regresyon kanıtı: kaybeden, CAS reddini potansiyel eşleşme olarak YANLIŞ raporlamıyor.
+            Assert.Empty(loser.PotansiyelEslesmeler);
+        }
+        finally
+        {
+            await using var cleanDb = new KasaManagerDbContext(options);
+            await cleanDb.Database.EnsureDeletedAsync();
+        }
+    }
+
     private static BankaHesapKontrolService CreateService(KasaManagerDbContext db)
     {
         var sourceResolver = new Mock<IHesapKontrolSourceResolver>();

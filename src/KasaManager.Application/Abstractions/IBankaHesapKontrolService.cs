@@ -62,9 +62,28 @@ public interface IBankaHesapKontrolService
     Task<bool> StartTrackingAsync(Guid kayitId, int actorUserId, string? actorUsername, string? not, CancellationToken ct = default);
 
     /// <summary>
-    /// Takipteki kaydı el ile çözüldü olarak işaretler: Takipte → Onaylandı.
+    /// Bir Takipte kaydın server-side çözüm hedef türünü belirler (NotFound/Stopaj/Financial).
+    /// Manuel Resolve orkestrasyonu bu sonuca göre iki tip-güvenli komuttan birine yönlendirilir.
+    /// Yalnızca şu anda gerçekten çözülebilir/takipte bir kaydı yansıtır — durum/tür eşleşmezse
+    /// veya kayıt bulunamazsa NotFound döner (enum default ile karıştırılmaz).
     /// </summary>
-    Task<bool> ResolveTrackedAsync(Guid kayitId, int actorUserId, string? actorUsername, string? not, CancellationToken ct = default);
+    Task<HesapKontrolResolveTargetKind> GetResolveTargetKindAsync(Guid kayitId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Takipteki Stopaj kaydını el ile çözüldü olarak işaretler: Takipte → Onaylandı.
+    /// Stopaj, KasaEtkisi finansal mekanizmasının tamamen dışındadır — tarih-serbesttir (date-free);
+    /// hiçbir finansal reversal CAS'ı tetiklemez. Kayıt Stopaj değilse veya Takipte değilse fail-closed (false).
+    /// </summary>
+    Task<bool> ResolveTrackedStopajAsync(Guid kayitId, int actorUserId, string? actorUsername, string? not, CancellationToken ct = default);
+
+    /// <summary>
+    /// Takipteki finansal (Stopaj dışı) kaydı el ile çözüldü olarak işaretler: Takipte → Onaylandı.
+    /// reversalBusinessDate, çağıranın (Manuel Resolve orkestrasyonu) authoritative WRITE BusinessDate
+    /// olarak sağlamak ZORUNDA olduğu, sistem saatinden türetilmemiş bir tarihtir. Kayıt Stopaj ise
+    /// veya Takipte değilse fail-closed (false). CozulmeTarihi (lifecycle/audit) bu tarihten
+    /// bağımsız olarak ayrıca hesaplanır — ikisi kasıtlı olarak farklı semantiklere sahiptir.
+    /// </summary>
+    Task<bool> ResolveTrackedFinancialAsync(Guid kayitId, DateOnly reversalBusinessDate, int actorUserId, string? actorUsername, string? not, CancellationToken ct = default);
 
     /// <summary>
     /// Herhangi bir kapalı/takipte kaydı geri alır.
@@ -208,6 +227,17 @@ public interface IBankaHesapKontrolService
 // ─────────────────────────────────────────────────────────────
 // DTO'lar
 // ─────────────────────────────────────────────────────────────
+
+/// <summary>
+/// GetResolveTargetKindAsync'in server-side sınıflandırma sonucu.
+/// NotFound: kayıt yok VEYA şu anda Takipte/çözülebilir durumda değil (enum default ile karışmaz).
+/// </summary>
+public enum HesapKontrolResolveTargetKind
+{
+    NotFound = 0,
+    Stopaj = 1,
+    Financial = 2
+}
 
 public sealed record ActiveFollowTotals(
     DateOnly AnalizTarihi,

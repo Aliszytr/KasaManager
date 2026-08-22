@@ -7,6 +7,7 @@ using KasaManager.Application.Abstractions;
 using KasaManager.Domain.Reports;
 using KasaManager.Domain.Reports.Export;
 using KasaManager.Domain.Reports.Snapshots;
+using KasaManager.Web.Helpers;
 using KasaManager.Web.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
@@ -146,6 +147,15 @@ public sealed class KasaUstRaporController : Controller
             return RedirectToAction(nameof(Index));
         }
 
+        // Revision 3 PERSISTED SOURCE FRESHNESS CLOSURE, Step 2/6: bu, DB'ye yazılan gerçek/asıl
+        // "Kaydet" akışıdır — IEffectiveAnalysisDateResolver'ın Tier 1'de geri okuduğu snapshot burada
+        // üretilir. Import'tan ÖNCE kaynağı (upload klasöründeki .xls* dosyaları) fingerprint'liyoruz;
+        // SaveAsync'ten hemen önce yeniden fingerprint'leyip (VerifyAsync) karşılaştıracağız — böylece
+        // SourceEvidenceJson'a yazılan kanıt, gerçekten bu import'un okuduğu kaynağa karşılık gelir
+        // (Step 6: "başka/ilgisiz bir client değerine değil").
+        var sourceEvidenceBefore = await KasaSourceFingerprintHelper.CaptureAsync(
+            folder, finalDate, kasaScope: nameof(KasaRaporTuru.Genel), log: null, ct);
+
         var import = _orchestrator.Import(fullPath, ImportFileKind.KasaUstRapor);
         if (!import.Ok || import.Value is null)
         {
@@ -204,6 +214,22 @@ public sealed class KasaUstRaporController : Controller
             WarningsJson = warningsJson,
             Rows = rows
         };
+
+        // Revision 3 PERSISTED SOURCE FRESHNESS CLOSURE, Step 2/6/8: SaveAsync'ten hemen önce
+        // kaynağı yeniden fingerprint'leyip Import öncesi alınan kanıtla karşılaştırıyoruz (VerifyAsync
+        // — LoadAndCalculate'teki mevcut before/after deseniyle birebir aynı). Kaynak bu request
+        // içinde değiştiyse (TOCTOU: Import ile buradaki await'ler arasında dosya değişmiş olabilir),
+        // SourceEvidenceJson BİLEREK null bırakılır — kullanıcının onayladığı satırlar yine de
+        // kaydedilir (mevcut davranış korunur), yalnızca "sahte fresh" bir kanıt YAZILMAZ; sonraki
+        // freshness okuması bunu dürüstçe Unknown olarak görür. Bu, mimarinin garanti edemediği bir
+        // ilişkiyi UYDURMAK yerine Unknown'a düşmesini sağlayan, Step 6'nın istediği "false evidence
+        // yazma" karşıtı davranıştır.
+        var verifiedEvidence = await KasaSourceFingerprintHelper.VerifyAsync(
+            sourceEvidenceBefore, folder, finalDate, kasaScope: nameof(KasaRaporTuru.Genel), log: null, ct);
+        if (verifiedEvidence != null)
+        {
+            snapshot.SourceEvidenceJson = KasaSourceFingerprintHelper.SerializeEvidence(verifiedEvidence);
+        }
 
         // P4.1 iptalinden sonra yeniden etkinleştirildi:
         // Sabah/Aksam kasa pipeline'ı o güne ait Genel snapshot'a bağımlıdır.

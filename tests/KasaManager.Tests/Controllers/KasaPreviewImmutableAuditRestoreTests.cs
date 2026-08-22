@@ -973,7 +973,8 @@ public sealed class KasaPreviewImmutableAuditRestoreTests
             logger.Object,
             Mock.Of<IKasaReadModelService>(),
             snapshots.Object,
-            reportSnapshots.Object);
+            reportSnapshots.Object,
+            Mock.Of<IEffectiveAnalysisDateResolver>());
         var httpContext = new DefaultHttpContext
         {
             User = new ClaimsPrincipal(new ClaimsIdentity(

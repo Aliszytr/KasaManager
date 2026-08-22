@@ -1041,63 +1041,19 @@ public sealed partial class KasaPreviewController
         return Path.Combine(_env.WebRootPath, sub);
     }
 
-    private async Task<KasaDraftSourceContext?> CaptureKasaDraftSourceContextAsync(
+    /// <summary>
+    /// Revision 3 PERSISTED SOURCE FRESHNESS CLOSURE: bu metot artık KasaSourceFingerprintHelper'a
+    /// delege eden ince (thin) bir wrapper'dır — algoritma DEĞİŞMEDİ (aynı SHA256 manifest formatı),
+    /// yalnızca KasaUstRaporController.Save'in de aynı mantığı kullanabilmesi için paylaşılan sınıfa
+    /// taşındı. Mevcut çağıranlar (LoadAndCalculate, TryCreateVerifiedKasaSourceSnapshotAsync)
+    /// değişmeden çalışmaya devam eder.
+    /// </summary>
+    private Task<KasaDraftSourceContext?> CaptureKasaDraftSourceContextAsync(
         string uploadFolder,
         DateOnly? selectedDate,
         string kasaType,
         CancellationToken ct)
-    {
-        if (!selectedDate.HasValue || !Directory.Exists(uploadFolder))
-            return null;
-
-        try
-        {
-            var files = Directory.GetFiles(uploadFolder, "*.xls*", SearchOption.TopDirectoryOnly)
-                .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-            if (files.Length == 0)
-                return null;
-
-            var manifest = new StringBuilder();
-            var fileNames = new List<string>(files.Length);
-            foreach (var file in files)
-            {
-                ct.ThrowIfCancellationRequested();
-                var fileName = Path.GetFileName(file);
-                fileNames.Add(fileName);
-
-                await using var stream = new FileStream(
-                    file, FileMode.Open, FileAccess.Read, FileShare.Read,
-                    bufferSize: 81920, useAsync: true);
-                var contentHash = await SHA256.HashDataAsync(stream, ct);
-                manifest
-                    .Append(fileName.ToUpperInvariant())
-                    .Append(':')
-                    .Append(Convert.ToHexString(contentHash))
-                    .Append('\n');
-            }
-
-            var bundleHash = SHA256.HashData(Encoding.UTF8.GetBytes(manifest.ToString()));
-            return new KasaDraftSourceContext(
-                Version: 1,
-                SelectedDate: selectedDate.Value,
-                KasaType: NormalizeKasaType(kasaType),
-                SourceKind: nameof(HesapKontrolSourceKind.Current),
-                SourceIdentifier: "current-upload-bundle",
-                FileNames: fileNames,
-                Fingerprint: Convert.ToHexString(bundleHash));
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _log.LogWarning(ex,
-                "Kasa kaynak baglami olusturulamadi. KasaType={KasaType}", kasaType);
-            return null;
-        }
-    }
+        => KasaSourceFingerprintHelper.CaptureAsync(uploadFolder, selectedDate, kasaType, _log, ct);
 
     private async Task<string?> TryCreateVerifiedKasaSourceSnapshotAsync(
         string sourceFolder,
@@ -1162,31 +1118,14 @@ public sealed partial class KasaPreviewController
         }
     }
 
-    private async Task<KasaDraftSourceContext?> VerifyKasaDraftSourceContextAsync(
+    /// <summary>Thin wrapper — bkz. CaptureKasaDraftSourceContextAsync'in üstündeki not.</summary>
+    private Task<KasaDraftSourceContext?> VerifyKasaDraftSourceContextAsync(
         KasaDraftSourceContext? beforeCalculation,
         string uploadFolder,
         DateOnly? selectedDate,
         string kasaType,
         CancellationToken ct)
-    {
-        if (beforeCalculation is null)
-            return null;
-
-        var afterCalculation = await CaptureKasaDraftSourceContextAsync(
-            uploadFolder, selectedDate, kasaType, ct);
-        if (afterCalculation is null
-            || beforeCalculation.Version != afterCalculation.Version
-            || !string.Equals(beforeCalculation.Fingerprint, afterCalculation.Fingerprint,
-                StringComparison.Ordinal))
-        {
-            _log.LogWarning(
-                "Kasa hesaplamasi sirasinda kaynak paketi degisti; kaynak baglami kaydedilmedi. KasaType={KasaType}",
-                kasaType);
-            return null;
-        }
-
-        return afterCalculation;
-    }
+        => KasaSourceFingerprintHelper.VerifyAsync(beforeCalculation, uploadFolder, selectedDate, kasaType, _log, ct);
 
     /// <summary>
     /// kasaType parametresini normalize eder: "aksam" → "Aksam", "sabah" → "Sabah", vb.

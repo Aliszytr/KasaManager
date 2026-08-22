@@ -3,12 +3,44 @@ using KasaManager.Domain.Calculation;
 using KasaManager.Domain.FormulaEngine;
 using KasaManager.Domain.Reports.HesapKontrol;
 using KasaManager.Domain.Validation;
+using KasaManager.Web.Helpers;
 
 namespace KasaManager.Web.Models;
 
 public sealed class KasaPreviewViewModel
 {
     public DateOnly? SelectedDate { get; set; }
+
+    /// <summary>
+    /// Revision 3 (KASAMANAGER-2026-08-21-FINAL-PLAN-CLOSURE) Section 6/7: IEffectiveAnalysisDateResolver'ın
+    /// döndürdüğü authoritative iş tarihi. Null ise NoAnalyzableSource (hiçbir kaynak bulunamadı).
+    /// SelectedDate'ten farklıdır — SelectedDate UI takvim state'i, bu alan finansal karar kaynağıdır.
+    /// </summary>
+    public DateOnly? EffectiveAnalysisDate { get; set; }
+
+    /// <summary>
+    /// True: EffectiveAnalysisDate SuccessfulPersistedKasa tier'ından (tier 1) GELMEDİ —
+    /// yani ekranda gösterilen analiz "güncel/hesaplanmış" değil (explicit context, yalnızca-Excel
+    /// veya hiç kaynak yok). UI bu durumda "stale" uyarısı ve tek seferlik auto-POST tetikleyebilir.
+    /// </summary>
+    public bool IsStaleAnalysis { get; set; }
+
+    /// <summary>
+    /// Revision 3 Section 7: server tarafı tek-seferlik stale-auto-POST guard kararı (TempData ile
+    /// korunur, bkz. KasaPreviewController.Index). true olduğunda Index.cshtml, AutoRunStaleAnalysis'e
+    /// tek seferlik gizli-form auto-submit tetikler (bkz. hkAutoRunStaleAnalysisForm).
+    /// </summary>
+    public bool CanAutoPost { get; set; }
+
+    /// <summary>
+    /// Revision 3 PERSISTED SOURCE FRESHNESS CLOSURE, Step 3/4: EffectiveAnalysisDate
+    /// SuccessfulPersistedKasa tier'ından geldiğinde, o persisted Kasa'nın kaynağının (yükleme
+    /// klasöründeki Excel dosyaları) hâlâ persisted evidence ile eşleşip eşleşmediğine dair AÇIK ve
+    /// dürüst sonuç — resolver tier'ından TÜRETİLMEZ. Tier 0/2/3'te (persisted snapshot yok/ilgisiz)
+    /// anlamsızdır ve varsayılan (Unknown) değerinde kalır. Unknown, "eski (stale)" ANLAMINA GELMEZ —
+    /// yalnızca kanıtlanamadığı anlamına gelir (bkz. KasaSourceFingerprintHelper.CheckFreshnessAsync).
+    /// </summary>
+    public KasaSourceFreshness SourceFreshness { get; set; } = KasaSourceFreshness.Unknown;
 
     /// <summary>
     /// Intent-First: Hangi kasa türüyle çalışıldığı (Sabah/Aksam/Genel/Ortak/Custom).

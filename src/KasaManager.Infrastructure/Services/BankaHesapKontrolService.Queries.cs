@@ -69,6 +69,28 @@ public sealed partial class BankaHesapKontrolService
             .ToListAsync(ct);
     }
 
+    /// <summary>
+    /// Manuel Resolve orkestrasyonu için server-side sınıflandırma. Yalnızca şu anda Takipte olan
+    /// (gerçekten çözülebilir) bir kaydı yansıtır. Anonim projeksiyon + null kontrolü kullanılır —
+    /// böylece "kayıt bulunamadı" hiçbir zaman HesapTuru enum default'una (Tahsilat=0) sessizce
+    /// düşüp Financial olarak yanlış sınıflandırılamaz.
+    /// </summary>
+    public async Task<HesapKontrolResolveTargetKind> GetResolveTargetKindAsync(
+        Guid kayitId, CancellationToken ct = default)
+    {
+        var projected = await _db.HesapKontrolKayitlari
+            .Where(x => x.Id == kayitId && x.Durum == KayitDurumu.Takipte)
+            .Select(x => new { x.HesapTuru })
+            .FirstOrDefaultAsync(ct);
+
+        if (projected == null)
+            return HesapKontrolResolveTargetKind.NotFound;
+
+        return projected.HesapTuru == BankaHesapTuru.Stopaj
+            ? HesapKontrolResolveTargetKind.Stopaj
+            : HesapKontrolResolveTargetKind.Financial;
+    }
+
     public async Task<List<HesapKontrolKaydi>> GetHistoryAsync(
         DateOnly baslangic,
         DateOnly bitis,
@@ -401,46 +423,59 @@ public sealed partial class BankaHesapKontrolService
         return totals;
     }
 
+    /// <summary>
+    /// Revision 3 (KASAMANAGER-2026-08-21-FINAL-PLAN-CLOSURE): Ayrık iki olaylı zamansal model.
+    /// Sinif/Durum/TakipBaslangicTarihi/takip-süresi ARTIK bu metodun kararına girmez — yalnızca
+    /// persisted KasaEtkisiIsTarihi (origin, bir kez +KasaEtkisiTutari) ve
+    /// KasaEtkisiTersDonusIsTarihi (reversal, bir kez -KasaEtkisiTutari) authoritative'dir.
+    /// Aynı gün origin==reversal ise iki katkı birbirini aritmetik olarak götürür (net 0).
+    /// Ara günler ve henüz materialize edilmemiş (KasaEtkisiIsTarihi IS NULL) kayıtlar hiçbir katkı
+    /// vermez — CarryoverResolver etkiyi dunden_devreden_kasa_nakit üzerinden zaten bir sonraki güne taşır.
+    /// KasaEtkisiTutari zaten imzalı (Fazla:+Tutar, Eksik:-Tutar) — burada tekrar Yon'a göre işaretlenmez.
+    /// </summary>
     public async Task<ActiveFollowTotals> GetDailyFollowTotalsAsync(
         DateOnly analizTarihi,
         CancellationToken ct = default)
     {
-        var aktifTakipKayitlari = await ActiveFollowRecordsQuery()
-            .Where(x => x.AnalizTarihi <= analizTarihi
-                     && (!x.TakipBaslangicTarihi.HasValue
-                         || x.TakipBaslangicTarihi.Value <= analizTarihi))
+        var originRecords = await _db.HesapKontrolKayitlari
+            .Where(x => x.HesapTuru != BankaHesapTuru.Stopaj && x.KasaEtkisiIsTarihi == analizTarihi)
+            .Select(x => new { x.HesapTuru, Etki = x.KasaEtkisiTutari!.Value })
             .ToListAsync(ct);
 
-        var cozumGunuTelafiKayitlari = await _db.HesapKontrolKayitlari
-            .Where(x => x.HesapTuru != BankaHesapTuru.Stopaj
-                     && (x.Durum == KayitDurumu.Cozuldu || x.Durum == KayitDurumu.Onaylandi)
-                     && x.CozulmeTarihi == analizTarihi
-                     && x.TakipBaslangicTarihi.HasValue
-                     && x.TakipBaslangicTarihi.Value < analizTarihi)
+        var reversalRecords = await _db.HesapKontrolKayitlari
+            .Where(x => x.HesapTuru != BankaHesapTuru.Stopaj && x.KasaEtkisiTersDonusIsTarihi == analizTarihi)
+            .Select(x => new { x.HesapTuru, Etki = x.KasaEtkisiTutari!.Value })
             .ToListAsync(ct);
 
-        var aktifTakipEtkisi = BuildActiveFollowTotals(analizTarihi, aktifTakipKayitlari);
-        var cozumGunuOncekiEtkisi = BuildActiveFollowTotals(analizTarihi, cozumGunuTelafiKayitlari);
+        decimal OriginSum(BankaHesapTuru h) => originRecords.Where(x => x.HesapTuru == h).Sum(x => x.Etki);
+        decimal ReversalSum(BankaHesapTuru h) => reversalRecords.Where(x => x.HesapTuru == h).Sum(x => x.Etki);
+        decimal OriginMagnitude(BankaHesapTuru h, bool negative) => originRecords
+            .Where(x => x.HesapTuru == h && (negative ? x.Etki < 0m : x.Etki > 0m))
+            .Sum(x => Math.Abs(x.Etki));
+
+        var tahsilatNet = OriginSum(BankaHesapTuru.Tahsilat) - ReversalSum(BankaHesapTuru.Tahsilat);
+        var harcNet = OriginSum(BankaHesapTuru.Harc) - ReversalSum(BankaHesapTuru.Harc);
+
         var gunlukKasaEtkisi = new ActiveFollowTotals(
             analizTarihi,
-            TahsilatNet: aktifTakipEtkisi.TahsilatNet - cozumGunuOncekiEtkisi.TahsilatNet,
-            HarcNet: aktifTakipEtkisi.HarcNet - cozumGunuOncekiEtkisi.HarcNet,
-            TahsilatEksik: aktifTakipEtkisi.TahsilatEksik - cozumGunuOncekiEtkisi.TahsilatEksik,
-            HarcEksik: aktifTakipEtkisi.HarcEksik - cozumGunuOncekiEtkisi.HarcEksik,
-            TahsilatFazla: aktifTakipEtkisi.TahsilatFazla - cozumGunuOncekiEtkisi.TahsilatFazla,
-            HarcFazla: aktifTakipEtkisi.HarcFazla - cozumGunuOncekiEtkisi.HarcFazla,
-            KayitSayisi: aktifTakipEtkisi.KayitSayisi + cozumGunuOncekiEtkisi.KayitSayisi);
+            TahsilatNet: tahsilatNet,
+            HarcNet: harcNet,
+            TahsilatEksik: OriginMagnitude(BankaHesapTuru.Tahsilat, negative: true),
+            HarcEksik: OriginMagnitude(BankaHesapTuru.Harc, negative: true),
+            TahsilatFazla: OriginMagnitude(BankaHesapTuru.Tahsilat, negative: false),
+            HarcFazla: OriginMagnitude(BankaHesapTuru.Harc, negative: false),
+            KayitSayisi: originRecords.Count + reversalRecords.Count);
 
         _logger.LogInformation(
-            "[HK-DAILY-CASH-IMPACT] Date={Date} ActiveCount={ActiveCount} CompensationCount={CompensationCount} ActiveTahsilat={ActiveTahsilat} CompensationTahsilat={CompensationTahsilat} NetTahsilat={NetTahsilat} ActiveHarc={ActiveHarc} CompensationHarc={CompensationHarc} NetHarc={NetHarc}",
+            "[HK-DAILY-CASH-IMPACT] Date={Date} OriginCount={OriginCount} ReversalCount={ReversalCount} OriginTahsilat={OriginTahsilat} ReversalTahsilat={ReversalTahsilat} NetTahsilat={NetTahsilat} OriginHarc={OriginHarc} ReversalHarc={ReversalHarc} NetHarc={NetHarc}",
             analizTarihi,
-            aktifTakipEtkisi.KayitSayisi,
-            cozumGunuOncekiEtkisi.KayitSayisi,
-            aktifTakipEtkisi.TahsilatNet,
-            -cozumGunuOncekiEtkisi.TahsilatNet,
+            originRecords.Count,
+            reversalRecords.Count,
+            OriginSum(BankaHesapTuru.Tahsilat),
+            ReversalSum(BankaHesapTuru.Tahsilat),
             gunlukKasaEtkisi.TahsilatNet,
-            aktifTakipEtkisi.HarcNet,
-            -cozumGunuOncekiEtkisi.HarcNet,
+            OriginSum(BankaHesapTuru.Harc),
+            ReversalSum(BankaHesapTuru.Harc),
             gunlukKasaEtkisi.HarcNet);
 
         return gunlukKasaEtkisi;
