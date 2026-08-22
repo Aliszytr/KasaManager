@@ -24,4 +24,14 @@
     </PackageReference>
   </ItemGroup>
 
+  <!-- Release publish hygiene: appsettings.Development.json/appsettings.Test.json must stay in the
+       source project (Debug build/run behavior unaffected) but must never ship in a Release publish
+       artifact. Microsoft.NET.Sdk.Web's StaticWebAssets glob includes these as Content items with
+       CopyToPublishDirectory=PreserveNewest by default (verified via `dotnet msbuild -getItem:Content`) —
+       overriding just that metadata for Release keeps appsettings.json/appsettings.Production.json unaffected. -->
+  <ItemGroup Condition="'$(Configuration)' == 'Release'">
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+    <Content Update="appsettings.Test.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
 </Project>
