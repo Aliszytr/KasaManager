@@ -29,6 +29,11 @@ logs/
 appsettings.Development.json
 secrets.json
 
+# Machine-specific production config — must never enter generic publish output.
+# Currently still Git-tracked; untracking (git rm --cached) is a separate,
+# deliberate step, not performed here.
+src/KasaManager.Web/appsettings.Production.json
+
 # Upload / Cache / Temp
 **/wwwroot/Data/Raporlar/
 cache/
