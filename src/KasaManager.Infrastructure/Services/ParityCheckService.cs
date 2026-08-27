@@ -72,80 +72,22 @@ public sealed class ParityCheckService : IParityCheckService
 
             var drifts = new List<CalculationParityDrift>();
 
-            // 3.5. Yeni Hesabı Kaydet (Zinciri oluşturabilmek için)
+            // Shadow/parity is observational only: it must never create or mutate the
+            // authoritative DailyCalculationResults row. A prior version of this method
+            // wrote the shadow-computed result back into DailyCalculationResults, which
+            // let a stale fire-and-forget shadow run overwrite a correctly saved result
+            // (production incident: 25→26 Aug carryover corruption). The only reason to
+            // look at the existing row is to inherit its IsStale flag for drift
+            // annotations below — read-only, AsNoTracking, no Add/Update/SaveChanges on
+            // this table.
             var currentResult = await _dbContext.DailyCalculationResults
+                .AsNoTracking()
                 .Where(x => x.ForDate == targetDate && x.KasaTuru == kasaScope)
                 .FirstOrDefaultAsync(ct);
-                
-            var outputDict = new Dictionary<string, decimal>(newRunResult.Value.Outputs);
-            
-            // Seçenek A: Mevcut JSON'daki kritik keyleri koru
-            if (currentResult != null && !string.IsNullOrWhiteSpace(currentResult.ResultsJson))
-            {
-                try
-                {
-                    var existingDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, System.Text.Json.JsonElement>>(currentResult.ResultsJson);
-                    if (existingDict != null)
-                    {
-                        var keysToPreserve = new[] { "sonraki_kasaya_devredecek", "SonrayaDevredecek", "GenelKasa", "genel_kasa", "sabah_kasa_devir", "kasa_toplam" };
-                        foreach(var preserveKey in keysToPreserve)
-                        {
-                            if (existingDict.TryGetValue(preserveKey, out var el))
-                            {
-                                if (el.ValueKind == System.Text.Json.JsonValueKind.Number && el.TryGetDecimal(out var d))
-                                    outputDict[preserveKey] = d;
-                                else if (el.ValueKind == System.Text.Json.JsonValueKind.String)
-                                {
-                                    // Invariant culture with fallback
-                                    var rawStr = el.GetString()?.Replace("₺", "")?.Trim();
-                                    if (!string.IsNullOrWhiteSpace(rawStr))
-                                    {
-                                        if (decimal.TryParse(rawStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var ds))
-                                            outputDict[preserveKey] = ds;
-                                        else if (decimal.TryParse(rawStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.GetCultureInfo("tr-TR"), out ds))
-                                            outputDict[preserveKey] = ds;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                catch { }
-            }
 
-            var finalJson = System.Text.Json.JsonSerializer.Serialize(outputDict);
-
-            if (currentResult == null)
-            {
-                currentResult = new DailyCalculationResult
-                {
-                    Id = Guid.NewGuid(),
-                    ForDate = targetDate,
-                    KasaTuru = kasaScope,
-                    FormulaSetId = Guid.TryParse(formulaSet.Id, out var fsId) ? fsId : Guid.Empty,
-                    PreviousResultId = prevResult?.Id,
-                    IsLocked = false,
-                    IsStale = prevResult != null && prevResult.IsStale, // Cascade stale logic
-                    CalculatedVersion = 1,
-                    ResultsJson = finalJson,
-                    CalculatedAt = DateTime.UtcNow
-                };
-                _dbContext.DailyCalculationResults.Add(currentResult);
-            }
-            else
-            {
-                if (!currentResult.IsLocked) // Sadece kilitli değilse güncellenir
-                {
-                    currentResult.CalculatedVersion++;
-                    currentResult.PreviousResultId = prevResult?.Id;
-                    currentResult.IsStale = prevResult != null && prevResult.IsStale;
-                    currentResult.ResultsJson = finalJson;
-                    currentResult.CalculatedAt = DateTime.UtcNow;
-                    _dbContext.DailyCalculationResults.Update(currentResult);
-                }
-            }
-            
-            var isStale = currentResult.IsStale;
+            var isStale = currentResult != null
+                ? currentResult.IsStale
+                : prevResult != null && prevResult.IsStale;
 
             // 4. INPUT KARŞILAŞTIRMASI (Seed 0 vs Null / Missing Fact Analizi)
             var legacyInputDict = legacyInputs

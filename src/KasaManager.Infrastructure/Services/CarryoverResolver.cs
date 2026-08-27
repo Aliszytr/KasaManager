@@ -81,27 +81,39 @@ public sealed class CarryoverResolver : ICarryoverResolver
         bool usedFallback = true;
         string reason = "Ã–nceki gÃ¼n Sabah result kaydÄ± bulunamadÄ±. 0 kullanÄ±lÄ±yor.";
 
-        if (dbRecord != null && !string.IsNullOrWhiteSpace(dbRecord.ResultsJson))
+        if (dbRecord != null
+            && !string.IsNullOrWhiteSpace(dbRecord.ResultsJson)
+            && TryExtractDevredenKasa(dbRecord.ResultsJson, prev.ToString(), "Aksam", out var dbDevreden))
         {
-            foundDevreden = ExtractDevredenKasa(dbRecord.ResultsJson, prev.ToString(), "Aksam");
+            foundDevreden = dbDevreden;
             sourceCode = "DailyCalculationResult";
             reason = $"{prev:dd.MM.yyyy} tarihli AkÅŸam hesaplama sonucundan devreden okundu.";
             usedFallback = false;
         }
         else
         {
-            // FALLBACK: DailyCalculationResults'ta kayÄ±t yoksa CalculatedKasaSnapshots'a bak
-            // (Eski versiyon projeden kaydedilmiÅŸ kasalar iÃ§in)
+            // FALLBACK: DailyCalculationResults yoksa VEYA kullanÄ±lamaz durumdaysa
+            // (bozuk JSON / eksik zorunlu alan) CalculatedKasaSnapshots'a bak.
             var cksResult = await TryExtractFromCalculatedKasaSnapshotAsync(prev, KasaRaporTuru.Aksam, ct);
             if (cksResult.HasValue)
             {
                 foundDevreden = cksResult.Value;
                 sourceCode = "CalculatedKasaSnapshot";
-                reason = $"{prev:dd.MM.yyyy} tarihli AkÅŸam CalculatedKasaSnapshot'tan devreden okundu.";
+                reason = dbRecord != null
+                    ? $"{prev:dd.MM.yyyy} tarihli AkÅŸam DailyCalculationResult kaydÄ± kullanÄ±lamadÄ± (bozuk/eksik veri); CalculatedKasaSnapshot'tan devreden okundu."
+                    : $"{prev:dd.MM.yyyy} tarihli AkÅŸam CalculatedKasaSnapshot'tan devreden okundu.";
                 usedFallback = false;
             }
+            else if (dbRecord != null)
+            {
+                // Case D: kayÄ±t var ama kullanÄ±lamaz (bozuk JSON / eksik alan) ve kullanÄ±labilir
+                // bir CalculatedKasaSnapshot da yok. GÃ¼venli varsayÄ±lan 0 â€” ama gerÃ§ek bir
+                // authoritative sÄ±fÄ±rdan (Case A) ayÄ±rt edilebilir ÅŸekilde iÅŸaretlenir.
+                sourceCode = "InvalidResultFallbackZero";
+                reason = $"{prev:dd.MM.yyyy} tarihli AkÅŸam result kaydÄ± bozuk/eksik ve kullanÄ±labilir bir CalculatedKasaSnapshot bulunamadÄ±. GÃ¼venli varsayÄ±lan 0 kullanÄ±lÄ±yor.";
+                usedFallback = true;
+            }
         }
-
         _log.LogDebug("[CarryoverDebug] Sabah final donen devreden deger: {Value}", foundDevreden);
         _log.LogInformation("[CarryoverResolver] Scope: {Scope}, Source: {Source}, Value: {Value}, SourceDate: {SourceDate}", 
             "SabahKasaNakit", sourceCode, foundDevreden, prev);
@@ -155,26 +167,39 @@ public sealed class CarryoverResolver : ICarryoverResolver
         bool usedFallback = true;
         string reason = "Ã–nceki gÃ¼n AkÅŸam result kaydÄ± bulunamadÄ±. 0 kullanÄ±lÄ±yor.";
 
-        if (dbRecord != null && !string.IsNullOrWhiteSpace(dbRecord.ResultsJson))
+        if (dbRecord != null
+            && !string.IsNullOrWhiteSpace(dbRecord.ResultsJson)
+            && TryExtractDevredenKasa(dbRecord.ResultsJson, prev.ToString(), "Aksam", out var dbDevreden))
         {
-            foundDevreden = ExtractDevredenKasa(dbRecord.ResultsJson, prev.ToString(), "Aksam");
+            foundDevreden = dbDevreden;
             sourceCode = "DailyCalculationResult";
             reason = $"{prev:dd.MM.yyyy} tarihli AkÅŸam hesaplama sonucundan devreden okundu.";
             usedFallback = false;
         }
         else
         {
-            // FALLBACK: DailyCalculationResults'ta kayÄ±t yoksa CalculatedKasaSnapshots'a bak
+            // FALLBACK: DailyCalculationResults yoksa VEYA kullanÄ±lamaz durumdaysa
+            // (bozuk JSON / eksik zorunlu alan) CalculatedKasaSnapshots'a bak.
             var cksResult = await TryExtractFromCalculatedKasaSnapshotAsync(prev, KasaRaporTuru.Aksam, ct);
             if (cksResult.HasValue)
             {
                 foundDevreden = cksResult.Value;
                 sourceCode = "CalculatedKasaSnapshot";
-                reason = $"{prev:dd.MM.yyyy} tarihli AkÅŸam CalculatedKasaSnapshot'tan devreden okundu.";
+                reason = dbRecord != null
+                    ? $"{prev:dd.MM.yyyy} tarihli AkÅŸam DailyCalculationResult kaydÄ± kullanÄ±lamadÄ± (bozuk/eksik veri); CalculatedKasaSnapshot'tan devreden okundu."
+                    : $"{prev:dd.MM.yyyy} tarihli AkÅŸam CalculatedKasaSnapshot'tan devreden okundu.";
                 usedFallback = false;
             }
+            else if (dbRecord != null)
+            {
+                // Case D: kayÄ±t var ama kullanÄ±lamaz (bozuk JSON / eksik alan) ve kullanÄ±labilir
+                // bir CalculatedKasaSnapshot da yok. GÃ¼venli varsayÄ±lan 0 â€” ama gerÃ§ek bir
+                // authoritative sÄ±fÄ±rdan (Case A) ayÄ±rt edilebilir ÅŸekilde iÅŸaretlenir.
+                sourceCode = "InvalidResultFallbackZero";
+                reason = $"{prev:dd.MM.yyyy} tarihli AkÅŸam result kaydÄ± bozuk/eksik ve kullanÄ±labilir bir CalculatedKasaSnapshot bulunamadÄ±. GÃ¼venli varsayÄ±lan 0 kullanÄ±lÄ±yor.";
+                usedFallback = true;
+            }
         }
-
         _log.LogDebug("[CarryoverDebug] Aksam final donen devreden deger: {Value}", foundDevreden);
         _log.LogInformation("[CarryoverResolver] Scope: {Scope}, Source: {Source}, Value: {Value}, SourceDate: {SourceDate}", 
             "AksamKasaNakit", sourceCode, foundDevreden, prev);
@@ -228,20 +253,25 @@ public sealed class CarryoverResolver : ICarryoverResolver
 
         decimal foundDevreden = 0m;
         string sourceCode = "DefaultZero";
+        bool usedFallback = true;
         DateOnly sourceDate = searchBeforeDate.AddDays(-1);
         string reason = "DÃ¶nem Ã¶ncesine ait Genel Kasa result kaydÄ± bulunamadÄ±. 0 kullanÄ±lÄ±yor.";
 
-        if (dbRecord != null && !string.IsNullOrWhiteSpace(dbRecord.ResultsJson))
+        if (dbRecord != null
+            && !string.IsNullOrWhiteSpace(dbRecord.ResultsJson)
+            && TryExtractDevredenKasa(dbRecord.ResultsJson, searchBeforeDate.ToString(), "Genel", out var dbDevreden))
         {
-            foundDevreden = ExtractDevredenKasa(dbRecord.ResultsJson, searchBeforeDate.ToString(), "Genel");
+            foundDevreden = dbDevreden;
             sourceCode = "DailyCalculationResult";
-            sourceDate = dbRecord.ForDate;
+            sourceDate = dbRecord!.ForDate;
             reason = $"DÃ¶nem baÅŸlangÄ±cÄ±ndan Ã¶nceki en son Genel Kasa kaydÄ±ndan ({sourceDate:dd.MM.yyyy}) devreden okundu.";
+            usedFallback = false;
         }
         else
         {
-            // FALLBACK: DailyCalculationResults'ta kayÄ±t yoksa CalculatedKasaSnapshots'a bak
-            // Genel Kasa iÃ§in baÅŸlangÄ±Ã§ tarihinden Ã¶nceki en son kaydedilmiÅŸ Genel Kasa raporu
+            // FALLBACK: DailyCalculationResults yoksa VEYA kullanÄ±lamaz durumdaysa
+            // (bozuk JSON / eksik zorunlu alan) Genel Kasa iÃ§in baÅŸlangÄ±Ã§ tarihinden
+            // Ã¶nceki en son kaydedilmiÅŸ CalculatedKasaSnapshot'a bak.
             var cksRecord = await _dbContext.CalculatedKasaSnapshots
                 .Where(x => x.KasaTuru == KasaRaporTuru.Genel
                          && x.RaporTarihi < searchBeforeDate
@@ -249,16 +279,29 @@ public sealed class CarryoverResolver : ICarryoverResolver
                 .OrderByDescending(x => x.RaporTarihi)
                 .FirstOrDefaultAsync(ct);
 
-            if (cksRecord != null && !string.IsNullOrWhiteSpace(cksRecord.OutputsJson))
+            if (cksRecord != null
+                && !string.IsNullOrWhiteSpace(cksRecord.OutputsJson)
+                && TryExtractDevredenKasa(cksRecord.OutputsJson, cksRecord.RaporTarihi.ToString(), "Genel", out var cksDevreden))
             {
-                foundDevreden = ExtractDevredenKasa(cksRecord.OutputsJson, cksRecord.RaporTarihi.ToString(), "Genel");
+                foundDevreden = cksDevreden;
                 sourceCode = "CalculatedKasaSnapshot";
                 sourceDate = cksRecord.RaporTarihi;
-                reason = $"DÃ¶nem baÅŸlangÄ±cÄ±ndan Ã¶nceki en son Genel Kasa CalculatedKasaSnapshot'tan ({sourceDate:dd.MM.yyyy}) devreden okundu.";
+                reason = dbRecord != null
+                    ? $"DÃ¶nem baÅŸlangÄ±cÄ±ndan Ã¶nceki Genel Kasa result kaydÄ± kullanÄ±lamadÄ± (bozuk/eksik veri); ({sourceDate:dd.MM.yyyy}) tarihli CalculatedKasaSnapshot'tan devreden okundu."
+                    : $"DÃ¶nem baÅŸlangÄ±cÄ±ndan Ã¶nceki en son Genel Kasa CalculatedKasaSnapshot'tan ({sourceDate:dd.MM.yyyy}) devreden okundu.";
+                usedFallback = false;
                 _log.LogDebug("[CarryoverDebug] Genel Kasa CKS fallback basarili. CKS tarih: {Date}, Deger: {Value}", sourceDate, foundDevreden);
             }
+            else if (dbRecord != null)
+            {
+                // Case D: kayÄ±t var ama kullanÄ±lamaz ve kullanÄ±labilir bir CalculatedKasaSnapshot
+                // da yok. GÃ¼venli varsayÄ±lan 0 â€” gerÃ§ek bir authoritative sÄ±fÄ±rdan ayÄ±rt edilebilir.
+                sourceCode = "InvalidResultFallbackZero";
+                sourceDate = dbRecord.ForDate;
+                reason = $"({dbRecord.ForDate:dd.MM.yyyy}) tarihli Genel Kasa result kaydÄ± bozuk/eksik ve kullanÄ±labilir bir CalculatedKasaSnapshot bulunamadÄ±. GÃ¼venli varsayÄ±lan 0 kullanÄ±lÄ±yor.";
+                usedFallback = true;
+            }
         }
-
         _log.LogDebug("[CarryoverDebug] Genel final donen devreden deger: {Value}", foundDevreden);
         _log.LogInformation("[CarryoverResolver] Scope: {Scope}, Source: {Source}, Value: {Value}, SourceDate: {SourceDate}", 
             "GenelKasa", sourceCode, foundDevreden, sourceDate);
@@ -270,33 +313,38 @@ public sealed class CarryoverResolver : ICarryoverResolver
             SourceDate: sourceDate,
             SourceCode: sourceCode,
             Reason: reason,
-            UsedFallback: sourceCode == "DefaultZero"
+            UsedFallback: usedFallback
         );
     }
 
-    private decimal ExtractDevredenKasa(string json, string searchDate, string kasaTuru)
+    private bool TryExtractDevredenKasa(string json, string searchDate, string kasaTuru, out decimal value)
     {
-        try 
+        value = 0m;
+        try
         {
             var outputs = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
-            if (outputs == null) return 0m;
+            if (outputs == null)
+            {
+                _log.LogDebug("[CarryoverDebug] ResultsJson bos/gecersiz JSON dondurdu (KasaTuru={KasaTuru}).", kasaTuru);
+                return false;
+            }
 
             var ciOutputs = new Dictionary<string, JsonElement>(outputs, StringComparer.OrdinalIgnoreCase);
-            
-            // KRÄ°TÄ°K: Genel Kasa ve Sabah/AkÅŸam kasalar iÃ§in FARKLI aday listesi!
-            // Genel Kasa: "sonraya_devredecek" â‰  "genel_kasa"
-            //   sonraya_devredecek = Devreden + TahRedFark - GelmeyenD (bir sonraki dÃ¶neme devredecek miktar)
+
+            // KRITIK: Genel Kasa ve Sabah/Aksam kasalar icin FARKLI aday listesi!
+            // Genel Kasa: "sonraya_devredecek" != "genel_kasa"
+            //   sonraya_devredecek = Devreden + TahRedFark - GelmeyenD (bir sonraki doneme devredecek miktar)
             //   genel_kasa = Devreden + EksikFazla + TahRedFark - BankaBakiye - KasaNakit - GelmeyenD (kasa hesaplama sonucu)
-            // Sabah/AkÅŸam: "genel_kasa" = kasadaki nakit = ertesi gÃ¼ne devredecek miktar (aynÄ± deÄŸer)
+            // Sabah/Aksam: "genel_kasa" = kasadaki nakit = ertesi gune devredecek miktar (ayni deger)
             string[] candidates;
             if (string.Equals(kasaTuru, "Genel", StringComparison.OrdinalIgnoreCase))
             {
-                // Genel Kasa: SADECE sonraya_devredecek aramalÄ±, genel_kasa YANLIÅ deÄŸer!
+                // Genel Kasa: SADECE sonraya_devredecek aranmali, genel_kasa YANLIS deger!
                 candidates = new[] { "sonraki_kasaya_devredecek", "SonrayaDevredecek", "sonraya_devredecek", "devreden_kasa" };
             }
             else
             {
-                // Sabah/AkÅŸam: kasadaki nakit = genel_kasa = sonraya devredecek
+                // Sabah/Aksam: kasadaki nakit = genel_kasa = sonraya devredecek
                 candidates = new[] { "sonraki_kasaya_devredecek", "SonrayaDevredecek", "GenelKasa", "genel_kasa", "devreden_kasa", "sonraya_devredecek", "KasaSonDurum.GenelKasa" };
             }
 
@@ -305,10 +353,11 @@ public sealed class CarryoverResolver : ICarryoverResolver
                 if (ciOutputs.TryGetValue(key, out var el))
                 {
                     decimal d = 0m;
-                    if (el.ValueKind == JsonValueKind.Number && el.TryGetDecimal(out d)) 
+                    if (el.ValueKind == JsonValueKind.Number && el.TryGetDecimal(out d))
                     {
                         _log.LogDebug("[CarryoverDebug] JSON'dan '{Key}' basariyla Number olarak devreden cekildi: {Value} (KasaTuru={KasaTuru})", key, d, kasaTuru);
-                        return d;
+                        value = d;
+                        return true;
                     }
                     if (el.ValueKind == JsonValueKind.String)
                     {
@@ -316,18 +365,20 @@ public sealed class CarryoverResolver : ICarryoverResolver
                         if (DecimalParsingHelper.TryParseFromJson(str, out d))
                         {
                             _log.LogDebug("[CarryoverDebug] JSON'dan '{Key}' basariyla String olarak devreden cekildi: {Value} (KasaTuru={KasaTuru})", key, d, kasaTuru);
-                            return d;
+                            value = d;
+                            return true;
                         }
                     }
                 }
             }
             _log.LogDebug("[CarryoverDebug] JSON icinde gecerli bir devreden_kasa keyi bulunamadi (KasaTuru={KasaTuru}). Mevcut keyler: {Keys}", kasaTuru, string.Join(", ", ciOutputs.Keys));
+            return false;
         }
         catch (Exception ex)
         {
-            _log.LogDebug(ex, "[CarryoverDebug] ResultsJson parse hatasÄ±.");
+            _log.LogDebug(ex, "[CarryoverDebug] ResultsJson parse hatasi (KasaTuru={KasaTuru}).", kasaTuru);
+            return false;
         }
-        return 0m;
     }
 
     /// <summary>
@@ -350,7 +401,11 @@ public sealed class CarryoverResolver : ICarryoverResolver
             return null;
         }
 
-        var devreden = ExtractDevredenKasa(cksRecord.OutputsJson, date.ToString(), kasaTuru.ToString());
+        if (!TryExtractDevredenKasa(cksRecord.OutputsJson, date.ToString(), kasaTuru.ToString(), out var devreden))
+        {
+            _log.LogDebug("[CarryoverDebug] CKS fallback: {Date} / {KasaTuru} kaydi bozuk/eksik, kullanilamiyor.", date, kasaTuru);
+            return null;
+        }
         _log.LogDebug("[CarryoverDebug] CKS fallback basarili: {Date} / {KasaTuru} = {Value}", date, kasaTuru, devreden);
         return devreden;
     }

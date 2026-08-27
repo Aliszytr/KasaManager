@@ -1,5 +1,8 @@
 using System.Text.Json;
 using KasaManager.Application.Abstractions;
+using KasaManager.Domain.Abstractions;
+using KasaManager.Domain.Calculation;
+using KasaManager.Domain.FormulaEngine;
 using KasaManager.Domain.Reports;
 using KasaManager.Domain.Reports.Snapshots;
 using KasaManager.Infrastructure.Persistence;
@@ -7,6 +10,7 @@ using KasaManager.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace KasaManager.Tests.Infrastructure;
 
@@ -61,6 +65,60 @@ public sealed class CalculatedKasaSnapshotAuthorizationTests : IDisposable
         Assert.Equal(1, daily.CalculatedVersion);
         Assert.Equal("{\"output\":20}", daily.ResultsJson);
         Assert.Equal(dailyCalculatedAt, daily.CalculatedAt);
+    }
+
+    /// <summary>
+    /// Test 7 (Save idempotency + race closure): re-saving the same finalized result
+    /// must not create a duplicate authoritative row, and a stale shadow/parity run
+    /// completing afterward must not be able to change what was actually saved —
+    /// this is the exact production incident (25→26 Aug carryover corruption) closed
+    /// end-to-end: authoritative writer (CalculatedKasaSnapshotService.SaveAsync) vs.
+    /// observational shadow (ParityCheckService.RunShadowCheckAsync).
+    /// </summary>
+    [Fact]
+    public async Task Save_IsIdempotent_AndStaleShadowCannotOverwriteResultAfterward()
+    {
+        var first = await _service.SaveAsync(NewSnapshot(financial: 5000), 17, "user-a");
+        var daily = Assert.Single(_db.DailyCalculationResults);
+        Assert.Equal("{\"output\":10000}", daily.ResultsJson);
+
+        // Idempotent replay with the same financial fingerprint: no duplicate authoritative row.
+        var second = await _service.SaveAsync(NewSnapshot(financial: 5000), 29, "user-b");
+        Assert.Equal(first.Id, second.Id);
+        Assert.Single(_db.DailyCalculationResults);
+
+        // A stale shadow/parity run (started before the save, finishing after) computes a
+        // divergent value. It must have no authority to touch DailyCalculationResults.
+        var engineMock = new Mock<IFormulaEngineService>();
+        engineMock
+            .Setup(e => e.Run(
+                TestDate,
+                It.IsAny<FormulaSet>(),
+                It.IsAny<IReadOnlyList<UnifiedPoolEntry>>(),
+                It.IsAny<IReadOnlyDictionary<string, decimal>>()))
+            .Returns(Result<CalculationRun>.Success(new CalculationRun
+            {
+                ReportDate = TestDate,
+                Outputs = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase) { ["genel_kasa"] = 0m }
+            }));
+        var parity = new ParityCheckService(_db, engineMock.Object, NullLogger<ParityCheckService>.Instance);
+
+        await parity.RunShadowCheckAsync(
+            TestDate,
+            "Aksam",
+            legacyInputs: new List<UnifiedPoolEntry>(),
+            legacyFormulaRun: new CalculationRun
+            {
+                ReportDate = TestDate,
+                Outputs = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase) { ["genel_kasa"] = 0m }
+            },
+            formulaSet: new FormulaSet { Id = Guid.NewGuid().ToString(), Name = "shadow-set" },
+            currentOverrides: new Dictionary<string, decimal>(),
+            ct: CancellationToken.None);
+
+        var afterShadow = Assert.Single(_db.DailyCalculationResults);
+        Assert.Equal(daily.Id, afterShadow.Id);
+        Assert.Equal("{\"output\":10000}", afterShadow.ResultsJson);
     }
 
     [Fact]
